@@ -4,6 +4,16 @@ The chapter’s book of people, partners, Gold Masses, and conferences — plus 
 
 Built for a Society of Catholic Scientists chapter that found commercial CRMs too large.
 
+## Download the source
+
+This repository **is** the download. In GitHub:
+
+1. Open [github.com/cocheuno/chapter-book](https://github.com/cocheuno/chapter-book)
+2. Click the green **Code** button
+3. Click **Download ZIP**
+
+That zip is code and design docs only. It does **not** contain member names, emails, RSVPs, passwords, or host secrets.
+
 ## In this repository
 
 - **Code** for Chapter Book
