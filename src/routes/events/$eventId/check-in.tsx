@@ -75,7 +75,9 @@ function CheckInInner() {
             <div>
               <p className="font-medium">{p.display_name}</p>
               <p className="text-sm text-muted">
-                {p.org_name ?? p.kind_key}
+                {[p.coming_to_mass ? "Mass" : null, p.coming_to_dinner ? "Dinner" : null, p.coming_to_lecture ? "Lecture" : null]
+                  .filter(Boolean)
+                  .join(" · ") || p.kind_key}
                 {p.party_size > 1 ? ` · group of ${p.party_size}` : ""}
               </p>
             </div>

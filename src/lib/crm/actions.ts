@@ -1205,8 +1205,13 @@ export const cloneEvent = createServerFn({ method: "POST" })
       organization_id: string | null;
       kind_key: string;
       party_size: number;
+      guest_name: string | null;
+      coming_to_mass: boolean;
+      coming_to_dinner: boolean;
+      coming_to_lecture: boolean;
     }>`
-      select party_type, person_id, organization_id, kind_key, party_size
+      select party_type, person_id, organization_id, kind_key, party_size, guest_name,
+             coming_to_mass, coming_to_dinner, coming_to_lecture
       from participations
       where event_id = ${data.eventId}
         and (
@@ -1216,12 +1221,16 @@ export const cloneEvent = createServerFn({ method: "POST" })
     `;
     for (const g of guests) {
       await sql`
-        insert into participations (id, chapter_id, event_id, party_type, person_id, organization_id, kind_key, guest_status, publicity_status, party_size, source)
+        insert into participations (
+          id, chapter_id, event_id, party_type, person_id, organization_id, kind_key, guest_status, publicity_status, party_size, source,
+          guest_name, coming_to_mass, coming_to_dinner, coming_to_lecture
+        )
         values (
           ${nid()}, ${m.chapterId}, ${id}, ${g.party_type}, ${g.person_id}, ${g.organization_id}, ${g.kind_key},
           ${g.kind_key === "org_publicity" ? null : "no_response"},
           ${g.kind_key === "org_publicity" ? "asked" : null},
-          ${g.party_size}, ${"invite"}
+          ${g.party_size}, ${"invite"}, ${g.guest_name},
+          ${g.coming_to_mass ?? true}, ${g.coming_to_dinner ?? false}, ${g.coming_to_lecture ?? false}
         )
       `;
     }
@@ -1251,12 +1260,17 @@ export const listInvites = createServerFn({ method: "GET" })
       org_name: string | null;
       dietary: string | null;
       person_dietary: string | null;
+      guest_name: string | null;
+      coming_to_mass: boolean;
+      coming_to_dinner: boolean;
+      coming_to_lecture: boolean;
     }>`
       select p.id, p.person_id, pe.display_name, pe.given_name, pe.family_name,
              coalesce(pe.middle_name, pe.middle_initial) as middle_name, pe.suffix,
              pe.honorific, pe.religious_title, pe.academic_title,
              p.kind_key, p.guest_status, p.party_size,
-             o.name as org_name, p.dietary_for_this_event as dietary, pe.dietary as person_dietary
+             o.name as org_name, p.dietary_for_this_event as dietary, pe.dietary as person_dietary,
+             p.guest_name, p.coming_to_mass, p.coming_to_dinner, p.coming_to_lecture
       from participations p
       left join persons pe on pe.id = p.person_id
       left join organizations o on o.id = p.organization_id
@@ -1278,7 +1292,7 @@ export const listInvites = createServerFn({ method: "GET" })
     return {
       people: people.map((p) => ({
         ...p,
-        display_name: p.person_id ? listedName(p) : p.display_name,
+        display_name: p.person_id ? listedName(p) : p.guest_name || p.display_name,
       })),
       partners,
     };
@@ -1294,6 +1308,9 @@ export const addInvite = createServerFn({ method: "POST" })
       organizationId: z.string().optional(),
       kindKey: z.string().optional(),
       partySize: z.number().optional(),
+      comingToMass: z.boolean().optional(),
+      comingToDinner: z.boolean().optional(),
+      comingToLecture: z.boolean().optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -1313,10 +1330,14 @@ export const addInvite = createServerFn({ method: "POST" })
       const kind = data.kindKey || "guest";
       try {
         await sql`
-          insert into participations (id, chapter_id, event_id, party_type, person_id, organization_id, kind_key, guest_status, party_size, source, dietary_for_this_event)
+          insert into participations (
+            id, chapter_id, event_id, party_type, person_id, organization_id, kind_key, guest_status, party_size, source,
+            dietary_for_this_event, coming_to_mass, coming_to_dinner, coming_to_lecture
+          )
           values (
             ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${data.personId}, ${data.organizationId ?? null},
-            ${kind}, ${"no_response"}, ${data.partySize ?? 1}, ${"invite"}, ${blocked[0]?.dietary ?? null}
+            ${kind}, ${"attending"}, ${data.partySize ?? 1}, ${"invite"}, ${blocked[0]?.dietary ?? null},
+            ${data.comingToMass ?? true}, ${data.comingToDinner ?? false}, ${data.comingToLecture ?? false}
           )
         `;
       } catch (err) {
@@ -1337,6 +1358,49 @@ export const addInvite = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const addNamedGuest = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      eventId: z.string(),
+      guestName: z.string().min(1),
+      comingToMass: z.boolean().optional(),
+      comingToDinner: z.boolean().optional(),
+      comingToLecture: z.boolean().optional(),
+      dietary: z.string().optional(),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    const name = data.guestName.trim();
+    if (!name) throw new Error("Enter a name.");
+    await sql`
+      insert into participations (
+        id, chapter_id, event_id, party_type, kind_key, guest_status, party_size, source,
+        guest_name, dietary_for_this_event, coming_to_mass, coming_to_dinner, coming_to_lecture
+      )
+      values (
+        ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${"guest"}, ${"attending"}, ${1}, ${"invite"},
+        ${name}, ${data.dietary?.trim() || null},
+        ${data.comingToMass ?? true}, ${data.comingToDinner ?? false}, ${data.comingToLecture ?? false}
+      )
+    `;
+    return { ok: true };
+  });
+
+export const removeParticipation = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ id: z.string() }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    await sql`delete from participations where id = ${data.id} and chapter_id = ${m.chapterId}`;
+    return { ok: true };
+  });
+
 export const updateParticipation = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -1346,6 +1410,9 @@ export const updateParticipation = createServerFn({ method: "POST" })
       publicityStatus: z.string().optional(),
       partySize: z.number().optional(),
       dietaryForThisEvent: z.string().optional(),
+      comingToMass: z.boolean().optional(),
+      comingToDinner: z.boolean().optional(),
+      comingToLecture: z.boolean().optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -1358,6 +1425,9 @@ export const updateParticipation = createServerFn({ method: "POST" })
         publicity_status = coalesce(${data.publicityStatus ?? null}, publicity_status),
         party_size = coalesce(${data.partySize ?? null}, party_size),
         dietary_for_this_event = coalesce(${data.dietaryForThisEvent ?? null}, dietary_for_this_event),
+        coming_to_mass = coalesce(${data.comingToMass ?? null}, coming_to_mass),
+        coming_to_dinner = coalesce(${data.comingToDinner ?? null}, coming_to_dinner),
+        coming_to_lecture = coalesce(${data.comingToLecture ?? null}, coming_to_lecture),
         checked_in_at = case when ${data.guestStatus ?? ""} = 'attended' then now() else checked_in_at end
       where id = ${data.id} and chapter_id = ${m.chapterId}
     `;
