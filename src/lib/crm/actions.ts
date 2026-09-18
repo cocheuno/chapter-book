@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { nid, lowerEmail } from "./ids";
+import { nid, lowerEmail, partySizeInRange } from "./ids";
 import { CONFERENCE_CHECKLIST, GOLD_MASS_CHECKLIST, OCCASIONS, isSingularOffice, roleLabel } from "./constants";
 import { formatWhen, schoolYearStartIso } from "./format";
 import { composedHonorific, LIST_KEYS, type ListKey } from "./lists";
@@ -68,9 +68,9 @@ export const getHome = createServerFn({ method: "GET" })
     let openChecklist = 0;
     if (next) {
       const counts = await sql<{ guest_status: string | null; n: number }>`
-        select guest_status, count(*)::int as n
+        select guest_status, coalesce(sum(party_size), 0)::int as n
         from participations
-        where event_id = ${next.id} and guest_status is not null
+        where event_id = ${next.id} and party_type = 'person' and guest_status is not null
         group by guest_status
       `;
       for (const c of counts) {
@@ -944,8 +944,9 @@ export const getEvent = createServerFn({ method: "GET" })
       select id, title, due_on, status, checklist_key, hat from tasks where event_id = ${id} order by due_on nulls last
     `;
     const counts = await sql<{ guest_status: string | null; n: number }>`
-      select guest_status, count(*)::int as n from participations
-      where event_id = ${id} and guest_status is not null group by guest_status
+      select guest_status, coalesce(sum(party_size), 0)::int as n from participations
+      where event_id = ${id} and party_type = 'person' and guest_status is not null
+      group by guest_status
     `;
     const companion = await sql<{ id: string; title: string }>`
       select e.id, e.title from event_links l
@@ -1298,6 +1299,37 @@ export const listInvites = createServerFn({ method: "GET" })
     };
   });
 
+export const getAttendanceReport = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((eventId: string) => eventId)
+  .handler(async ({ context, data: eventId }) => {
+    const m = await ctx(context.userId);
+    const sql = await getSql();
+    const ev = await sql<{ id: string; title: string; starts_at: string | null; timezone: string | null; venue_name: string | null }>`
+      select e.id, e.title, e.starts_at, e.timezone, o.name as venue_name
+      from events e
+      left join organizations o on o.id = e.venue_organization_id
+      where e.id = ${eventId} and e.chapter_id = ${m.chapterId}
+    `;
+    if (!ev[0]) throw new Error("Event not found");
+    const invites = await listInvites({ data: eventId });
+    const rows = invites.people;
+    const counted = (p: (typeof rows)[number]) =>
+      p.guest_status !== "declined" && p.guest_status !== "no_show";
+    const sum = (pred: (p: (typeof rows)[number]) => boolean) =>
+      rows.filter(pred).reduce((n, p) => n + (p.party_size || 1), 0);
+    return {
+      event: ev[0],
+      rows,
+      totals: {
+        attendees: sum(counted),
+        mass: sum((p) => counted(p) && p.coming_to_mass),
+        dinner: sum((p) => counted(p) && p.coming_to_dinner),
+        lecture: sum((p) => counted(p) && p.coming_to_lecture),
+      },
+    };
+  });
+
 export const addInvite = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -1328,18 +1360,17 @@ export const addInvite = createServerFn({ method: "POST" })
         where event_id = ${data.eventId} and person_id = ${data.personId} and party_type = 'person'
       `;
       if (already[0]) {
+        const size = partySizeInRange(data.partySize);
         await sql`
-          insert into participations (
-            id, chapter_id, event_id, party_type, kind_key, guest_status, party_size, source,
-            guest_name, dietary_for_this_event, coming_to_mass, coming_to_dinner, coming_to_lecture
-          )
-          values (
-            ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${"guest"}, ${"attending"}, ${1}, ${"invite"},
-            ${blocked[0].display_name}, ${blocked[0].dietary ?? null},
-            ${data.comingToMass ?? true}, ${data.comingToDinner ?? false}, ${data.comingToLecture ?? false}
-          )
+          update participations set
+            party_size = ${size},
+            guest_status = 'attending',
+            coming_to_mass = ${data.comingToMass ?? true},
+            coming_to_dinner = ${data.comingToDinner ?? false},
+            coming_to_lecture = ${data.comingToLecture ?? false}
+          where id = ${already[0].id} and chapter_id = ${m.chapterId}
         `;
-        return { ok: true, extra: true };
+        return { ok: true, updated: true };
       }
       const kind = data.kindKey || "guest";
       try {
@@ -1350,7 +1381,7 @@ export const addInvite = createServerFn({ method: "POST" })
           )
           values (
             ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${data.personId}, ${data.organizationId ?? null},
-            ${kind}, ${"attending"}, ${data.partySize ?? 1}, ${"invite"}, ${blocked[0]?.dietary ?? null},
+            ${kind}, ${"attending"}, ${partySizeInRange(data.partySize)}, ${"invite"}, ${blocked[0]?.dietary ?? null},
             ${data.comingToMass ?? true}, ${data.comingToDinner ?? false}, ${data.comingToLecture ?? false}
           )
         `;
@@ -1381,6 +1412,7 @@ export const addNamedGuest = createServerFn({ method: "POST" })
       comingToMass: z.boolean().optional(),
       comingToDinner: z.boolean().optional(),
       comingToLecture: z.boolean().optional(),
+      partySize: z.number().optional(),
       dietary: z.string().optional(),
     }).parse,
   )
@@ -1396,7 +1428,7 @@ export const addNamedGuest = createServerFn({ method: "POST" })
         guest_name, dietary_for_this_event, coming_to_mass, coming_to_dinner, coming_to_lecture
       )
       values (
-        ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${"guest"}, ${"attending"}, ${1}, ${"invite"},
+        ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${"guest"}, ${"attending"}, ${partySizeInRange(data.partySize)}, ${"invite"},
         ${name}, ${data.dietary?.trim() || null},
         ${data.comingToMass ?? true}, ${data.comingToDinner ?? false}, ${data.comingToLecture ?? false}
       )
@@ -1437,7 +1469,7 @@ export const updateParticipation = createServerFn({ method: "POST" })
       update participations set
         guest_status = coalesce(${data.guestStatus ?? null}, guest_status),
         publicity_status = coalesce(${data.publicityStatus ?? null}, publicity_status),
-        party_size = coalesce(${data.partySize ?? null}, party_size),
+        party_size = coalesce(${data.partySize !== undefined ? partySizeInRange(data.partySize) : null}, party_size),
         dietary_for_this_event = coalesce(${data.dietaryForThisEvent ?? null}, dietary_for_this_event),
         coming_to_mass = coalesce(${data.comingToMass ?? null}, coming_to_mass),
         coming_to_dinner = coalesce(${data.comingToDinner ?? null}, coming_to_dinner),

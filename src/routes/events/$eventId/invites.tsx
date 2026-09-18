@@ -66,12 +66,46 @@ function InvitesPage() {
   );
 }
 
+const PARTY_SIZES = Array.from({ length: 100 }, (_, i) => i + 1);
+
+function PartySizeSelect({
+  value,
+  onChange,
+  label,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  label?: string;
+}) {
+  return (
+    <Select value={String(value)} onChange={(e) => onChange(Number(e.target.value))} aria-label={label ?? "Number attending"}>
+      {PARTY_SIZES.map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+function countedSize(rows: { party_size: number; guest_status: string | null; coming_to_mass: boolean; coming_to_dinner: boolean; coming_to_lecture: boolean }[]) {
+  const active = (p: (typeof rows)[number]) => p.guest_status !== "declined" && p.guest_status !== "no_show";
+  const sum = (pred: (p: (typeof rows)[number]) => boolean) => rows.filter(pred).reduce((n, p) => n + (p.party_size || 1), 0);
+  return {
+    attendees: sum(active),
+    mass: sum((p) => active(p) && p.coming_to_mass),
+    dinner: sum((p) => active(p) && p.coming_to_dinner),
+    lecture: sum((p) => active(p) && p.coming_to_lecture),
+  };
+}
+
 function InvitesInner() {
   const { eventId } = Route.useParams();
   const [data, setData] = useState<Awaited<ReturnType<typeof listInvites>> | null>(null);
   const [tab, setTab] = useState<"people" | "partners">("people");
   const [pick, setPick] = useState("");
   const [guestName, setGuestName] = useState("");
+  const [partySize, setPartySize] = useState(1);
   const [mass, setMass] = useState(true);
   const [dinner, setDinner] = useState(false);
   const [lecture, setLecture] = useState(false);
@@ -86,20 +120,23 @@ function InvitesInner() {
   useEffect(load, [eventId]);
   if (!data) return <p className="text-muted">Loading…</p>;
 
-  const massN = data.people.filter((p) => p.coming_to_mass && p.guest_status !== "declined").length;
-  const dinnerN = data.people.filter((p) => p.coming_to_dinner && p.guest_status !== "declined").length;
-  const lectureN = data.people.filter((p) => p.coming_to_lecture && p.guest_status !== "declined").length;
+  const totals = countedSize(data.people);
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
-          Back to workspace
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
+            Back to workspace
+          </Link>
+          <h1 className="font-display text-3xl">Invites</h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            {totals.attendees} attending · Mass {totals.mass} · Dinner {totals.dinner} · Lecture {totals.lecture}
+          </p>
+        </div>
+        <Link to="/events/$eventId/report" params={{ eventId }}>
+          <Button variant="secondary">Report</Button>
         </Link>
-        <h1 className="font-display text-3xl">Invites</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          Mass {massN} · Dinner {dinnerN} · Lecture {lectureN}. The same name may be entered more than once.
-        </p>
       </div>
       <div className="flex gap-2">
         {(["people", "partners"] as const).map((t) => (
@@ -131,6 +168,7 @@ function InvitesInner() {
                   comingToMass: mass,
                   comingToDinner: dinner,
                   comingToLecture: lecture,
+                  partySize,
                 },
               });
               toast.success("Name added");
@@ -142,9 +180,7 @@ function InvitesInner() {
           }}
         >
           <p className="text-sm font-medium">Add a name</p>
-          <p className="text-sm text-ink-soft">
-            Use this for people who registered, including extra guests. You may add the same name again.
-          </p>
+          <p className="text-sm text-ink-soft">Type a name, or pick someone from People. Set how many are attending (1–100).</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               value={guestName}
@@ -152,6 +188,7 @@ function InvitesInner() {
               placeholder="Name as registered"
               required
             />
+            <PartySizeSelect value={partySize} onChange={setPartySize} />
             <Button type="submit">Add name</Button>
           </div>
           <AttendanceBoxes
@@ -181,6 +218,7 @@ function InvitesInner() {
                   comingToMass: mass,
                   comingToDinner: dinner,
                   comingToLecture: lecture,
+                  partySize,
                 },
               });
             }
@@ -193,6 +231,7 @@ function InvitesInner() {
           }
         }}
       >
+        {tab === "people" && <PartySizeSelect value={partySize} onChange={setPartySize} />}
         <Select value={pick} onChange={(e) => setPick(e.target.value)} required>
           <option value="">{tab === "people" ? "Or add from People…" : "Add from list…"}</option>
           {tab === "people" &&
@@ -224,6 +263,14 @@ function InvitesInner() {
                     {p.person_id ? "In People" : "Named guest"}
                     {p.org_name ? ` · ${p.org_name}` : ""}
                   </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-ink-soft">No.</span>
+                  <PartySizeSelect
+                    value={p.party_size || 1}
+                    onChange={(n) => updateParticipation({ data: { id: p.id, partySize: n } }).then(load)}
+                    label={`Number attending for ${p.display_name}`}
+                  />
                 </div>
                 <button
                   type="button"

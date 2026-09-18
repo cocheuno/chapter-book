@@ -29,6 +29,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as EventsEventIdIndexRouteImport } from './routes/events/$eventId/index'
 import { Route as EventsEventIdCheckInRouteImport } from './routes/events/$eventId/check-in'
 import { Route as EventsEventIdInvitesRouteImport } from './routes/events/$eventId/invites'
+import { Route as EventsEventIdReportRouteImport } from './routes/events/$eventId/report'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -130,6 +131,11 @@ const EventsEventIdInvitesRoute = EventsEventIdInvitesRouteImport.update({
   path: '/events/$eventId/invites',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EventsEventIdReportRoute = EventsEventIdReportRouteImport.update({
+  id: '/events/$eventId/report',
+  path: '/events/$eventId/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
+  '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
+  '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/events/$eventId': typeof EventsEventIdIndexRoute
 }
 export interface FileRoutesById {
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
+  '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
+    | '/events/$eventId/report'
     | '/events/$eventId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -242,6 +252,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
+    | '/events/$eventId/report'
     | '/events/$eventId'
   id:
     | '__root__'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
+    | '/events/$eventId/report'
     | '/events/$eventId/'
   fileRoutesById: FileRoutesById
 }
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   EventsEventIdCheckInRoute: typeof EventsEventIdCheckInRoute
   EventsEventIdInvitesRoute: typeof EventsEventIdInvitesRoute
+  EventsEventIdReportRoute: typeof EventsEventIdReportRoute
   EventsEventIdIndexRoute: typeof EventsEventIdIndexRoute
 }
 
@@ -432,6 +445,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsEventIdInvitesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/events/$eventId/report': {
+      id: '/events/$eventId/report'
+      path: '/events/$eventId/report'
+      fullPath: '/events/$eventId/report'
+      preLoaderRoute: typeof EventsEventIdReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -455,6 +475,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   EventsEventIdCheckInRoute: EventsEventIdCheckInRoute,
   EventsEventIdInvitesRoute: EventsEventIdInvitesRoute,
+  EventsEventIdReportRoute: EventsEventIdReportRoute,
   EventsEventIdIndexRoute: EventsEventIdIndexRoute,
 }
 export const routeTree = rootRouteImport
