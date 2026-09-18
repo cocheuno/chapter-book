@@ -657,8 +657,13 @@ export const createOrganization = createServerFn({ method: "POST" })
       state: z.string().optional(),
       country: z.string().optional(),
       parentId: z.string().optional(),
+      street: z.string().optional(),
+      street2: z.string().optional(),
+      postalCode: z.string().optional(),
+      website: z.string().optional(),
       mainEmail: z.string().optional(),
       mainPhone: z.string().optional(),
+      people: z.array(z.object({ personId: z.string(), roleKey: z.string() })).optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -683,13 +688,15 @@ export const createOrganization = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into organizations (
-          id, chapter_id, name, type_key, parent_id, city, state, country,
-          main_email, main_phone, is_venue, is_invitation_partner, preferred_door
+          id, chapter_id, name, type_key, parent_id, street, street2, city, state, postal_code, country,
+          website, main_email, main_phone, is_venue, is_invitation_partner, preferred_door
         )
         values (
           ${id}, ${m.chapterId}, ${data.name.trim()}, ${data.typeKey}, ${data.parentId ?? null},
-          ${data.city || null}, ${data.state || null}, ${data.country || "United States"},
-          ${lowerEmail(data.mainEmail)}, ${data.mainPhone || null},
+          ${data.street?.trim() || null}, ${data.street2?.trim() || null},
+          ${data.city || null}, ${data.state || null}, ${data.postalCode?.trim() || null},
+          ${data.country || "United States"},
+          ${data.website?.trim() || null}, ${lowerEmail(data.mainEmail)}, ${data.mainPhone || null},
           ${data.typeKey !== "diocese" && data.typeKey !== "high_school"}, ${true},
           ${schoolish ? "science_chair" : null}
         )
@@ -701,6 +708,26 @@ export const createOrganization = createServerFn({ method: "POST" })
         );
       }
       throw err;
+    }
+    const seen = new Set<string>();
+    for (const p of data.people ?? []) {
+      if (!p.personId || seen.has(p.personId)) continue;
+      seen.add(p.personId);
+      const exists = await sql<{ id: string }>`
+        select id from persons where id = ${p.personId} and chapter_id = ${m.chapterId}
+      `;
+      if (!exists[0]) continue;
+      try {
+        await sql`
+          insert into affiliations (id, chapter_id, person_id, target_type, organization_id, role_key, is_primary)
+          values (
+            ${nid()}, ${m.chapterId}, ${p.personId}, ${"organization"},
+            ${id}, ${p.roleKey || "other"}, ${false}
+          )
+        `;
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+      }
     }
     return { id };
   });
@@ -714,6 +741,10 @@ export const updateOrganization = createServerFn({ method: "POST" })
       city: z.string().optional(),
       state: z.string().optional(),
       country: z.string().optional(),
+      street: z.string().optional(),
+      street2: z.string().optional(),
+      postalCode: z.string().optional(),
+      website: z.string().optional(),
       mainEmail: z.string().optional(),
       mainPhone: z.string().optional(),
       capacityChurch: z.number().optional(),
@@ -751,9 +782,13 @@ export const updateOrganization = createServerFn({ method: "POST" })
     await sql`
       update organizations set
         name = ${name},
+        street = ${data.street?.trim() || null},
+        street2 = ${data.street2?.trim() || null},
         city = ${data.city || null},
         state = ${data.state || null},
+        postal_code = ${data.postalCode?.trim() || null},
         country = ${data.country || null},
+        website = ${data.website?.trim() || null},
         main_email = ${lowerEmail(data.mainEmail)},
         main_phone = ${data.mainPhone || null},
         capacity_church = ${data.capacityChurch ?? null},
