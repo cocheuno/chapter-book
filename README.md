@@ -16,7 +16,7 @@ That zip is code and design docs only. It does **not** contain member names, ema
 
 ## In this repository
 
-- **Code** for Chapter Book
+- **Code** for Chapter Book (upload in progress — list screens and public site are in; person/partner/event/website desks and the CRM engine are next)
 - **[Design freeze](docs/DESIGN.md)** — V1 decisions
 - **[Privacy](docs/PRIVACY.md)** — what may be public, and what must never be committed
 
