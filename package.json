@@ -3,6 +3,9 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "overrides": {
     "nf3": "0.3.17"
   },
@@ -17,7 +20,8 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts",
+    "check:privacy": "node scripts/privacy-check.mjs",
+    "test": "node scripts/run-tests.mjs && node scripts/privacy-check.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

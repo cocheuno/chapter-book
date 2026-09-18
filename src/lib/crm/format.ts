@@ -49,6 +49,30 @@ export function toDatetimeLocal(iso: string, tz = DEFAULT_TZ): string {
   return s.slice(0, 16).replace(" ", "T");
 }
 
+/** Most recent 1 August — school-year start used by Home “quiet schools”. */
+export function schoolYearStartIso(now = new Date()): string {
+  const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${y}-08-01`;
+}
+
+/** Next calendar occurrence of month/day (1-indexed month) as datetime-local. */
+export function nextOccasionLocal(
+  month: number,
+  day: number,
+  hour = 17,
+  minute = 30,
+  now = new Date(),
+): string {
+  let y = now.getFullYear();
+  const candidate = new Date(y, month - 1, day, hour, minute);
+  if (candidate.getTime() < now.getTime()) y += 1;
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  const hh = String(hour).padStart(2, "0");
+  const mi = String(minute).padStart(2, "0");
+  return `${y}-${mm}-${dd}T${hh}:${mi}`;
+}
+
 export function fromDatetimeLocal(local: string, tz = DEFAULT_TZ): string {
   if (!local) return "";
   const [date, timeRaw] = local.split("T");

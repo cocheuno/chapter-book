@@ -161,6 +161,13 @@ export const GUEST_STATUSES = [
   "no_show",
 ] as const;
 
+export const ADMISSIONS = [
+  { key: "free", label: "Free" },
+  { key: "private", label: "Private" },
+] as const;
+
+export type Admission = (typeof ADMISSIONS)[number]["key"];
+
 export const GOLD_MASS_CHECKLIST: {
   key: string;
   title: string;

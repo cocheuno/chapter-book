@@ -1,4 +1,4 @@
-import { composedHonorific } from "./lists";
+import { composedHonorific } from "./lists.ts";
 
 export function foldName(value: string): string {
   return value

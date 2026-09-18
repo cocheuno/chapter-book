@@ -1,4 +1,4 @@
-import { barePersonName, foldName } from "./names";
+import { barePersonName, foldName } from "./names.ts";
 
 export { foldName };
 

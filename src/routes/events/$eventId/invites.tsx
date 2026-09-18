@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/field";
+import { Input, Select } from "@/components/ui/field";
 import { addInvite, listInvites, listPeople, listPartners, updateParticipation } from "@/lib/crm/actions";
 import { orgTypeLabel } from "@/lib/crm/constants";
 import { useEffect, useState } from "react";
@@ -105,9 +105,20 @@ function InvitesInner() {
                   {p.kind_key}
                   {p.party_size > 1 ? ` · group of ${p.party_size}` : ""}
                   {p.org_name ? ` · ${p.org_name}` : ""}
-                  {p.dietary || p.person_dietary ? ` · ${p.dietary || p.person_dietary}` : ""}
                 </p>
               </div>
+              <Input
+                className="w-36"
+                defaultValue={p.dietary ?? ""}
+                key={`${p.id}-${p.dietary ?? ""}`}
+                placeholder={p.person_dietary ? `Dietary (${p.person_dietary})` : "Dietary for this event"}
+                aria-label={`Dietary for ${p.display_name}`}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v === (p.dietary ?? "")) return;
+                  updateParticipation({ data: { id: p.id, dietaryForThisEvent: v } }).then(load);
+                }}
+              />
               <Select
                 value={p.guest_status ?? "no_response"}
                 className="w-40"

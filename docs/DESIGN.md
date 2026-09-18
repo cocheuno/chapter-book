@@ -36,7 +36,7 @@ Commercial CRMs were too large. This book is meant to stay small and to grow one
 
 See `migrations/`. Ids are text UUIDs from the app. Chapter rows are scoped by `chapter_id` from `chapter_members` for the signed-in user.
 
-Public site tables: `site_settings`, `site_items` (`event` | `article` | `document` | `course`). Operational events (RSVPs, celebrant, hall) stay on `events`.
+Public site tables: `site_settings`, `site_items` (`event` | `article` | `document` | `course`). Operational events (RSVPs, celebrant, hall, `admission` private|free) stay on `events`. Per-event dietary lives on `participations.dietary_for_this_event`.
 
 ## What is not V1
 

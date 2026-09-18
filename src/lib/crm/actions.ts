@@ -4,7 +4,7 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, lowerEmail } from "./ids";
 import { CONFERENCE_CHECKLIST, GOLD_MASS_CHECKLIST, OCCASIONS, isSingularOffice, roleLabel } from "./constants";
-import { formatWhen } from "./format";
+import { formatWhen, schoolYearStartIso } from "./format";
 import { composedHonorific, LIST_KEYS, type ListKey } from "./lists";
 import { foldName } from "./match";
 import { composePersonName, listedName, splitMiddle, splitWalkupName } from "./names";
@@ -111,7 +111,7 @@ export const getHome = createServerFn({ method: "GET" })
       from organizations o
       where o.chapter_id = ${m.chapterId} and o.status = 'active'
         and o.type_key in ('high_school', 'university')
-        and (o.last_touch_at is null or o.last_touch_at < timestamptz '2026-08-01')
+        and (o.last_touch_at is null or o.last_touch_at < ${schoolYearStartIso()}::date)
       order by o.name
       limit 5
     `;
@@ -826,10 +826,11 @@ export const listEvents = createServerFn({ method: "GET" })
       title: string;
       type_key: string;
       status: string;
+      admission: string;
       starts_at: string | null;
       venue_name: string | null;
     }>`
-      select e.id, e.title, e.type_key, e.status, e.starts_at, o.name as venue_name
+      select e.id, e.title, e.type_key, e.status, e.admission, e.starts_at, o.name as venue_name
       from events e
       left join organizations o on o.id = e.venue_organization_id
       where e.chapter_id = ${m.chapterId}
@@ -906,6 +907,7 @@ export const createEvent = createServerFn({ method: "POST" })
       hostParishId: z.string().optional(),
       theme: z.string().optional(),
       companionEventId: z.string().optional(),
+      admission: z.enum(["private", "free"]).optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -926,9 +928,9 @@ export const createEvent = createServerFn({ method: "POST" })
     }
     try {
       await sql`
-        insert into events (id, chapter_id, type_key, title, status, starts_at, timezone, venue_organization_id, venue_detail)
+        insert into events (id, chapter_id, type_key, title, status, admission, starts_at, timezone, venue_organization_id, venue_detail)
         values (
-          ${id}, ${m.chapterId}, ${data.typeKey}, ${title}, ${"planning"},
+          ${id}, ${m.chapterId}, ${data.typeKey}, ${title}, ${"planning"}, ${data.admission ?? "free"},
           ${data.startsAt || null}, ${m.timezone}, ${venue}, ${data.venueDetail || null}
         )
       `;
@@ -978,6 +980,7 @@ export const updateEvent = createServerFn({ method: "POST" })
       homilistId: z.string().nullable().optional(),
       intendedAudience: z.string().optional(),
       theme: z.string().optional(),
+      admission: z.enum(["private", "free"]).optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -1004,6 +1007,7 @@ export const updateEvent = createServerFn({ method: "POST" })
       update events set
         title = coalesce(${data.title ?? null}, title),
         status = coalesce(${data.status ?? null}, status),
+        admission = coalesce(${data.admission ?? null}, admission),
         starts_at = coalesce(${data.startsAt ?? null}, starts_at),
         venue_organization_id = ${data.venueOrganizationId === undefined ? cur[0].venue_organization_id : data.venueOrganizationId},
         venue_detail = coalesce(${data.venueDetail ?? null}, venue_detail),
@@ -1090,8 +1094,16 @@ export const cloneEvent = createServerFn({ method: "POST" })
     const src = ev[0];
     const id = nid();
     let title = src.title ?? "Gathering";
-    title = title.replace(/20\d{2}/, String(new Date().getFullYear() + (new Date().getMonth() > 10 ? 1 : 0) || 2027));
-    if (!/20\d{2}/.test(title)) title = `${title}, 2027`;
+    let starts: string | null = src.starts_at;
+    let year = new Date().getFullYear() + 1;
+    if (starts) {
+      const d = new Date(starts);
+      d.setFullYear(d.getFullYear() + 1);
+      year = d.getFullYear();
+      starts = d.toISOString();
+    }
+    title = title.replace(/20\d{2}/, String(year));
+    if (!/20\d{2}/.test(title)) title = `${title}, ${year}`;
     const clash = await sql<{ id: string }>`
       select id from events
       where chapter_id = ${m.chapterId} and lower(title) = ${foldName(title)} and status <> 'cancelled'
@@ -1099,16 +1111,10 @@ export const cloneEvent = createServerFn({ method: "POST" })
     if (clash[0]) {
       title = `${title} (copy)`;
     }
-    let starts: string | null = src.starts_at;
-    if (starts) {
-      const d = new Date(starts);
-      d.setFullYear(d.getFullYear() + 1);
-      starts = d.toISOString();
-    }
     await sql`
-      insert into events (id, chapter_id, type_key, title, status, starts_at, timezone, venue_organization_id, venue_detail, celebrant_id, cloned_from_id)
+      insert into events (id, chapter_id, type_key, title, status, admission, starts_at, timezone, venue_organization_id, venue_detail, celebrant_id, cloned_from_id)
       values (
-        ${id}, ${m.chapterId}, ${src.type_key}, ${title}, ${"idea"}, ${starts}, ${src.timezone},
+        ${id}, ${m.chapterId}, ${src.type_key}, ${title}, ${"idea"}, ${src.admission === "private" ? "private" : "free"}, ${starts}, ${src.timezone},
         ${src.venue_organization_id}, ${src.venue_detail}, ${src.celebrant_id}, ${data.eventId}
       )
     `;
@@ -1278,6 +1284,7 @@ export const updateParticipation = createServerFn({ method: "POST" })
       guestStatus: z.string().optional(),
       publicityStatus: z.string().optional(),
       partySize: z.number().optional(),
+      dietaryForThisEvent: z.string().optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -1289,6 +1296,7 @@ export const updateParticipation = createServerFn({ method: "POST" })
         guest_status = coalesce(${data.guestStatus ?? null}, guest_status),
         publicity_status = coalesce(${data.publicityStatus ?? null}, publicity_status),
         party_size = coalesce(${data.partySize ?? null}, party_size),
+        dietary_for_this_event = coalesce(${data.dietaryForThisEvent ?? null}, dietary_for_this_event),
         checked_in_at = case when ${data.guestStatus ?? ""} = 'attended' then now() else checked_in_at end
       where id = ${data.id} and chapter_id = ${m.chapterId}
     `;

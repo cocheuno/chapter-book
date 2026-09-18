@@ -3,9 +3,9 @@ import { DuplicateHint } from "@/components/duplicate-hint";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
-import { OCCASIONS } from "@/lib/crm/constants";
+import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
 import { createEvent, listEvents, listParishes } from "@/lib/crm/actions";
-import { fromDatetimeLocal } from "@/lib/crm/format";
+import { fromDatetimeLocal, nextOccasionLocal } from "@/lib/crm/format";
 import { matchEventTitle } from "@/lib/crm/match";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -24,8 +24,13 @@ function NewEventInner() {
   const nav = useNavigate();
   const [typeKey, setTypeKey] = useState<"gold_mass" | "conference">("gold_mass");
   const [occasion, setOccasion] = useState("st_albert");
-  const [title, setTitle] = useState("Gold Mass of St. Albert the Great, 2026");
-  const [startsAt, setStartsAt] = useState("2026-11-15T17:30");
+  const [title, setTitle] = useState(() => {
+    const o = OCCASIONS.find((x) => x.key === "st_albert");
+    const local = o?.month && o.day ? nextOccasionLocal(o.month, o.day) : nextOccasionLocal(11, 15);
+    return `Gold Mass of St. Albert the Great, ${local.slice(0, 4)}`;
+  });
+  const [startsAt, setStartsAt] = useState(() => nextOccasionLocal(11, 15));
+  const [admission, setAdmission] = useState<"free" | "private">("free");
   const [hostId, setHostId] = useState("");
   const [theme, setTheme] = useState("");
   const [companion, setCompanion] = useState("");
@@ -38,11 +43,12 @@ function NewEventInner() {
   }, []);
 
   useEffect(() => {
-    if (typeKey === "gold_mass") {
-      const o = OCCASIONS.find((x) => x.key === occasion);
-      if (o && o.month) {
-        setTitle(`Gold Mass of ${o.label}, 2026`);
-      }
+    if (typeKey !== "gold_mass") return;
+    const o = OCCASIONS.find((x) => x.key === occasion);
+    if (o?.month && o.day) {
+      const local = nextOccasionLocal(o.month, o.day);
+      setStartsAt(local);
+      setTitle(`Gold Mass of ${o.label}, ${local.slice(0, 4)}`);
     }
   }, [occasion, typeKey]);
 
@@ -69,6 +75,7 @@ function NewEventInner() {
               theme: typeKey === "conference" ? theme : undefined,
               companionEventId: companion || undefined,
               venueDetail: typeKey === "gold_mass" ? "Main church" : undefined,
+              admission,
             },
           });
           await nav({ to: "/events/$eventId", params: { eventId: r.id } });
@@ -105,6 +112,15 @@ function NewEventInner() {
       )}
       <Field label="Starts">
         <Input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+      </Field>
+      <Field label="Admission">
+        <Select value={admission} onChange={(e) => setAdmission(e.target.value as "free" | "private")}>
+          {ADMISSIONS.map((a) => (
+            <option key={a.key} value={a.key}>
+              {a.label}
+            </option>
+          ))}
+        </Select>
       </Field>
       <Field label={typeKey === "gold_mass" ? "Host parish" : "Venue"}>
         <Select value={hostId} onChange={(e) => setHostId(e.target.value)}>

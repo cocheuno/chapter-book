@@ -3,7 +3,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { OCCASIONS } from "@/lib/crm/constants";
+import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
 import { formatWhen, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
   addProgramPiece,
@@ -60,6 +60,9 @@ function EventInner() {
           <div className="flex flex-wrap gap-2">
             <Badge tone="bronze">{isGold ? "Gold Mass" : "Conference"}</Badge>
             <Badge>{e.status}</Badge>
+            <Badge tone={e.admission === "private" ? "warn" : "ok"}>
+              {e.admission === "private" ? "Private" : "Free"}
+            </Badge>
           </div>
           <h1 className="mt-2 font-display text-3xl">{e.title}</h1>
           <p className="text-ink-soft">
@@ -109,6 +112,25 @@ function EventInner() {
               {["idea", "planning", "confirmed", "complete", "cancelled"].map((s) => (
                 <option key={s} value={s}>
                   {s}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Admission">
+            <Select
+              value={e.admission ?? "free"}
+              onChange={async (ev) => {
+                try {
+                  await updateEvent({ data: { id: eventId, admission: ev.target.value as "free" | "private" } });
+                  load();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not update");
+                }
+              }}
+            >
+              {ADMISSIONS.map((a) => (
+                <option key={a.key} value={a.key}>
+                  {a.label}
                 </option>
               ))}
             </Select>

@@ -49,6 +49,9 @@ function EventsInner() {
                   {e.type_key === "gold_mass" ? "Gold Mass" : "Conference"}
                 </Badge>
                 <Badge>{e.status}</Badge>
+                <Badge tone={e.admission === "private" ? "warn" : "ok"}>
+                  {e.admission === "private" ? "Private" : "Free"}
+                </Badge>
               </div>
               <p className="text-sm text-muted">
                 {e.starts_at ? formatWhen(e.starts_at, "date") : "Date TBA"}

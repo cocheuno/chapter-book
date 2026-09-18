@@ -1,4 +1,4 @@
-import { nid } from "./ids";
+import { nid } from "./ids.ts";
 
 export const LIST_KEYS = [
   { key: "religious_title", label: "Religious titles" },
