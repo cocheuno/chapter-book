@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ListSelect } from "@/components/list-select";
-import { ORG_AFFIL_ROLES, roleLabel } from "@/lib/crm/constants";
-import { addAffiliation, getPerson, listPartners, logTouch, updatePerson } from "@/lib/crm/actions";
+import { PersonPartnersFields } from "@/components/person-partners-fields";
+import { roleLabel } from "@/lib/crm/constants";
+import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, updatePerson } from "@/lib/crm/actions";
 import { listedName } from "@/lib/crm/names";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -26,8 +27,6 @@ function PersonInner() {
   const [data, setData] = useState<Awaited<ReturnType<typeof getPerson>> | null>(null);
   const [summary, setSummary] = useState("");
   const [kind, setKind] = useState("call");
-  const [affTarget, setAffTarget] = useState("");
-  const [affRole, setAffRole] = useState("pastor");
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
   const [name, setName] = useState<PersonNameValue>({
     religiousTitle: "",
@@ -221,56 +220,38 @@ function PersonInner() {
         </form>
       </section>
 
-      <section>
-        <h2 className="mb-2 font-display text-xl">Affiliations</h2>
-        <ul className="mb-3 space-y-1 text-sm">
-          {data.affiliations.map((a) => (
-            <li key={a.id}>
-              {roleLabel(a.role_key)} at{" "}
-              <Link to="/partners/$orgId" params={{ orgId: a.org_id ?? "" }} className="text-bronze underline-offset-2 hover:underline">
-                {a.org_name}
-              </Link>
-            </li>
-          ))}
-        </ul>
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!affTarget) return;
-            try {
-              await addAffiliation({
-                data: { personId, organizationId: affTarget, roleKey: affRole, isPrimary: true },
-              });
-              toast.success("Affiliation added");
-              load();
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Could not add");
-            }
-          }}
-        >
-          <Select value={affTarget} onChange={(e) => setAffTarget(e.target.value)} required>
-            <option value="">Partner…</option>
-            {orgs.map((o) => {
-              const taken = data.affiliations.some((a) => a.org_id === o.id);
-              return (
-                <option key={o.id} value={o.id} disabled={taken}>
-                  {taken ? `${o.name} (already on file)` : o.name}
-                </option>
-              );
-            })}
-          </Select>
-          <Select value={affRole} onChange={(e) => setAffRole(e.target.value)}>
-            {ORG_AFFIL_ROLES.map((r) => (
-              <option key={r.key} value={r.key}>
-                {r.label}
-              </option>
-            ))}
-          </Select>
-          <Button type="submit" variant="secondary">
-            Add
-          </Button>
-        </form>
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h2 className="font-display text-xl">Partners</h2>
+        <div className="mt-3">
+          <PersonPartnersFields
+            partners={orgs}
+            attached={data.affiliations
+              .filter((a) => a.org_id)
+              .map((a) => ({
+                organizationId: a.org_id as string,
+                displayName: a.org_name ?? "Partner",
+                roleKey: a.role_key,
+                affiliationId: a.id,
+              }))}
+            onAdd={async (organizationId, roleKey) => {
+              try {
+                await addAffiliation({ data: { personId, organizationId, roleKey } });
+                load();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not add");
+              }
+            }}
+            onRemove={async (row) => {
+              if (!row.affiliationId) return;
+              try {
+                await removeAffiliation({ data: { id: row.affiliationId } });
+                load();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not remove");
+              }
+            }}
+          />
+        </div>
       </section>
 
       <section>

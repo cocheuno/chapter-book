@@ -289,7 +289,11 @@ export const getPerson = createServerFn({ method: "GET" })
 
 export const createPerson = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator(personInput.parse)
+  .validator(
+    personInput.extend({
+      partners: z.array(z.object({ organizationId: z.string(), roleKey: z.string() })).optional(),
+    }).parse,
+  )
   .handler(async ({ context, data }) => {
     const m = await ctx(context.userId);
     assertEditor(m.role);
@@ -365,6 +369,26 @@ export const createPerson = createServerFn({ method: "POST" })
     }
     for (const r of data.roles) {
       await sql`insert into person_roles (person_id, role_key) values (${id}, ${r})`;
+    }
+    const seenOrg = new Set<string>();
+    for (const p of data.partners ?? []) {
+      if (!p.organizationId || seenOrg.has(p.organizationId)) continue;
+      seenOrg.add(p.organizationId);
+      const org = await sql<{ id: string }>`
+        select id from organizations where id = ${p.organizationId} and chapter_id = ${m.chapterId}
+      `;
+      if (!org[0]) continue;
+      try {
+        await sql`
+          insert into affiliations (id, chapter_id, person_id, target_type, organization_id, role_key, is_primary)
+          values (
+            ${nid()}, ${m.chapterId}, ${id}, ${"organization"},
+            ${p.organizationId}, ${p.roleKey || "other"}, ${false}
+          )
+        `;
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+      }
     }
     return { id, duplicate: false };
   });

@@ -1,11 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { DuplicateHint } from "@/components/duplicate-hint";
 import { Gated } from "@/components/gate";
+import { ListSelect } from "@/components/list-select";
 import { PersonNameFields, type PersonNameValue } from "@/components/person-name-fields";
+import { PersonPartnersFields, type PersonPartnerLink } from "@/components/person-partners-fields";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { PERSON_ROLES, roleLabel } from "@/lib/crm/constants";
-import { createPerson, listPeople } from "@/lib/crm/actions";
+import { createPerson, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPerson } from "@/lib/crm/match";
 import { composePersonName } from "@/lib/crm/names";
 import { useEffect, useMemo, useState } from "react";
@@ -37,11 +39,23 @@ function PeopleInner() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState<PersonNameValue>(emptyName);
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [street, setStreet] = useState("");
+  const [street2, setStreet2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("Wisconsin");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("United States");
+  const [website, setWebsite] = useState("");
   const [newRole, setNewRole] = useState("academic_member");
+  const [partners, setPartners] = useState<Awaited<ReturnType<typeof listPartners>>>([]);
+  const [attached, setAttached] = useState<PersonPartnerLink[]>([]);
 
   function load() {
     listPeople({ data: role }).then(setRows).catch(() => setRows([]));
     listPeople({ data: undefined }).then(setAllPeople).catch(() => setAllPeople([]));
+    listPartners({ data: undefined }).then(setPartners).catch(() => setPartners([]));
   }
   useEffect(load, [role]);
 
@@ -69,9 +83,19 @@ function PeopleInner() {
           middleName: name.middleName,
           suffix: name.suffix,
           email,
+          phone,
+          mobile,
+          street,
+          street2,
+          city,
+          state,
+          postalCode,
+          country,
+          website,
           roles: [newRole],
           religiousTitle: name.religiousTitle,
           academicTitle: name.academicTitle,
+          partners: attached.map((a) => ({ organizationId: a.organizationId, roleKey: a.roleKey })),
         },
       });
       if (r.duplicate) {
@@ -83,10 +107,7 @@ function PeopleInner() {
         return;
       }
       toast.success("Person added");
-      setName(emptyName);
-      setEmail("");
-      setOpen(false);
-      load();
+      window.location.href = `/people/${r.id}`;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not add");
     }
@@ -105,7 +126,34 @@ function PeopleInner() {
         <form onSubmit={add} className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2">
           <PersonNameFields value={name} onChange={setName} />
           <Field label="Email">
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          </Field>
+          <Field label="Phone">
+            <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
+          </Field>
+          <Field label="Mobile">
+            <Input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} autoComplete="tel" />
+          </Field>
+          <Field label="Street">
+            <Input value={street} onChange={(e) => setStreet(e.target.value)} autoComplete="street-address" />
+          </Field>
+          <Field label="Apt / suite">
+            <Input value={street2} onChange={(e) => setStreet2(e.target.value)} />
+          </Field>
+          <Field label="City">
+            <Input value={city} onChange={(e) => setCity(e.target.value)} />
+          </Field>
+          <Field label="State">
+            <ListSelect listKey="state" value={state} onChange={setState} />
+          </Field>
+          <Field label="Postal code">
+            <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />
+          </Field>
+          <Field label="Country">
+            <ListSelect listKey="country" value={country} onChange={setCountry} allowEmpty={false} />
+          </Field>
+          <Field label="Website">
+            <Input value={website} onChange={(e) => setWebsite(e.target.value)} />
           </Field>
           <Field label="Role">
             <Select value={newRole} onChange={(e) => setNewRole(e.target.value)}>
@@ -116,6 +164,16 @@ function PeopleInner() {
               ))}
             </Select>
           </Field>
+          <PersonPartnersFields
+            partners={partners}
+            attached={attached}
+            onAdd={(organizationId, roleKey) => {
+              const p = partners.find((x) => x.id === organizationId);
+              if (!p) return;
+              setAttached((cur) => [...cur, { organizationId, displayName: p.name, roleKey }]);
+            }}
+            onRemove={(row) => setAttached((cur) => cur.filter((a) => a.organizationId !== row.organizationId))}
+          />
           {hit.hard && (
             <div className="sm:col-span-2">
               <DuplicateHint href={`/people/${hit.hard.id}`}>
