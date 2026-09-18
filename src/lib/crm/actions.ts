@@ -1318,15 +1318,29 @@ export const addInvite = createServerFn({ method: "POST" })
     assertEditor(m.role);
     const sql = await getSql();
     if (data.personId) {
-      const blocked = await sql<{ status: string; dietary: string | null }>`
-        select status, dietary from persons where id = ${data.personId} and chapter_id = ${m.chapterId}
+      const blocked = await sql<{ status: string; dietary: string | null; display_name: string }>`
+        select status, dietary, display_name from persons where id = ${data.personId} and chapter_id = ${m.chapterId}
       `;
-      if (blocked[0]?.status === "do_not_contact") throw new Error("This person is marked do not contact.");
+      if (!blocked[0]) throw new Error("Person not found.");
+      if (blocked[0].status === "do_not_contact") throw new Error("This person is marked do not contact.");
       const already = await sql<{ id: string }>`
         select id from participations
         where event_id = ${data.eventId} and person_id = ${data.personId} and party_type = 'person'
       `;
-      if (already[0]) throw new Error("That person is already on the invite list.");
+      if (already[0]) {
+        await sql`
+          insert into participations (
+            id, chapter_id, event_id, party_type, kind_key, guest_status, party_size, source,
+            guest_name, dietary_for_this_event, coming_to_mass, coming_to_dinner, coming_to_lecture
+          )
+          values (
+            ${nid()}, ${m.chapterId}, ${data.eventId}, ${"person"}, ${"guest"}, ${"attending"}, ${1}, ${"invite"},
+            ${blocked[0].display_name}, ${blocked[0].dietary ?? null},
+            ${data.comingToMass ?? true}, ${data.comingToDinner ?? false}, ${data.comingToLecture ?? false}
+          )
+        `;
+        return { ok: true, extra: true };
+      }
       const kind = data.kindKey || "guest";
       try {
         await sql`

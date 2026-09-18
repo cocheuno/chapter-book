@@ -196,14 +196,11 @@ function InvitesInner() {
         <Select value={pick} onChange={(e) => setPick(e.target.value)} required>
           <option value="">{tab === "people" ? "Or add from People…" : "Add from list…"}</option>
           {tab === "people" &&
-            people.map((p) => {
-              const invited = data.people.some((row) => row.person_id === p.id);
-              return (
-                <option key={p.id} value={p.id} disabled={invited}>
-                  {invited ? `${p.display_name} (already invited)` : p.display_name}
-                </option>
-              );
-            })}
+            people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.display_name}
+              </option>
+            ))}
           {tab === "partners" &&
             orgs.map((o) => {
               const invited = data.partners.some((row) => row.organization_id === o.id);
