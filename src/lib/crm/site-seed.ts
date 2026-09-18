@@ -38,7 +38,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
     whenLabel: "Tuesday, November 10, 2026 · 6:00 p.m.",
     location: "St. John the Evangelist Parish, 8500 W. Cold Spring Road, Greenfield, WI",
     summary:
-      "A Mass for Catholic scientific professionals, celebrated by Most Rev. James T. Schuerman, Auxiliary Bishop of Milwaukee. Followed by dinner and a presentation by Dr. Daniel Kuebler on \u201cHuman Origins: Creation in Light of Evolution\u201d.",
+      "A Mass for Catholic scientific professionals, celebrated by Most Rev. James T. Schuerman, Auxiliary Bishop of Milwaukee. Followed by dinner and a presentation by Dr. Daniel Kuebler on “Human Origins: Creation in Light of Evolution”.",
     featured: true,
     sort: 0,
   },
@@ -49,7 +49,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
     whenLabel: "Saturday, November 21, 2026 · 11:00 a.m.",
     location: "Holy Redeemer Catholic Church, 126 West Johnson Street, Madison, Wisconsin",
     summary:
-      "Followed by luncheon featuring Del\u2019s famous pork ribs. Lecture details TBA. Register before midnight, Tuesday, November 17, 2026.",
+      "Followed by luncheon featuring Del’s famous pork ribs. Lecture details TBA. Register before midnight, Tuesday, November 17, 2026.",
     featured: true,
     sort: 1,
   },
@@ -64,7 +64,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
   {
     kind: "article",
     title: "Algorithms and Faith: The Meaning, Power, and Causality of Algorithms in Catholic Online Discourse",
-    subtitle: "Sierocki, R. (2024) \u00b7 Religions",
+    subtitle: "Sierocki, R. (2024) · Religions",
     summary:
       "Algorithms are perceived as ideological machines in Catholic online discourse, influencing the individualization of religion — with God as creator and the soul as the algorithm.",
     url: "https://doi.org/10.3390/rel15040431",
@@ -73,16 +73,16 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
   {
     kind: "article",
     title: "Transhumanism and Catholic Social Teaching",
-    subtitle: "Jenkins, G. (2025) \u00b7 Religions",
+    subtitle: "Jenkins, G. (2025) · Religions",
     summary:
-      "Transhumanism\u2019s technological advancement of the human must be evaluated against Catholic Social Teaching. Technology is subordinate to human dignity and the common good.",
+      "Transhumanism’s technological advancement of the human must be evaluated against Catholic Social Teaching. Technology is subordinate to human dignity and the common good.",
     url: "https://doi.org/10.3390/rel16080971",
     sort: 1,
   },
   {
     kind: "article",
     title: "In Defense of Catholic AI",
-    subtitle: "Sanders, M. (2025) \u00b7 Journal of Ethics and Emerging Technologies",
+    subtitle: "Sanders, M. (2025) · Journal of Ethics and Emerging Technologies",
     summary:
       "Catholic AI projects such as Magisterium AI are necessary evangelical tools in a digital and secular world; abandoning them risks losing mission fields to relativist technologies.",
     url: "https://doi.org/10.55613/jeet.v35i1.201",
@@ -91,7 +91,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
   {
     kind: "document",
     title: "Magnifica Humanitas",
-    subtitle: "Encyclical \u00b7 May 25, 2026",
+    subtitle: "Encyclical · May 25, 2026",
     summary: "On safeguarding the human person in the time of artificial intelligence. First encyclical of Pope Leo XIV.",
     url: "https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/20260515-magnifica-humanitas.html",
     sort: 0,
@@ -99,7 +99,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
   {
     kind: "document",
     title: "Antiqua et Nova",
-    subtitle: "Doctrinal Note \u00b7 January 28, 2025",
+    subtitle: "Doctrinal Note · January 28, 2025",
     summary: "Note on the relationship between artificial intelligence and human intelligence, Dicastery for the Doctrine of the Faith.",
     url: "https://www.vatican.va/roman_curia/congregations/cfaith/documents/rc_ddf_doc_20250128_antiqua-et-nova_en.html",
     sort: 1,
@@ -107,7 +107,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
   {
     kind: "document",
     title: "Quo Vadis, Humanitas?",
-    subtitle: "ITC Study \u00b7 March 4, 2026",
+    subtitle: "ITC Study · March 4, 2026",
     summary: "Christian anthropology facing the future of the human: AI, transhumanism, and posthumanism. International Theological Commission.",
     url: "https://www.vatican.va/roman_curia/congregations/cfaith/cti_documents/rc_cti_doc_20260304_quo-vadis-humanits_en.html",
     sort: 2,
@@ -116,7 +116,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
     kind: "course",
     title: "What AI Really Is: A Six-Week Foundation",
     audience: "Clergy & religious",
-    subtitle: "Six weeks \u00b7 no technical background required",
+    subtitle: "Six weeks · no technical background required",
     summary:
       "How these systems actually work, what they can and cannot do, and how to preach and counsel about them faithfully — anchored in Antiqua et Nova and Magnifica Humanitas.",
     sort: 0,
@@ -125,7 +125,7 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
     kind: "course",
     title: "AI in Daily Life: A Catholic Approach",
     audience: "Laity & families",
-    subtitle: "Four weeks \u00b7 practical",
+    subtitle: "Four weeks · practical",
     summary:
       "Work, school, parenting, and prayer in a world of AI tools. Discernment guides, family media plans, and discussion materials for parish groups.",
     sort: 1,

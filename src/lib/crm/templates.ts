@@ -119,7 +119,7 @@ If you expect to bring students or faculty, a rough number helps us with seating
 
 Thank you for celebrating the Gold Mass for the {{chapter_name}} on {{event_date}} at {{venue_name}}.
 
-Please let me know if we may invite you again next year.
+Please let us know if we may invite you again next year.
 
 With gratitude,
 {{chapter_name}}
