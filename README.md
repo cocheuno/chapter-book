@@ -9,7 +9,8 @@ Built for a Society of Catholic Scientists chapter that found commercial CRMs to
 - **Code** for Chapter Book
 - **[Design freeze](docs/DESIGN.md)** — V1 decisions
 - **[Privacy](docs/PRIVACY.md)** — what may be public, and what must never be committed
-- **[Review](docs/REVIEW.md)** — architecture and functionality vs the Wisconsin chapter’s needs; do not stand up hosts until that freeze is agreed
+- **[Review](docs/REVIEW.md)** — architecture and functionality vs the Wisconsin chapter’s needs
+- **[Hosting](docs/HOSTING.md)** — Neon + Vercel; secrets stay in the host environment
 
 This repository is meant to be **public**. Real members, passwords, and host secrets are **not** in git. They live in the chapter’s database and in the host’s environment. Read [docs/PRIVACY.md](docs/PRIVACY.md) before you add a file.
 

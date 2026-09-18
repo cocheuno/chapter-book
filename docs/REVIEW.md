@@ -229,4 +229,4 @@ V1’s “not in this version” list stays right until the matching step: no 2F
 
 No Neon project, no Vercel project, no Stripe, no DNS change, until you accept this review (or mark the deltas).
 
-Accepted. Step 1 (invite-only operators) is implemented in the working tree. Hosting (Neon / Vercel) is step 2.
+Accepted. Step 1 is on `main`. Step 2: Neon (US East / Cleveland) and Vercel production are up; GitHub is connected to Vercel. See `docs/HOSTING.md`.
