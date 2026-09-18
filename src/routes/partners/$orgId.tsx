@@ -216,6 +216,12 @@ function OrgInner() {
             </div>
           </>
         )}
+        <div className="sm:col-span-2">
+          <Field label="Notes">
+            <p className="mb-1 text-sm text-ink-soft">For future knowledge. No length limit.</p>
+            <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="min-h-40" />
+          </Field>
+        </div>
         <Button type="submit">Save</Button>
       </form>
 

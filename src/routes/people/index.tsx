@@ -5,7 +5,7 @@ import { ListSelect } from "@/components/list-select";
 import { PersonNameFields, type PersonNameValue } from "@/components/person-name-fields";
 import { PersonPartnersFields, type PersonPartnerLink } from "@/components/person-partners-fields";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { PERSON_ROLES, roleLabel } from "@/lib/crm/constants";
 import { createPerson, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPerson } from "@/lib/crm/match";
@@ -48,6 +48,7 @@ function PeopleInner() {
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("United States");
   const [website, setWebsite] = useState("");
+  const [notes, setNotes] = useState("");
   const [newRole, setNewRole] = useState("academic_member");
   const [partners, setPartners] = useState<Awaited<ReturnType<typeof listPartners>>>([]);
   const [attached, setAttached] = useState<PersonPartnerLink[]>([]);
@@ -92,6 +93,7 @@ function PeopleInner() {
           postalCode,
           country,
           website,
+          notes,
           roles: [newRole],
           religiousTitle: name.religiousTitle,
           academicTitle: name.academicTitle,
@@ -164,6 +166,12 @@ function PeopleInner() {
               ))}
             </Select>
           </Field>
+          <div className="sm:col-span-2">
+            <Field label="Notes">
+              <p className="mb-1 text-sm text-ink-soft">For future knowledge. No length limit.</p>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="min-h-40" />
+            </Field>
+          </div>
           <PersonPartnersFields
             partners={partners}
             attached={attached}

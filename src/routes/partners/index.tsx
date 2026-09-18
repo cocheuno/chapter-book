@@ -4,7 +4,7 @@ import { Gated } from "@/components/gate";
 import { ListSelect } from "@/components/list-select";
 import { PartnerPeopleFields, type PartnerPersonLink } from "@/components/partner-people-fields";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ORG_TYPES, orgTypeLabel } from "@/lib/crm/constants";
 import { createOrganization, listDioceses, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPartner } from "@/lib/crm/match";
@@ -37,6 +37,7 @@ function PartnersInner() {
   const [mainEmail, setMainEmail] = useState("");
   const [mainPhone, setMainPhone] = useState("");
   const [website, setWebsite] = useState("");
+  const [notes, setNotes] = useState("");
   const [parentId, setParentId] = useState("");
   const [dioceses, setDioceses] = useState<{ id: string; name: string }[]>([]);
   const [people, setPeople] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
@@ -88,6 +89,7 @@ function PartnersInner() {
                   mainEmail,
                   mainPhone,
                   website,
+                  notes,
                   parentId: parentId || undefined,
                   people: attached.map((a) => ({ personId: a.personId, roleKey: a.roleKey })),
                 },
@@ -148,6 +150,12 @@ function PartnersInner() {
               ))}
             </Select>
           </Field>
+          <div className="sm:col-span-2">
+            <Field label="Notes">
+              <p className="mb-1 text-sm text-ink-soft">For future knowledge. No length limit.</p>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="min-h-40" />
+            </Field>
+          </div>
           <PartnerPeopleFields
             people={people}
             attached={attached}

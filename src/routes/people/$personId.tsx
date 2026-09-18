@@ -190,7 +190,8 @@ function PersonInner() {
         </Field>
         <div className="sm:col-span-2">
           <Field label="Notes">
-            <Textarea value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} />
+            <p className="mb-1 text-sm text-ink-soft">For future knowledge. No length limit.</p>
+            <Textarea value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} className="min-h-40" />
           </Field>
         </div>
         <Button type="submit">Save person</Button>

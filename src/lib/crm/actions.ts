@@ -687,6 +687,7 @@ export const createOrganization = createServerFn({ method: "POST" })
       website: z.string().optional(),
       mainEmail: z.string().optional(),
       mainPhone: z.string().optional(),
+      notes: z.string().optional(),
       people: z.array(z.object({ personId: z.string(), roleKey: z.string() })).optional(),
     }).parse,
   )
@@ -713,7 +714,7 @@ export const createOrganization = createServerFn({ method: "POST" })
       await sql`
         insert into organizations (
           id, chapter_id, name, type_key, parent_id, street, street2, city, state, postal_code, country,
-          website, main_email, main_phone, is_venue, is_invitation_partner, preferred_door
+          website, main_email, main_phone, notes, is_venue, is_invitation_partner, preferred_door
         )
         values (
           ${id}, ${m.chapterId}, ${data.name.trim()}, ${data.typeKey}, ${data.parentId ?? null},
@@ -721,6 +722,7 @@ export const createOrganization = createServerFn({ method: "POST" })
           ${data.city || null}, ${data.state || null}, ${data.postalCode?.trim() || null},
           ${data.country || "United States"},
           ${data.website?.trim() || null}, ${lowerEmail(data.mainEmail)}, ${data.mainPhone || null},
+          ${data.notes?.trim() || null},
           ${data.typeKey !== "diocese" && data.typeKey !== "high_school"}, ${true},
           ${schoolish ? "science_chair" : null}
         )
