@@ -34,7 +34,7 @@ Rules:
 
 The book of people is **not** in git. It is rows in Postgres, scoped to the signed-in chapter.
 
-- First sign-in seeds **fictional** Santa Fe names (`Fr. James O’Neill`, `office@stmarys.example`, `505-555-0141`). Replace or ignore them in a live chapter; do not replace them with real members *in the source*.
+- First sign-in does **not** seed a dummy membership list. Enter real people, partners, and gatherings in the live book (Neon). Do not put those rows in git.
 - The public site seed copies **already-public** Wisconsin chapter material (Mass times, parish addresses, article DOIs). That is website copy, not the CRM. Live website copy is still edited from **Website** and stored in `site_settings` / `site_items`.
 - Exports (nametag CSV, mail recipient lists) stay on the operator’s machine. Do not add them to the repo.
 - GitHub issues and pull requests should use roles (“the pastor at the host parish”), not home addresses or personal emails.

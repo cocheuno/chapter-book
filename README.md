@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-Opens at http://localhost:8080. With no `DATABASE_URL`, the book uses an embedded Postgres (PGLite). An empty book allows one founder admin; after that, operators are invite-only (Chapter → Operators). First sign-in seeds fictional Santa Fe names (`.example` emails). The live public site stays at scs-wisconsin-usa.org.
+Opens at http://localhost:8080. With no `DATABASE_URL`, the book uses an embedded Postgres (PGLite). An empty book allows one founder admin; after that, operators are invite-only (Chapter → Operators). People, partners, and gatherings start empty — enter them in the live book, not in git. The live public site stays at scs-wisconsin-usa.org.
 
 Do not create a committed `.env`. Host secrets (`DATABASE_URL`, `BETTER_AUTH_SECRET`) stay in the host environment. `.env.example` lists the names only.
 
@@ -31,4 +31,4 @@ Do not create a committed `.env`. Host secrets (`DATABASE_URL`, `BETTER_AUTH_SEC
 
 Sign in as chapter leadership (invite-only). Visitors who only want Mass times and articles use the public chapter site (no CRM account). Two-factor sign-in from the chapter website is planned; it is not in this version.
 
-Demo data on first sign-in is fictional (Santa Fe names, `.example` emails). Public-site sample copy follows the Wisconsin chapter’s already-public pages.
+Public-site sample copy on the Website desk follows the Wisconsin chapter’s already-public pages. Membership rows are not in this repository.
