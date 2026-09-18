@@ -1,0 +1,329 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { Gated } from "@/components/gate";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings } from "@/lib/crm/site";
+import type { SiteKind } from "@/lib/crm/site-seed";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+
+export const Route = createFileRoute("/website/")({ component: WebsitePage });
+
+type SiteData = Awaited<ReturnType<typeof listSite>>;
+type SiteItem = SiteData["items"][number];
+
+const emptyItem = (kind: SiteKind) => ({
+  id: "",
+  kind,
+  title: "",
+  subtitle: "",
+  summary: "",
+  url: "",
+  location: "",
+  whenLabel: "",
+  audience: "",
+  featured: false,
+  published: true,
+});
+
+function WebsitePage() {
+  return (
+    <Gated>
+      <WebsiteInner />
+    </Gated>
+  );
+}
+
+function WebsiteInner() {
+  const [data, setData] = useState<SiteData | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<SiteKind>("event");
+  const [form, setForm] = useState(emptyItem("event"));
+  const [settings, setSettings] = useState({
+    publicTitle: "",
+    publicTagline: "",
+    about: "",
+    contactEmail: "",
+  });
+
+  function load() {
+    setErr(null);
+    listSite()
+      .then((d) => {
+        setData(d);
+        setSettings({
+          publicTitle: d.settings.public_title,
+          publicTagline: d.settings.public_tagline ?? "",
+          about: d.settings.about ?? "",
+          contactEmail: d.settings.contact_email ?? "",
+        });
+      })
+      .catch((e) => setErr(e instanceof Error ? e.message : "Could not open the shelf"));
+  }
+  useEffect(load, []);
+
+  const rows = useMemo(() => (data?.items ?? []).filter((i) => i.kind === tab), [data, tab]);
+
+  function startEdit(item: SiteItem) {
+    setForm({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      subtitle: item.subtitle ?? "",
+      summary: item.summary ?? "",
+      url: item.url ?? "",
+      location: item.location ?? "",
+      whenLabel: item.when_label ?? "",
+      audience: item.audience ?? "",
+      featured: Boolean(item.featured),
+      published: Boolean(item.published),
+    });
+  }
+
+  if (err) return <p className="text-danger">{err}</p>;
+  if (!data) return <p className="text-muted">Opening the website shelf…</p>;
+  const canEdit = data.member.role !== "viewer";
+
+  return (
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl">Website</h1>
+          <p className="text-ink-soft">
+            Public copy for the chapter site — events, articles, documents, and courses. Two-factor sign-in from the
+            public site comes later; leadership uses Chapter Book as they do now.
+          </p>
+        </div>
+        <a href="/site">
+          <Button variant="secondary">View public site</Button>
+        </a>
+      </header>
+
+      <form
+        className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          try {
+            await saveSiteSettings({ data: settings });
+            toast.success("Masthead saved");
+            load();
+          } catch (ex) {
+            toast.error(ex instanceof Error ? ex.message : "Could not save");
+          }
+        }}
+      >
+        <h2 className="font-display text-xl sm:col-span-2">Masthead</h2>
+        <Field label="Public title">
+          <Input
+            value={settings.publicTitle}
+            onChange={(e) => setSettings({ ...settings, publicTitle: e.target.value })}
+            disabled={!canEdit}
+            required
+          />
+        </Field>
+        <Field label="Tagline">
+          <Input
+            value={settings.publicTagline}
+            onChange={(e) => setSettings({ ...settings, publicTagline: e.target.value })}
+            disabled={!canEdit}
+          />
+        </Field>
+        <Field label="Contact email">
+          <Input
+            type="email"
+            value={settings.contactEmail}
+            onChange={(e) => setSettings({ ...settings, contactEmail: e.target.value })}
+            disabled={!canEdit}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="About">
+            <Textarea
+              value={settings.about}
+              onChange={(e) => setSettings({ ...settings, about: e.target.value })}
+              disabled={!canEdit}
+            />
+          </Field>
+        </div>
+        {canEdit && (
+          <div>
+            <Button type="submit">Save masthead</Button>
+          </div>
+        )}
+      </form>
+
+      <div className="flex flex-wrap gap-2">
+        {data.kinds.map((k) => (
+          <button
+            key={k.key}
+            type="button"
+            className={`min-h-11 rounded-full px-3 py-1 text-sm ${tab === k.key ? "bg-ink text-paper" : "bg-paper-2"}`}
+            onClick={() => {
+              setTab(k.key);
+              setForm(emptyItem(k.key));
+            }}
+          >
+            {k.label}
+            <span className="ml-2 text-xs opacity-70">{data.items.filter((i) => i.kind === k.key).length}</span>
+          </button>
+        ))}
+      </div>
+
+      {canEdit && (
+        <form
+          className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              await saveSiteItem({
+                data: {
+                  id: form.id || undefined,
+                  kind: form.kind,
+                  title: form.title,
+                  subtitle: form.subtitle,
+                  summary: form.summary,
+                  url: form.url,
+                  location: form.location,
+                  whenLabel: form.whenLabel,
+                  audience: form.audience,
+                  featured: form.featured,
+                  published: form.published,
+                },
+              });
+              toast.success(form.id ? "Updated" : "Added to the shelf");
+              setForm(emptyItem(tab));
+              load();
+            } catch (ex) {
+              toast.error(ex instanceof Error ? ex.message : "Could not save");
+            }
+          }}
+        >
+          <h2 className="font-display text-xl sm:col-span-2">{form.id ? "Edit item" : `Add ${tab}`}</h2>
+          <Field label="Title">
+            <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+          </Field>
+          <Field label="Kind">
+            <Select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as SiteKind })}>
+              {data.kinds.map((k) => (
+                <option key={k.key} value={k.key}>
+                  {k.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {(tab === "event" || form.kind === "event") && (
+            <>
+              <Field label="When">
+                <Input
+                  value={form.whenLabel}
+                  onChange={(e) => setForm({ ...form, whenLabel: e.target.value })}
+                  placeholder="Tuesday, November 10, 2026 · 6:00 p.m."
+                />
+              </Field>
+              <Field label="Where">
+                <Input
+                  value={form.location}
+                  onChange={(e) => setForm({ ...form, location: e.target.value })}
+                  placeholder="Parish, city"
+                />
+              </Field>
+            </>
+          )}
+          {(tab === "course" || form.kind === "course") && (
+            <Field label="Audience">
+              <Input
+                value={form.audience}
+                onChange={(e) => setForm({ ...form, audience: e.target.value })}
+                placeholder="Clergy & religious"
+              />
+            </Field>
+          )}
+          <Field label={tab === "article" ? "Authors / journal" : "Subtitle"}>
+            <Input value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} />
+          </Field>
+          <Field label="Link">
+            <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://" />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Summary">
+              <Textarea value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
+            </Field>
+          </div>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-5"
+              checked={form.published}
+              onChange={(e) => setForm({ ...form, published: e.target.checked })}
+            />
+            Published
+          </label>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-5"
+              checked={form.featured}
+              onChange={(e) => setForm({ ...form, featured: e.target.checked })}
+            />
+            Featured
+          </label>
+          <div className="flex flex-wrap gap-2 sm:col-span-2">
+            <Button type="submit">{form.id ? "Save changes" : "Add to shelf"}</Button>
+            {form.id ? (
+              <Button type="button" variant="secondary" onClick={() => setForm(emptyItem(tab))}>
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      )}
+
+      <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+        {rows.map((item) => (
+          <li key={item.id} className="px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{item.title}</p>
+                  {item.featured ? <Badge tone="bronze">Featured</Badge> : null}
+                  {!item.published ? <Badge>Draft</Badge> : null}
+                </div>
+                {item.subtitle ? <p className="text-sm text-ink-soft">{item.subtitle}</p> : null}
+                {item.when_label || item.location ? (
+                  <p className="text-sm text-muted">{[item.when_label, item.location].filter(Boolean).join(" · ")}</p>
+                ) : null}
+                {item.audience ? <p className="text-sm text-muted">{item.audience}</p> : null}
+                {item.summary ? <p className="mt-1 text-sm text-ink-soft">{item.summary}</p> : null}
+              </div>
+              {canEdit && (
+                <div className="flex shrink-0 gap-2">
+                  <Button type="button" variant="secondary" onClick={() => startEdit(item)}>
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await removeSiteItem({ data: { id: item.id } });
+                        if (form.id === item.id) setForm(emptyItem(tab));
+                        toast.success("Removed");
+                        load();
+                      } catch (ex) {
+                        toast.error(ex instanceof Error ? ex.message : "Could not remove");
+                      }
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+        {rows.length === 0 && <li className="px-4 py-8 text-muted">Nothing on this shelf yet.</li>}
+      </ul>
+    </div>
+  );
+}
