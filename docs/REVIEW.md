@@ -1,6 +1,6 @@
 # Architecture and functionality review
 
-**Status:** Review only. Do not stand up Neon, Vercel, Stripe, or SMTP until this freeze is agreed.
+**Status:** Accepted. Step 1 (invite-only operators) is in progress. Do not stand up Neon, Vercel, Stripe, or SMTP until operators ship.
 
 **Subject:** Chapter Book (`main` at `1166f31`) vs the Wisconsin chapter’s stated needs.
 
@@ -229,4 +229,4 @@ V1’s “not in this version” list stays right until the matching step: no 2F
 
 No Neon project, no Vercel project, no Stripe, no DNS change, until you accept this review (or mark the deltas).
 
-If you accept it, next concrete work is **step 1 in code** (invite-only operators) while this PC still uses PGLite. Hosting is the step after that door is shut.
+Accepted. Step 1 (invite-only operators) is implemented in the working tree. Hosting (Neon / Vercel) is step 2.

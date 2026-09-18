@@ -9,6 +9,22 @@ import { ensureSite } from "./site-seed";
 
 export type ChapterRole = "admin" | "editor" | "viewer";
 
+export class NotOperatorError extends Error {
+  readonly status = 403;
+  constructor(message = "You are not an operator of this chapter.") {
+    super(message);
+    this.name = "NotOperatorError";
+  }
+}
+
+export class OperatorDisabledError extends Error {
+  readonly status = 403;
+  constructor(message = "This operator sign-in has been disabled.") {
+    super(message);
+    this.name = "OperatorDisabledError";
+  }
+}
+
 export type MemberContext = {
   userId: string;
   chapterId: string;
@@ -39,6 +55,7 @@ export async function loadMember(userId: string): Promise<MemberContext> {
     user_id: string;
     chapter_id: string;
     role: ChapterRole;
+    disabled_at: string | null;
     name: string;
     timezone: string;
     contact_line: string | null;
@@ -46,7 +63,7 @@ export async function loadMember(userId: string): Promise<MemberContext> {
     from_address: string | null;
     reply_to: string | null;
   }>`
-    select m.user_id, m.chapter_id, m.role, c.name, c.timezone, c.contact_line,
+    select m.user_id, m.chapter_id, m.role, m.disabled_at, c.name, c.timezone, c.contact_line,
            c.from_name, c.from_address, c.reply_to
     from chapter_members m
     join chapters c on c.id = m.chapter_id
@@ -54,6 +71,7 @@ export async function loadMember(userId: string): Promise<MemberContext> {
   `;
   if (existing[0]) {
     const r = existing[0];
+    if (r.disabled_at) throw new OperatorDisabledError();
     await ensureLists(sql, r.chapter_id);
     await ensureSite(sql, r.chapter_id);
     return {
@@ -69,13 +87,32 @@ export async function loadMember(userId: string): Promise<MemberContext> {
     };
   }
 
-  const chapters = await sql<{ id: string; name: string }>`select id, name from chapters limit 1`;
-  if (chapters[0]) {
-    await sql`
-      insert into chapter_members (user_id, chapter_id, role)
-      values (${userId}, ${chapters[0].id}, 'editor')
+  const users = await sql<{ email: string | null }>`
+    select email from "user" where id = ${userId}
+  `;
+  const email = users[0]?.email?.trim().toLowerCase() ?? "";
+  if (email) {
+    const invites = await sql<{ id: string; chapter_id: string; role: ChapterRole }>`
+      select id, chapter_id, role from operator_invites
+      where email = ${email} and accepted_at is null and expires_at > now()
+      order by created_at desc
+      limit 1
     `;
-    return loadMember(userId);
+    if (invites[0]) {
+      await sql`
+        insert into chapter_members (user_id, chapter_id, role)
+        values (${userId}, ${invites[0].chapter_id}, ${invites[0].role})
+      `;
+      await sql`
+        update operator_invites set accepted_at = now() where id = ${invites[0].id}
+      `;
+      return loadMember(userId);
+    }
+  }
+
+  const chapters = await sql<{ id: string }>`select id from chapters limit 1`;
+  if (chapters[0]) {
+    throw new NotOperatorError();
   }
 
   await bootstrapChapter(userId);
@@ -90,7 +127,7 @@ async function bootstrapChapter(userId: string) {
     values (
       ${chapterId},
       ${"SCS Chapter"},
-      ${"America/Denver"},
+      ${"America/Chicago"},
       ${"chapter@catholicscientists.example"},
       ${"SCS Chapter"},
       ${"chapter@catholicscientists.example"},
