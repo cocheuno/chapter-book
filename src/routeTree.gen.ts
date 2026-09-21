@@ -26,6 +26,7 @@ import { Route as SchoolsSchoolIdRouteImport } from './routes/schools/$schoolId'
 import { Route as SiteIndexRouteImport } from './routes/site/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiPublicSiteRouteImport } from './routes/api/public-site'
 import { Route as EventsEventIdIndexRouteImport } from './routes/events/$eventId/index'
 import { Route as EventsEventIdCheckInRouteImport } from './routes/events/$eventId/check-in'
 import { Route as EventsEventIdInvitesRouteImport } from './routes/events/$eventId/invites'
@@ -116,6 +117,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicSiteRoute = ApiPublicSiteRouteImport.update({
+  id: '/api/public-site',
+  path: '/api/public-site',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EventsEventIdIndexRoute = EventsEventIdIndexRouteImport.update({
   id: '/events/$eventId/',
   path: '/events/$eventId/',
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/site/': typeof SiteIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/public-site': typeof ApiPublicSiteRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/site': typeof SiteIndexRoute
   '/website': typeof WebsiteIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/public-site': typeof ApiPublicSiteRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/site/': typeof SiteIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/public-site': typeof ApiPublicSiteRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/site/'
     | '/website/'
     | '/api/auth/$'
+    | '/api/public-site'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/site'
     | '/website'
     | '/api/auth/$'
+    | '/api/public-site'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/site/'
     | '/website/'
     | '/api/auth/$'
+    | '/api/public-site'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   SiteIndexRoute: typeof SiteIndexRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiPublicSiteRoute: typeof ApiPublicSiteRoute
   EventsEventIdCheckInRoute: typeof EventsEventIdCheckInRoute
   EventsEventIdInvitesRoute: typeof EventsEventIdInvitesRoute
   EventsEventIdReportRoute: typeof EventsEventIdReportRoute
@@ -424,6 +437,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public-site': {
+      id: '/api/public-site'
+      path: '/api/public-site'
+      fullPath: '/api/public-site'
+      preLoaderRoute: typeof ApiPublicSiteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/events/$eventId/': {
       id: '/events/$eventId/'
       path: '/events/$eventId'
@@ -473,6 +493,7 @@ const rootRouteChildren: RootRouteChildren = {
   SiteIndexRoute: SiteIndexRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiPublicSiteRoute: ApiPublicSiteRoute,
   EventsEventIdCheckInRoute: EventsEventIdCheckInRoute,
   EventsEventIdInvitesRoute: EventsEventIdInvitesRoute,
   EventsEventIdReportRoute: EventsEventIdReportRoute,

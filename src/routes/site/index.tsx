@@ -23,6 +23,7 @@ function PublicSite() {
   const grouped = useMemo(() => {
     const items = data?.items ?? [];
     return {
+      announcements: items.filter((i) => i.kind === "announcement"),
       events: items.filter((i) => i.kind === "event"),
       articles: items.filter((i) => i.kind === "article"),
       documents: items.filter((i) => i.kind === "document"),
@@ -69,6 +70,12 @@ function PublicSite() {
             <p className="mt-3 text-lg leading-relaxed text-ink-soft">{settings.about}</p>
           </section>
         ) : null}
+
+        <Section title="Announcements" empty="No announcements posted yet.">
+          {grouped.announcements.map((e) => (
+            <EventCard key={e.id} item={e} />
+          ))}
+        </Section>
 
         <Section title="Gatherings" empty="No public gatherings posted yet.">
           {grouped.events.map((e) => (

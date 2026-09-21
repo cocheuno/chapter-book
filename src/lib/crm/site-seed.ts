@@ -1,6 +1,7 @@
 import { nid } from "./ids";
 
 export const SITE_KINDS = [
+  { key: "announcement", label: "Announcements" },
   { key: "event", label: "Events" },
   { key: "article", label: "Articles" },
   { key: "document", label: "Documents" },

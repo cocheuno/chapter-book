@@ -38,7 +38,8 @@ function WebsitePage() {
 function WebsiteInner() {
   const [data, setData] = useState<SiteData | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<SiteKind>("event");
+  const [tab, setTab] = useState<SiteKind>("announcement");
+  const [copied, setCopied] = useState(false);
   const [form, setForm] = useState(emptyItem("event"));
   const [settings, setSettings] = useState({
     publicTitle: "",
@@ -91,14 +92,47 @@ function WebsiteInner() {
         <div>
           <h1 className="font-display text-3xl">Website</h1>
           <p className="text-ink-soft">
-            Public copy for the chapter site — events, articles, documents, and courses. Two-factor sign-in from the
-            public site comes later; leadership uses Chapter Book as they do now.
+            Edit published copy here. Items marked published appear on scs-wisconsin-usa.org after you add the embed
+            script (see docs/PUBLISH.md). CRM people never go on the public site.
           </p>
         </div>
         <a href="/site">
-          <Button variant="secondary">View public site</Button>
+          <Button variant="secondary">Preview</Button>
         </a>
       </header>
+
+      <section className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-soft">
+        <h2 className="font-display text-xl text-ink">Publish to the public site</h2>
+        <p className="mt-2">
+          Add this to the GoDaddy page (once). Then Save masthead / Save item here; the public site refreshes within a
+          minute.
+        </p>
+        <pre className="mt-3 overflow-x-auto rounded-lg bg-paper p-3 text-xs text-ink">{`<script src="${typeof window !== "undefined" ? window.location.origin : ""}/embed/chapter-site.js" defer></script>
+<h1 data-scs="title"></h1>
+<p data-scs="tagline"></p>
+<p data-scs="about"></p>
+<div data-scs-list="announcement"></div>
+<div data-scs-list="event"></div>
+<div data-scs-list="article"></div>
+<div data-scs-list="document"></div>
+<div data-scs-list="course"></div>`}</pre>
+        {canEdit && (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3"
+            onClick={async () => {
+              const origin = window.location.origin;
+              const snippet = `<script src="${origin}/embed/chapter-site.js" defer></script>\n<div data-scs-list="event"></div>`;
+              await navigator.clipboard.writeText(snippet);
+              setCopied(true);
+              toast.success("Snippet copied");
+            }}
+          >
+            {copied ? "Copied" : "Copy short snippet"}
+          </Button>
+        )}
+      </section>
 
       <form
         className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"

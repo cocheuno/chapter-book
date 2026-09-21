@@ -11,6 +11,7 @@ Built for a Society of Catholic Scientists chapter that found commercial CRMs to
 - **[Privacy](docs/PRIVACY.md)** — what may be public, and what must never be committed
 - **[Review](docs/REVIEW.md)** — architecture and functionality vs the Wisconsin chapter’s needs
 - **[Hosting](docs/HOSTING.md)** — Neon + Vercel; secrets stay in the host environment
+- **[Publish](docs/PUBLISH.md)** — Website desk → scs-wisconsin-usa.org
 
 This repository is meant to be **public**. Real members, passwords, and host secrets are **not** in git. They live in the chapter’s database and in the host’s environment. Read [docs/PRIVACY.md](docs/PRIVACY.md) before you add a file.
 

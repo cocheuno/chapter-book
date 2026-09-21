@@ -82,7 +82,7 @@ export const listSite = createServerFn({ method: "GET" })
   });
 
 /** Public chapter page. No sign-in — do not attach authMiddleware. */
-export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => {
+export async function loadPublishedSite() {
   const empty = { settings: emptySettings, items: [] as SiteItemRow[] };
   try {
     const sql = await getSql();
@@ -96,7 +96,32 @@ export const getPublicSite = createServerFn({ method: "GET" }).handler(async () 
   } catch {
     return empty;
   }
-});
+}
+
+export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[] }) {
+  return {
+    settings: {
+      publicTitle: data.settings.public_title,
+      publicTagline: data.settings.public_tagline,
+      about: data.settings.about,
+      contactEmail: data.settings.contact_email,
+    },
+    items: data.items.map((i) => ({
+      id: i.id,
+      kind: i.kind,
+      title: i.title,
+      subtitle: i.subtitle,
+      summary: i.summary,
+      url: i.url,
+      location: i.location,
+      whenLabel: i.when_label,
+      audience: i.audience,
+      featured: i.featured,
+    })),
+  };
+}
+
+export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => loadPublishedSite());
 
 export const saveSiteSettings = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -130,7 +155,7 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
 
 const itemInput = z.object({
   id: z.string().optional(),
-  kind: z.enum(["event", "article", "document", "course"]),
+  kind: z.enum(["announcement", "event", "article", "document", "course"]),
   title: z.string().min(1),
   subtitle: z.string().optional(),
   summary: z.string().optional(),
