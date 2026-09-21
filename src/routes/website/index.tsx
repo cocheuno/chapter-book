@@ -210,7 +210,7 @@ function WebsiteInner() {
           onSubmit={async (e) => {
             e.preventDefault();
             try {
-              await saveSiteItem({
+              const saved = await saveSiteItem({
                 data: {
                   id: form.id || undefined,
                   kind: form.kind,
@@ -225,6 +225,30 @@ function WebsiteInner() {
                   published: form.published,
                 },
               });
+              const row = {
+                id: saved.id,
+                kind: form.kind,
+                title: form.title.trim(),
+                subtitle: form.subtitle || null,
+                summary: form.summary || null,
+                url: form.url || null,
+                location: form.location || null,
+                when_label: form.whenLabel || null,
+                audience: form.audience || null,
+                featured: form.featured,
+                published: form.published,
+                sort_order: 0,
+              };
+              setData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      items: form.id
+                        ? prev.items.map((i) => (i.id === form.id ? { ...i, ...row } : i))
+                        : [...prev.items, row],
+                    }
+                  : prev,
+              );
               toast.success(form.id ? "Updated" : "Added to the shelf");
               setForm(emptyItem(tab));
               load();

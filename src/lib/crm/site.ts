@@ -70,7 +70,7 @@ async function readItems(
   `;
 }
 
-export const listSite = createServerFn({ method: "GET" })
+export const listSite = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const m = await loadMember(context.userId);
@@ -121,7 +121,7 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
   };
 }
 
-export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => loadPublishedSite());
+export const getPublicSite = createServerFn({ method: "POST" }).handler(async () => loadPublishedSite());
 
 export const saveSiteSettings = createServerFn({ method: "POST" })
   .middleware([authMiddleware])

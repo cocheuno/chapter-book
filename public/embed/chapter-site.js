@@ -43,7 +43,7 @@
       .replace(/"/g, "&quot;");
   }
 
-  fetch(origin + "/api/public-site")
+  fetch(origin + "/api/public-site?t=" + Date.now())
     .then(function (r) {
       if (!r.ok) throw new Error("public-site " + r.status);
       return r.json();

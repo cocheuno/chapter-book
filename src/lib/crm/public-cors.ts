@@ -18,7 +18,7 @@ export function publicSiteCorsHeaders(request: Request): Headers {
   const headers = new Headers();
   headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type");
-  headers.set("Cache-Control", "public, max-age=60");
+  headers.set("Cache-Control", "no-store");
   if (originAllowed(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Vary", "Origin");
