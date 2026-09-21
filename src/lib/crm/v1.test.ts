@@ -4,6 +4,7 @@ import { composePersonName } from "./names.ts";
 import { composedHonorific } from "./lists.ts";
 import { matchPartner, matchPerson } from "./match.ts";
 import { nextOccasionLocal, schoolYearStartIso } from "./format.ts";
+import { slugify } from "./ids.ts";
 
 describe("names", () => {
   it("lets the religious title win over the academic title", () => {
@@ -47,6 +48,12 @@ describe("school year", () => {
     assert.equal(schoolYearStartIso(new Date(2026, 8, 2)), "2026-08-01");
     assert.equal(schoolYearStartIso(new Date(2026, 6, 31)), "2025-08-01");
     assert.equal(schoolYearStartIso(new Date(2026, 7, 1)), "2026-08-01");
+  });
+});
+
+describe("slugify", () => {
+  it("makes a public page path from a title", () => {
+    assert.equal(slugify("Gold Mass · Milwaukee"), "gold-mass-milwaukee");
   });
 });
 

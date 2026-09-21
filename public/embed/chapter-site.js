@@ -27,10 +27,14 @@
     if (item.location) html += "<p class=\"scs-loc\">" + escapeHtml(item.location) + "</p>";
     if (item.audience) html += "<p class=\"scs-aud\">" + escapeHtml(item.audience) + "</p>";
     if (item.summary) html += "<p>" + escapeHtml(item.summary) + "</p>";
-    if (item.url) {
-      var href = /^https?:\/\//i.test(item.url) ? item.url : "https://" + item.url;
-      html += "<p><a href=\"" + escapeHtml(href) + "\">Read more</a></p>";
-    }
+    var details = item.slug ? origin + "/p/" + encodeURIComponent(item.slug) : "";
+    var extra = item.url
+      ? /^https?:\/\//i.test(item.url)
+        ? item.url
+        : "https://" + item.url
+      : "";
+    if (details) html += "<p><a href=\"" + escapeHtml(details) + "\">Event details</a></p>";
+    else if (extra) html += "<p><a href=\"" + escapeHtml(extra) + "\">Read more</a></p>";
     html += "</article>";
     return html;
   }

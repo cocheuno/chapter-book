@@ -35,6 +35,16 @@ You can keep existing GoDaddy chrome (header, colors, footer **For Members**). R
 
 JSON feed (for debugging): `https://chapter-book-beryl.vercel.app/api/public-site`
 
+## Event detail pages
+
+Do not add a new HTML file on GoDaddy for each Mass. In Chapter Book → **Website** → Events (or Articles):
+
+1. Open the item.
+2. Fill **Page** with the long details (parking, register, dinner). Blank line = new paragraph.
+3. Save. **Published** must stay checked.
+
+The public page is `https://chapter-book-beryl.vercel.app/p/gold-mass-milwaukee` (address is under **Page address**). Homepage **Event details** links there once the embed script is on GoDaddy. CRM people are not on that page.
+
 Preview (not the GoDaddy homepage): `https://chapter-book-beryl.vercel.app/site`
 
 ## CORS

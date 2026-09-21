@@ -25,6 +25,8 @@ const emptyItem = (kind: SiteKind) => ({
   audience: "",
   featured: false,
   published: true,
+  slug: "",
+  body: "",
 });
 
 function WebsitePage() {
@@ -79,6 +81,8 @@ function WebsiteInner() {
       audience: item.audience ?? "",
       featured: Boolean(item.featured),
       published: Boolean(item.published),
+      slug: item.slug ?? "",
+      body: item.body ?? "",
     });
   }
 
@@ -223,6 +227,8 @@ function WebsiteInner() {
                   audience: form.audience,
                   featured: form.featured,
                   published: form.published,
+                  slug: form.slug,
+                  body: form.body,
                 },
               });
               const row = {
@@ -238,6 +244,8 @@ function WebsiteInner() {
                 featured: form.featured,
                 published: form.published,
                 sort_order: 0,
+                slug: saved.slug ?? (form.slug || null),
+                body: form.body || null,
               };
               setData((prev) =>
                 prev
@@ -305,9 +313,30 @@ function WebsiteInner() {
           </Field>
           <div className="sm:col-span-2">
             <Field label="Summary">
+              <p className="mb-1 text-sm text-ink-soft">Short text on the homepage list.</p>
               <Textarea value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
             </Field>
           </div>
+          <div className="sm:col-span-2">
+            <Field label="Page">
+              <p className="mb-1 text-sm text-ink-soft">
+                Full public page for this item. Blank lines start a new paragraph. No length limit. Saved pages are at
+                /p/… on Chapter Book (not GoDaddy).
+              </p>
+              <Textarea
+                value={form.body}
+                onChange={(e) => setForm({ ...form, body: e.target.value })}
+                className="min-h-48"
+              />
+            </Field>
+          </div>
+          <Field label="Page address">
+            <Input
+              value={form.slug}
+              onChange={(e) => setForm({ ...form, slug: e.target.value })}
+              placeholder="gold-mass-milwaukee"
+            />
+          </Field>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -353,6 +382,11 @@ function WebsiteInner() {
                 ) : null}
                 {item.audience ? <p className="text-sm text-muted">{item.audience}</p> : null}
                 {item.summary ? <p className="mt-1 text-sm text-ink-soft">{item.summary}</p> : null}
+                {item.slug ? (
+                  <a href={`/p/${item.slug}`} className="mt-1 inline-block text-sm text-bronze hover:underline">
+                    Open page
+                  </a>
+                ) : null}
               </div>
               {canEdit && (
                 <div className="flex shrink-0 gap-2">

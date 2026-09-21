@@ -11,6 +11,11 @@ function hrefFor(url: string | null | undefined) {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
+function pageHref(item: SiteItemRow) {
+  if (item.slug) return `/p/${item.slug}`;
+  return hrefFor(item.url);
+}
+
 function PublicSite() {
   const [data, setData] = useState<Awaited<ReturnType<typeof getPublicSite>> | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -134,7 +139,7 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 }
 
 function EventCard({ item }: { item: SiteItemRow }) {
-  const url = hrefFor(item.url);
+  const url = pageHref(item);
   return (
     <li className="rounded-xl border border-line bg-surface p-5">
       <p className="text-xs tracking-wide text-bronze uppercase">{item.featured ? "Featured" : "Gathering"}</p>
@@ -143,8 +148,12 @@ function EventCard({ item }: { item: SiteItemRow }) {
       {item.location ? <p className="text-sm text-ink-soft">{item.location}</p> : null}
       {item.summary ? <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p> : null}
       {url ? (
-        <a href={url} className="mt-3 inline-block text-sm text-bronze underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
-          Register
+        <a
+          href={url}
+          className="mt-3 inline-block text-sm text-bronze underline-offset-2 hover:underline"
+          {...(url.startsWith("/") ? {} : { target: "_blank", rel: "noreferrer" })}
+        >
+          {item.slug ? "Event details" : "Register"}
         </a>
       ) : null}
     </li>
@@ -152,7 +161,7 @@ function EventCard({ item }: { item: SiteItemRow }) {
 }
 
 function CopyCard({ item, linkLabel }: { item: SiteItemRow; linkLabel: string }) {
-  const url = hrefFor(item.url);
+  const url = pageHref(item);
   return (
     <li className="border-b border-line pb-5 last:border-0">
       <h3 className="font-display text-xl">{item.title}</h3>

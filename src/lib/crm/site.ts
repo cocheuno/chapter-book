@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { nid } from "./ids";
+import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
@@ -32,6 +32,8 @@ export type SiteItemRow = {
   featured: boolean;
   published: boolean;
   sort_order: number;
+  slug: string | null;
+  body: string | null;
 };
 
 const emptySettings: SettingsRow = {
@@ -56,14 +58,14 @@ async function readItems(
 ): Promise<SiteItemRow[]> {
   if (publishedOnly) {
     return sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body
       from site_items
       where chapter_id = ${chapterId} and published
       order by kind, sort_order, title
     `;
   }
   return sql<SiteItemRow>`
-    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order
+    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body
     from site_items
     where chapter_id = ${chapterId}
     order by kind, sort_order, title
@@ -76,6 +78,7 @@ export const listSite = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     const sql = await getSql();
     await ensureSiteContent(sql, m.chapterId);
+    await backfillSlugs(sql, m.chapterId);
     const settings = await readSettings(sql, m.chapterId);
     const items = await readItems(sql, m.chapterId, false);
     return { settings, items, kinds: SITE_KINDS, member: m };
@@ -90,6 +93,7 @@ export async function loadPublishedSite() {
     if (!chapters[0]) return empty;
     const chapterId = chapters[0].id;
     await ensureSiteContent(sql, chapterId);
+    await backfillSlugs(sql, chapterId);
     const settings = await readSettings(sql, chapterId);
     const items = await readItems(sql, chapterId, true);
     return { settings, items };
@@ -117,6 +121,8 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
       whenLabel: i.when_label,
       audience: i.audience,
       featured: i.featured,
+      slug: i.slug,
+      href: i.slug ? `/p/${i.slug}` : i.url,
     })),
   };
 }
@@ -153,6 +159,41 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+async function backfillSlugs(sql: Awaited<ReturnType<typeof getSql>>, chapterId: string) {
+  try {
+    const missing = await sql<{ id: string; title: string }>`
+      select id, title from site_items
+      where chapter_id = ${chapterId} and (slug is null or slug = '')
+    `;
+    for (const row of missing) {
+      const slug = await uniqueSlug(sql, chapterId, row.title, undefined, row.id);
+      await sql`update site_items set slug = ${slug} where id = ${row.id} and chapter_id = ${chapterId}`;
+    }
+  } catch {
+    // 0012 may not have applied yet.
+  }
+}
+
+async function uniqueSlug(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  title: string,
+  requested: string | undefined,
+  exceptId: string | undefined,
+): Promise<string> {
+  const base = slugify(requested?.trim() || title);
+  for (let i = 0; i < 50; i++) {
+    const candidate = i === 0 ? base : `${base}-${i + 1}`;
+    const rows = await sql<{ id: string }>`
+      select id from site_items
+      where chapter_id = ${chapterId} and slug = ${candidate}
+        and id <> ${exceptId ?? ""}
+    `;
+    if (!rows[0]) return candidate;
+  }
+  return `${base}-${nid().slice(0, 8)}`;
+}
+
 const itemInput = z.object({
   id: z.string().optional(),
   kind: z.enum(["announcement", "event", "article", "document", "course"]),
@@ -165,6 +206,8 @@ const itemInput = z.object({
   audience: z.string().optional(),
   featured: z.boolean().optional(),
   published: z.boolean().optional(),
+  slug: z.string().optional(),
+  body: z.string().optional(),
 });
 
 export const saveSiteItem = createServerFn({ method: "POST" })
@@ -184,6 +227,8 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     if (clash[0]) throw new Error(`${clash[0].title} is already on the site shelf.`);
     const published = data.published ?? true;
     const featured = data.featured ?? false;
+    const slug = await uniqueSlug(sql, m.chapterId, title, data.slug, data.id);
+    const body = data.body?.trim() || null;
     if (data.id) {
       await sql`
         update site_items set
@@ -196,10 +241,12 @@ export const saveSiteItem = createServerFn({ method: "POST" })
           when_label = ${data.whenLabel || null},
           audience = ${data.audience || null},
           featured = ${featured},
-          published = ${published}
+          published = ${published},
+          slug = ${slug},
+          body = ${body}
         where id = ${data.id} and chapter_id = ${m.chapterId}
       `;
-      return { id: data.id };
+      return { id: data.id, slug };
     }
     const id = nid();
     const max = await sql<{ n: number }>`
@@ -209,19 +256,41 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into site_items (
-          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order
+          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body
         )
         values (
           ${id}, ${m.chapterId}, ${data.kind}, ${title}, ${data.subtitle || null}, ${data.summary || null},
           ${data.url || null}, ${data.location || null}, ${data.whenLabel || null}, ${data.audience || null},
-          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}
+          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}
         )
       `;
     } catch (err) {
       if (isUniqueViolation(err)) throw new Error(`${title} is already on the site shelf.`);
       throw err;
     }
-    return { id };
+    return { id, slug };
+  });
+
+/** Public detail page. No sign-in. */
+export const getPublicPage = createServerFn({ method: "POST" })
+  .validator((slug: string) => slug.trim())
+  .handler(async ({ data: slug }) => {
+    if (!slug) return null;
+    try {
+      const sql = await getSql();
+      const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
+      if (!chapters[0]) return null;
+      const rows = await sql<SiteItemRow & { public_title: string | null }>`
+        select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
+               i.featured, i.published, i.sort_order, i.slug, i.body, s.public_title
+        from site_items i
+        left join site_settings s on s.chapter_id = i.chapter_id
+        where i.chapter_id = ${chapters[0].id} and i.slug = ${slug} and i.published
+      `;
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
   });
 
 export const removeSiteItem = createServerFn({ method: "POST" })
