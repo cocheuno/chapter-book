@@ -66,7 +66,7 @@ describe("announcement HTML", () => {
     assert.match(html ?? "", /^<section class="announcements" id="announcements">/);
     assert.match(html ?? "", /Gold Mass · Madison/);
     assert.doesNotMatch(html ?? "", /&amp;middot;|&lt;section/);
-    assert.match(html ?? "", /href="\.\/formsubmitter\.html"/);
+    assert.match(html ?? "", /href="https:\/\/scs-wisconsin-usa.org\/formsubmitter\.html"/);
     assert.match(html ?? "", /<br>/);
     const published = publicSummaryFields("announcement", null, html);
     assert.equal(published.summaryHtml, html);

@@ -137,22 +137,35 @@ function escapeAttr(s: string): string {
   return escapeText(s).replace(/"/g, "&quot;");
 }
 
+/** Relative links in announcement HTML belong to the public chapter site, not Chapter Book. */
+const CHAPTER_SITE = "https://scs-wisconsin-usa.org/";
+
 function safeUrl(value: string, kind: "href" | "src"): string | null {
   const v = value.trim();
   if (!v || v.length > 2000 || /[\u0000-\u001f\u007f]/.test(v) || v.startsWith("//")) return null;
-  if (v.startsWith("#") || v.startsWith("/") || v.startsWith("./") || v.startsWith("../") || v.startsWith("?")) {
-    if (/^([#/?]|(\.\/)|(\.\.\/))[^\s<>"']*$/.test(v) || /^\/[^\s<>"']*$/.test(v)) return v;
+  if (v.startsWith("#")) {
+    if (kind === "src" || !/^#[^\s<>"']*$/.test(v)) return null;
+    return v;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) {
+    let url: URL;
+    try {
+      url = new URL(v);
+    } catch {
+      return null;
+    }
+    if (url.protocol === "https:" || url.protocol === "http:") return url.href;
+    if (kind === "href" && (url.protocol === "mailto:" || url.protocol === "tel:")) return v;
     return null;
   }
-  let url: URL;
+  if (/[\s<>"']/.test(v)) return null;
   try {
-    url = new URL(v);
+    const url = new URL(v, CHAPTER_SITE);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.href;
   } catch {
     return null;
   }
-  if (url.protocol === "https:" || url.protocol === "http:") return v;
-  if (kind === "href" && (url.protocol === "mailto:" || url.protocol === "tel:")) return v;
-  return null;
 }
 
 function safeStyle(value: string): string | null {
