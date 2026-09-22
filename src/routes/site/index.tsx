@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { announcementCardHtml } from "@/lib/crm/announcement-html";
 import { getPublicSite } from "@/lib/crm/site";
 import type { SiteItemRow } from "@/lib/crm/site";
 
@@ -140,13 +141,18 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 
 function EventCard({ item }: { item: SiteItemRow }) {
   const url = pageHref(item);
+  const rich = item.kind === "announcement" ? announcementCardHtml(item.summary, item.body) : null;
   return (
     <li className="rounded-xl border border-line bg-surface p-5">
       <p className="text-xs tracking-wide text-bronze uppercase">{item.featured ? "Featured" : "Gathering"}</p>
       <h3 className="mt-1 font-display text-xl">{item.title}</h3>
       {item.when_label ? <p className="mt-1 text-sm text-muted">{item.when_label}</p> : null}
       {item.location ? <p className="text-sm text-ink-soft">{item.location}</p> : null}
-      {item.summary ? <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p> : null}
+      {rich ? (
+        <div className="announcement-html mt-3 leading-relaxed text-ink-soft" dangerouslySetInnerHTML={{ __html: rich }} />
+      ) : item.summary ? (
+        <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p>
+      ) : null}
       {url ? (
         <a
           href={url}

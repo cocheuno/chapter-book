@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { announcementRichHtml } from "@/lib/crm/announcement-html";
 import { getPublicPage } from "@/lib/crm/site";
 
 export const Route = createFileRoute("/p/$slug")({ component: PublicPage });
@@ -32,7 +33,9 @@ function PublicPage() {
     );
   }
 
-  const blocks = paragraphs(page.body, page.summary);
+  const source = (page.body && page.body.trim()) || (page.summary && page.summary.trim()) || "";
+  const rich = page.kind === "announcement" ? announcementRichHtml(source) : null;
+  const blocks = rich ? [] : paragraphs(page.body, page.summary);
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
@@ -56,11 +59,18 @@ function PublicPage() {
         {page.when_label ? <p className="text-sm text-muted">{page.when_label}</p> : null}
         {page.location ? <p className="text-sm text-ink-soft">{page.location}</p> : null}
         {page.audience ? <p className="text-sm text-muted">{page.audience}</p> : null}
-        {blocks.map((p) => (
-          <p key={p.slice(0, 40)} className="text-lg leading-relaxed text-ink-soft whitespace-pre-wrap">
-            {p}
-          </p>
-        ))}
+        {rich ? (
+          <div
+            className="announcement-html text-lg leading-relaxed text-ink-soft"
+            dangerouslySetInnerHTML={{ __html: rich }}
+          />
+        ) : (
+          blocks.map((p) => (
+            <p key={p.slice(0, 40)} className="text-lg leading-relaxed text-ink-soft whitespace-pre-wrap">
+              {p}
+            </p>
+          ))
+        )}
         {page.url ? (
           <p>
             <a

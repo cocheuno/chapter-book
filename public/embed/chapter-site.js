@@ -26,7 +26,9 @@
     if (item.whenLabel) html += "<p class=\"scs-when\">" + escapeHtml(item.whenLabel) + "</p>";
     if (item.location) html += "<p class=\"scs-loc\">" + escapeHtml(item.location) + "</p>";
     if (item.audience) html += "<p class=\"scs-aud\">" + escapeHtml(item.audience) + "</p>";
-    if (item.summary) html += "<p>" + escapeHtml(item.summary) + "</p>";
+    var rich = safeSection(item.summaryHtml);
+    if (rich) html += rich;
+    else if (item.summary) html += "<p>" + escapeHtml(item.summary) + "</p>";
     var details = item.slug ? origin + "/p/" + encodeURIComponent(item.slug) : "";
     var extra = item.url
       ? /^https?:\/\//i.test(item.url)
@@ -45,6 +47,16 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  // summaryHtml is sanitized on the server. This check refuses anything else.
+  function safeSection(s) {
+    if (!s) return "";
+    var t = String(s).trim();
+    if (!/^<section\b[\s\S]*<\/section>$/i.test(t)) return "";
+    if (/<\s*\/?\s*(script|iframe|object|embed|link|meta|base|form|style)\b/i.test(t)) return "";
+    if (/javascript\s*:/i.test(t) || /\son[a-z]+\s*=/i.test(t)) return "";
+    return t;
   }
 
   fetch(origin + "/api/public-site?t=" + Date.now())

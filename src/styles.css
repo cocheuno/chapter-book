@@ -57,6 +57,45 @@
   color: var(--color-bronze);
 }
 
+.announcement-html :where(p, ul, ol, blockquote, figure, table, h1, h2, h3, h4) + * {
+  margin-top: 0.75rem;
+}
+.announcement-html :where(ul, ol) {
+  padding-left: 1.25rem;
+  list-style: revert;
+}
+.announcement-html a {
+  color: var(--color-bronze);
+  text-underline-offset: 2px;
+}
+.announcement-html a:hover {
+  text-decoration: underline;
+}
+.announcement-html img {
+  max-width: 100%;
+  height: auto;
+}
+.announcement-html .line {
+  height: 1px;
+  background: var(--color-line);
+  margin: 0.35rem 0 0.85rem;
+}
+.announcement-html .eyebrow {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-bronze);
+}
+.announcement-html .fine {
+  font-size: 0.9em;
+  color: var(--color-muted);
+}
+.announcement-html .subhead {
+  margin-top: 1rem;
+  font-family: var(--font-display);
+}
+
 @media (max-width: 639px) {
   .chapter-user > div > span.text-sm.font-medium {
     display: none;

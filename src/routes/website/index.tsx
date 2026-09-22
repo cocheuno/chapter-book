@@ -3,6 +3,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { announcementCardHtml } from "@/lib/crm/announcement-html";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
 import { useEffect, useMemo, useState } from "react";
@@ -313,15 +314,34 @@ function WebsiteInner() {
           </Field>
           <div className="sm:col-span-2">
             <Field label="Summary">
-              <p className="mb-1 text-sm text-ink-soft">Short text on the homepage list.</p>
-              <Textarea value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
+              <p className="mb-1 text-sm text-ink-soft">
+                {form.kind === "announcement" ? (
+                  <>
+                    Short text on the homepage list, or one <code>{"<section>…</section>"}</code> of HTML for rich
+                    content.
+                  </>
+                ) : (
+                  "Short text on the homepage list."
+                )}
+              </p>
+              <Textarea
+                value={form.summary}
+                onChange={(e) => setForm({ ...form, summary: e.target.value })}
+                className={form.kind === "announcement" ? "min-h-32" : undefined}
+              />
             </Field>
           </div>
           <div className="sm:col-span-2">
             <Field label="Page">
               <p className="mb-1 text-sm text-ink-soft">
-                Full public page for this item. Blank lines start a new paragraph. No length limit. Saved pages are at
-                /p/… on Chapter Book (not GoDaddy).
+                {form.kind === "announcement" ? (
+                  <>
+                    Full public page at /p/… . Plain text (a blank line starts a paragraph), or one{" "}
+                    <code>{"<section>…</section>"}</code> of HTML. No length limit.
+                  </>
+                ) : (
+                  "Full public page for this item. Blank lines start a new paragraph. No length limit. Saved pages are at /p/… on Chapter Book (not GoDaddy)."
+                )}
               </p>
               <Textarea
                 value={form.body}
@@ -367,7 +387,9 @@ function WebsiteInner() {
       )}
 
       <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
-        {rows.map((item) => (
+        {rows.map((item) => {
+          const rich = item.kind === "announcement" ? announcementCardHtml(item.summary, item.body) : null;
+          return (
           <li key={item.id} className="px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -381,7 +403,14 @@ function WebsiteInner() {
                   <p className="text-sm text-muted">{[item.when_label, item.location].filter(Boolean).join(" · ")}</p>
                 ) : null}
                 {item.audience ? <p className="text-sm text-muted">{item.audience}</p> : null}
-                {item.summary ? <p className="mt-1 text-sm text-ink-soft">{item.summary}</p> : null}
+                {rich ? (
+                  <div
+                    className="announcement-html mt-2 text-sm text-ink-soft"
+                    dangerouslySetInnerHTML={{ __html: rich }}
+                  />
+                ) : item.summary ? (
+                  <p className="mt-1 text-sm text-ink-soft">{item.summary}</p>
+                ) : null}
                 {item.slug ? (
                   <a href={`/p/${item.slug}`} className="mt-1 inline-block text-sm text-bronze hover:underline">
                     Open page
@@ -413,7 +442,8 @@ function WebsiteInner() {
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
         {rows.length === 0 && <li className="px-4 py-8 text-muted">Nothing on this shelf yet.</li>}
       </ul>
     </div>

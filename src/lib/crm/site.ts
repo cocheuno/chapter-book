@@ -5,6 +5,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
+import { publicSummaryFields } from "./announcement-html";
 import { DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
 
 function isUniqueViolation(err: unknown): boolean {
@@ -115,7 +116,7 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
       kind: i.kind,
       title: i.title,
       subtitle: i.subtitle,
-      summary: i.summary,
+      ...publicSummaryFields(i.kind, i.summary, i.body),
       url: i.url,
       location: i.location,
       whenLabel: i.when_label,
