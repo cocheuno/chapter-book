@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ConferencePublicEditor } from "@/components/conference-public-editor";
 import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
+import { getEventWebPage, setEventWebPage } from "@/lib/crm/event-page";
 import { formatWhen, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
   addProgramPiece,
@@ -37,9 +38,11 @@ function EventInner() {
   const [parishes, setParishes] = useState<{ id: string; name: string }[]>([]);
   const [pieceKind, setPieceKind] = useState("lecture");
   const [pieceTitle, setPieceTitle] = useState("");
+  const [webPage, setWebPage] = useState<{ id: string; slug: string | null; published: boolean } | null>(null);
 
   function load() {
     getEvent({ data: eventId }).then(setData);
+    getEventWebPage({ data: eventId }).then(setWebPage);
     listClergy().then(setClergy);
     listParishes().then(setParishes);
   }
@@ -240,6 +243,46 @@ function EventInner() {
             ))}
           </ul>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h2 className="font-display text-xl">Web page</h2>
+        <label className="mt-3 flex min-h-11 items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-5"
+            checked={Boolean(webPage?.published)}
+            onChange={async (ev) => {
+              try {
+                await setEventWebPage({ data: { eventId, enabled: ev.target.checked } });
+                load();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not update the web page");
+              }
+            }}
+          />
+          <span>
+            Web page
+            <span className="mt-1 block text-ink-soft">
+              Puts a page for this gathering on Website. Edit the page there.
+            </span>
+          </span>
+        </label>
+        {webPage?.published ? (
+          <div className="mt-3 flex flex-wrap gap-4 text-sm">
+            <Link to="/website" search={{ item: webPage.id, announce: "" }} className="text-bronze underline-offset-2 hover:underline">
+              Edit on Website
+            </Link>
+            <Link to="/website" search={{ item: "", announce: eventId }} className="text-bronze underline-offset-2 hover:underline">
+              New announcement
+            </Link>
+            {webPage.slug ? (
+              <a href={`/p/${webPage.slug}`} className="text-bronze underline-offset-2 hover:underline">
+                Open the public page
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {!isGold ? <ConferencePublicEditor key={eventId} eventId={eventId} /> : null}

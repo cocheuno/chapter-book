@@ -155,6 +155,11 @@ function EventCard({ item }: { item: SiteItemRow }) {
       ) : item.summary ? (
         <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p>
       ) : null}
+      {item.eventPage ? (
+        <a href={item.eventPage.href} className="mt-3 block text-sm text-bronze underline-offset-2 hover:underline">
+          Event page: {item.eventPage.title}
+        </a>
+      ) : null}
       {url ? (
         <a
           href={url}

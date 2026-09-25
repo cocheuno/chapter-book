@@ -9,6 +9,7 @@ import {
   saveConferenceSession,
 } from "@/lib/crm/conference-public";
 import { uploadSiteImage } from "@/lib/crm/site";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -39,11 +40,16 @@ export function ConferencePublicEditor({ eventId }: { eventId: string }) {
             What you save here is what visitors see. Type each speaker. People in the book stay off the page.
           </p>
         </div>
-        {page.slug ? (
-          <a href={`/p/${page.slug}`} className="text-sm text-bronze underline-offset-2 hover:underline">
-            Open the public page
-          </a>
-        ) : null}
+        <div className="flex flex-wrap gap-4 text-sm">
+          <Link to="/website" search={{ item: page.id, announce: "" }} className="text-bronze underline-offset-2 hover:underline">
+            Edit on Website
+          </Link>
+          {page.slug ? (
+            <a href={`/p/${page.slug}`} className="text-bronze underline-offset-2 hover:underline">
+              Open the public page
+            </a>
+          ) : null}
+        </div>
       </div>
 
       <PageForm

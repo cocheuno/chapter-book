@@ -37,6 +37,9 @@
       : "";
     var detailsLabel = item.layout === "conference" ? "Conference page" : "Event details";
     if (details) html += "<p><a href=\"" + escapeHtml(details) + "\">" + detailsLabel + "</a></p>";
+    if (item.eventPage && item.eventPage.href) {
+      html += "<p><a href=\"" + escapeHtml(origin + item.eventPage.href) + "\">Event page: " + escapeHtml(item.eventPage.title || "") + "</a></p>";
+    }
     else if (extra) html += "<p><a href=\"" + escapeHtml(extra) + "\">Read more</a></p>";
     html += "</article>";
     return html;
