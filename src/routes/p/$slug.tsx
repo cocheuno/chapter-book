@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ConferencePage } from "@/components/conference-page";
 import { announcementRichHtml } from "@/lib/crm/announcement-html";
 import { getPublicPage } from "@/lib/crm/site";
 
@@ -30,6 +31,30 @@ function PublicPage() {
       <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
         <p>That page is not published.</p>
       </main>
+    );
+  }
+
+  if (page.layout === "conference") {
+    return (
+      <ConferencePage
+        page={{
+          id: page.id,
+          kind: page.kind,
+          title: page.title,
+          subtitle: page.subtitle,
+          summary: page.summary,
+          url: page.url,
+          when_label: page.when_label,
+          audience: page.audience,
+          featured: page.featured,
+          slug: page.slug,
+          location: page.location,
+          body: page.body,
+          public_title: page.public_title,
+          contact_email: page.contact_email,
+          program: page.program,
+        }}
+      />
     );
   }
 

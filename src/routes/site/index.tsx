@@ -144,7 +144,9 @@ function EventCard({ item }: { item: SiteItemRow }) {
   const rich = item.kind === "announcement" ? announcementCardHtml(item.summary, item.body) : null;
   return (
     <li className="rounded-xl border border-line bg-surface p-5">
-      <p className="text-xs tracking-wide text-bronze uppercase">{item.featured ? "Featured" : "Gathering"}</p>
+      <p className="text-xs tracking-wide text-bronze uppercase">
+        {item.layout === "conference" ? "Conference" : item.featured ? "Featured" : "Gathering"}
+      </p>
       <h3 className="mt-1 font-display text-xl">{item.title}</h3>
       {item.when_label ? <p className="mt-1 text-sm text-muted">{item.when_label}</p> : null}
       {item.location ? <p className="text-sm text-ink-soft">{item.location}</p> : null}
@@ -159,7 +161,7 @@ function EventCard({ item }: { item: SiteItemRow }) {
           className="mt-3 inline-block text-sm text-bronze underline-offset-2 hover:underline"
           {...(url.startsWith("/") ? {} : { target: "_blank", rel: "noreferrer" })}
         >
-          {item.slug ? "Event details" : "Register"}
+          {item.slug ? (item.layout === "conference" ? "Conference page" : "Event details") : "Register"}
         </a>
       ) : null}
     </li>

@@ -28,6 +28,8 @@ const emptyItem = (kind: SiteKind) => ({
   published: true,
   slug: "",
   body: "",
+  layout: "page" as "page" | "conference",
+  conferenceId: "",
 });
 
 function WebsitePage() {
@@ -68,6 +70,12 @@ function WebsiteInner() {
   useEffect(load, []);
 
   const rows = useMemo(() => (data?.items ?? []).filter((i) => i.kind === tab), [data, tab]);
+  const conferences = useMemo(
+    () => (data?.items ?? []).filter((i) => i.kind === "event" && i.layout === "conference" && i.id !== form.id),
+    [data, form.id],
+  );
+  const onConference = form.layout === "conference";
+  const onProgram = Boolean(form.conferenceId);
 
   function startEdit(item: SiteItem) {
     setForm({
@@ -84,6 +92,8 @@ function WebsiteInner() {
       published: Boolean(item.published),
       slug: item.slug ?? "",
       body: item.body ?? "",
+      layout: item.layout === "conference" ? "conference" : "page",
+      conferenceId: item.conference_id ?? "",
     });
   }
 
@@ -230,6 +240,8 @@ function WebsiteInner() {
                   published: form.published,
                   slug: form.slug,
                   body: form.body,
+                  layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
+                  conferenceId: form.kind === "event" ? "" : form.conferenceId,
                 },
               });
               const row = {
@@ -247,6 +259,8 @@ function WebsiteInner() {
                 sort_order: 0,
                 slug: saved.slug ?? (form.slug || null),
                 body: form.body || null,
+                layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
+                conference_id: form.kind === "event" ? null : form.conferenceId || null,
               };
               setData((prev) =>
                 prev
@@ -279,37 +293,93 @@ function WebsiteInner() {
               ))}
             </Select>
           </Field>
-          {(tab === "event" || form.kind === "event") && (
-            <>
-              <Field label="When">
-                <Input
-                  value={form.whenLabel}
-                  onChange={(e) => setForm({ ...form, whenLabel: e.target.value })}
-                  placeholder="Tuesday, November 10, 2026 · 6:00 p.m."
-                />
-              </Field>
-              <Field label="Where">
-                <Input
-                  value={form.location}
-                  onChange={(e) => setForm({ ...form, location: e.target.value })}
-                  placeholder="Parish, city"
-                />
-              </Field>
-            </>
-          )}
-          {(tab === "course" || form.kind === "course") && (
-            <Field label="Audience">
+          {form.kind === "event" ? (
+            <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
+              <input
+                type="checkbox"
+                className="size-5"
+                checked={onConference}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    layout: e.target.checked ? "conference" : "page",
+                    conferenceId: e.target.checked ? "" : form.conferenceId,
+                  })
+                }
+              />
+              Conference page
+            </label>
+          ) : conferences.length > 0 ? (
+            <Field label="Show on conference">
+              <Select
+                value={form.conferenceId}
+                onChange={(e) => setForm({ ...form, conferenceId: e.target.value, layout: "page" })}
+              >
+                <option value="">Not on a conference page</option>
+                {conferences.map((conference) => (
+                  <option key={conference.id} value={conference.id}>
+                    {conference.title}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          {onConference ? (
+            <p className="text-sm text-ink-soft sm:col-span-2">
+              Title, headline, summary, when, where, and the register link fill the top of the page. The Page field is
+              the longer introduction. Add talks as Articles, workshops as Courses, and practical notes as Documents,
+              then choose this conference under Show on conference. Type each speaker in the article subtitle. People
+              in the book are not copied onto the page.
+            </p>
+          ) : null}
+          {(form.kind === "event" || (onProgram && (form.kind === "article" || form.kind === "course"))) && (
+            <Field label="When">
               <Input
-                value={form.audience}
-                onChange={(e) => setForm({ ...form, audience: e.target.value })}
-                placeholder="Clergy & religious"
+                value={form.whenLabel}
+                onChange={(e) => setForm({ ...form, whenLabel: e.target.value })}
+                placeholder="April 16, 2027 · 9:00 a.m."
               />
             </Field>
           )}
-          <Field label={tab === "article" ? "Authors / journal" : "Subtitle"}>
-            <Input value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} />
+          {form.kind === "event" && (
+            <Field label="Where">
+              <Input
+                value={form.location}
+                onChange={(e) => setForm({ ...form, location: e.target.value })}
+                placeholder="Parish, city"
+              />
+            </Field>
+          )}
+          {(form.kind === "course" || (onProgram && form.kind === "article")) && (
+            <Field label={onProgram ? "Track" : "Audience"}>
+              <Input
+                value={form.audience}
+                onChange={(e) => setForm({ ...form, audience: e.target.value })}
+                placeholder={onProgram ? "How it works" : "Clergy & religious"}
+              />
+            </Field>
+          )}
+          <Field
+            label={
+              onConference
+                ? "Headline"
+                : onProgram && form.kind === "article"
+                  ? "Speaker"
+                  : form.kind === "article"
+                    ? "Authors / journal"
+                    : "Subtitle"
+            }
+          >
+            {onProgram && form.kind === "article" ? (
+              <p className="text-sm text-ink-soft">Type the speaker here. People in the book are not copied onto the page.</p>
+            ) : null}
+            <Input
+              value={form.subtitle}
+              onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
+              placeholder={onProgram && form.kind === "article" ? "Name, role, institution" : undefined}
+            />
           </Field>
-          <Field label="Link">
+          <Field label={onConference ? "Register link" : "Link"}>
             <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://" />
           </Field>
           <div className="sm:col-span-2">
@@ -320,6 +390,10 @@ function WebsiteInner() {
                     Short text on the homepage list, or one <code>{"<section>…</section>"}</code> of HTML for rich
                     content.
                   </>
+                ) : onConference ? (
+                  "Short text under the headline."
+                ) : onProgram && form.kind === "article" ? (
+                  "Abstract for this talk."
                 ) : (
                   "Short text on the homepage list."
                 )}
@@ -339,6 +413,10 @@ function WebsiteInner() {
                     Full public page at /p/… . Plain text (a blank line starts a paragraph), or one{" "}
                     <code>{"<section>…</section>"}</code> of HTML. No length limit.
                   </>
+                ) : onConference ? (
+                  "Longer introduction on the conference page. A blank line starts a new paragraph. The public address is /p/… on Chapter Book."
+                ) : onProgram && form.kind === "article" ? (
+                  "Optional longer abstract. A blank line starts a new paragraph. The public address is /p/… ."
                 ) : (
                   "Full public page for this item. Blank lines start a new paragraph. No length limit. Saved pages are at /p/… on Chapter Book (not GoDaddy)."
                 )}
@@ -354,7 +432,7 @@ function WebsiteInner() {
             <Input
               value={form.slug}
               onChange={(e) => setForm({ ...form, slug: e.target.value })}
-              placeholder="gold-mass-milwaukee"
+              placeholder={onConference ? "ai-conference" : "gold-mass-milwaukee"}
             />
           </Field>
           <label className="flex min-h-11 items-center gap-2 text-sm">
@@ -373,7 +451,7 @@ function WebsiteInner() {
               checked={form.featured}
               onChange={(e) => setForm({ ...form, featured: e.target.checked })}
             />
-            Featured
+            Featured{onProgram && form.kind === "article" ? " — keynote" : ""}
           </label>
           <div className="flex flex-wrap gap-2 sm:col-span-2">
             <Button type="submit">{form.id ? "Save changes" : "Add to shelf"}</Button>
@@ -395,6 +473,7 @@ function WebsiteInner() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">{item.title}</p>
+                  {item.layout === "conference" ? <Badge tone="bronze">Conference</Badge> : null}
                   {item.featured ? <Badge tone="bronze">Featured</Badge> : null}
                   {!item.published ? <Badge>Draft</Badge> : null}
                 </div>

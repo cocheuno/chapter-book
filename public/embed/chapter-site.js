@@ -35,7 +35,8 @@
         ? item.url
         : "https://" + item.url
       : "";
-    if (details) html += "<p><a href=\"" + escapeHtml(details) + "\">Event details</a></p>";
+    var detailsLabel = item.layout === "conference" ? "Conference page" : "Event details";
+    if (details) html += "<p><a href=\"" + escapeHtml(details) + "\">" + detailsLabel + "</a></p>";
     else if (extra) html += "<p><a href=\"" + escapeHtml(extra) + "\">Read more</a></p>";
     html += "</article>";
     return html;

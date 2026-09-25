@@ -10,6 +10,10 @@ export const SITE_KINDS = [
 
 export type SiteKind = (typeof SITE_KINDS)[number]["key"];
 
+export const AI_CONFERENCE_TITLE =
+  "Faith, Reason, and AI — Putting Humanity First in the Age of Intelligent Machines";
+export const AI_CONFERENCE_SLUG = "ai-conference";
+
 export const DEFAULT_SITE = {
   publicTitle: "Society of Catholic Scientists — Wisconsin Chapter",
   publicTagline: "Understanding science and technology in the light of the Church",
@@ -29,6 +33,9 @@ type SeedItem = {
   audience?: string;
   featured?: boolean;
   sort: number;
+  slug?: string;
+  body?: string;
+  layout?: "page" | "conference";
 };
 
 export const SITE_ITEM_SEEDS: SeedItem[] = [
@@ -56,10 +63,15 @@ export const SITE_ITEM_SEEDS: SeedItem[] = [
   },
   {
     kind: "event",
-    title: "Faith, Reason, and AI — Putting Humanity First in the Age of Intelligent Machines",
+    title: AI_CONFERENCE_TITLE,
+    subtitle: "One day in Madison on artificial intelligence and the human person.",
     whenLabel: "April 16, 2027",
     location: "University of Wisconsin, Madison",
+    audience: "Scientists, teachers, clergy, and students",
     summary: "A gathering of the chapter on artificial intelligence, faith, and the human person.",
+    body: "Scientists, teachers, clergy, and students spend a day on what these systems are, what they are doing to study and work, and how to keep the human person first.\n\nThe day includes talks, workshops, and time to talk with one another.",
+    slug: AI_CONFERENCE_SLUG,
+    layout: "conference",
     sort: 2,
   },
   {
@@ -156,13 +168,13 @@ export async function seedSite(sql: Sql, chapterId: string) {
   for (const item of SITE_ITEM_SEEDS) {
     await sql`
       insert into site_items (
-        id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order
+        id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout
       )
       values (
         ${nid()}, ${chapterId}, ${item.kind}, ${item.title}, ${item.subtitle ?? null},
         ${item.summary ?? null}, ${item.url ?? null}, ${item.location ?? null},
         ${item.whenLabel ?? null}, ${item.audience ?? null}, ${item.featured ?? false},
-        ${true}, ${item.sort}
+        ${true}, ${item.sort}, ${item.slug ?? null}, ${item.body ?? null}, ${item.layout ?? null}
       )
     `;
   }

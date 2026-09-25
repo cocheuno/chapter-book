@@ -6,7 +6,7 @@ import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicSummaryFields } from "./announcement-html";
-import { DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
+import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
 
 function isUniqueViolation(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -35,6 +35,8 @@ export type SiteItemRow = {
   sort_order: number;
   slug: string | null;
   body: string | null;
+  layout: string | null;
+  conference_id: string | null;
 };
 
 const emptySettings: SettingsRow = {
@@ -59,14 +61,14 @@ async function readItems(
 ): Promise<SiteItemRow[]> {
   if (publishedOnly) {
     return sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
       from site_items
       where chapter_id = ${chapterId} and published
       order by kind, sort_order, title
     `;
   }
   return sql<SiteItemRow>`
-    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body
+    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
     from site_items
     where chapter_id = ${chapterId}
     order by kind, sort_order, title
@@ -80,6 +82,7 @@ export const listSite = createServerFn({ method: "POST" })
     const sql = await getSql();
     await ensureSiteContent(sql, m.chapterId);
     await backfillSlugs(sql, m.chapterId);
+    await backfillConference(sql, m.chapterId);
     const settings = await readSettings(sql, m.chapterId);
     const items = await readItems(sql, m.chapterId, false);
     return { settings, items, kinds: SITE_KINDS, member: m };
@@ -95,6 +98,7 @@ export async function loadPublishedSite() {
     const chapterId = chapters[0].id;
     await ensureSiteContent(sql, chapterId);
     await backfillSlugs(sql, chapterId);
+    await backfillConference(sql, chapterId);
     const settings = await readSettings(sql, chapterId);
     const items = await readItems(sql, chapterId, true);
     return { settings, items };
@@ -123,6 +127,7 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
       audience: i.audience,
       featured: i.featured,
       slug: i.slug,
+      layout: i.layout === "conference" ? "conference" : "page",
       href: i.slug ? `/p/${i.slug}` : i.url,
     })),
   };
@@ -175,6 +180,36 @@ async function backfillSlugs(sql: Awaited<ReturnType<typeof getSql>>, chapterId:
   }
 }
 
+async function backfillConference(sql: Awaited<ReturnType<typeof getSql>>, chapterId: string) {
+  try {
+    const rows = await sql<{ id: string; slug: string | null; title: string }>`
+      select id, slug, title from site_items
+      where chapter_id = ${chapterId}
+        and kind = 'event'
+        and layout is null
+        and title = ${AI_CONFERENCE_TITLE}
+    `;
+    for (const row of rows) {
+      const auto = slugify(row.title);
+      let slug = row.slug || auto;
+      if (!row.slug || row.slug === auto) {
+        const taken = await sql<{ id: string }>`
+          select id from site_items
+          where chapter_id = ${chapterId} and slug = ${AI_CONFERENCE_SLUG} and id <> ${row.id}
+        `;
+        if (!taken[0]) slug = AI_CONFERENCE_SLUG;
+      }
+      await sql`
+        update site_items
+        set layout = 'conference', slug = ${slug}
+        where id = ${row.id} and chapter_id = ${chapterId} and layout is null
+      `;
+    }
+  } catch {
+    // 0013 may not have applied yet.
+  }
+}
+
 async function uniqueSlug(
   sql: Awaited<ReturnType<typeof getSql>>,
   chapterId: string,
@@ -209,6 +244,8 @@ const itemInput = z.object({
   published: z.boolean().optional(),
   slug: z.string().optional(),
   body: z.string().optional(),
+  layout: z.enum(["page", "conference"]).optional(),
+  conferenceId: z.string().optional(),
 });
 
 export const saveSiteItem = createServerFn({ method: "POST" })
@@ -230,6 +267,19 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     const featured = data.featured ?? false;
     const slug = await uniqueSlug(sql, m.chapterId, title, data.slug, data.id);
     const body = data.body?.trim() || null;
+    const layout = data.kind === "event" && data.layout === "conference" ? "conference" : "page";
+    let conferenceId: string | null = null;
+    if (layout !== "conference" && data.conferenceId?.trim()) {
+      const parent = await sql<{ id: string }>`
+        select id from site_items
+        where id = ${data.conferenceId.trim()}
+          and chapter_id = ${m.chapterId}
+          and kind = 'event'
+          and layout = 'conference'
+          and id <> ${data.id ?? ""}
+      `;
+      if (parent[0]) conferenceId = parent[0].id;
+    }
     if (data.id) {
       await sql`
         update site_items set
@@ -244,7 +294,9 @@ export const saveSiteItem = createServerFn({ method: "POST" })
           featured = ${featured},
           published = ${published},
           slug = ${slug},
-          body = ${body}
+          body = ${body},
+          layout = ${layout},
+          conference_id = ${conferenceId}
         where id = ${data.id} and chapter_id = ${m.chapterId}
       `;
       return { id: data.id, slug };
@@ -257,12 +309,12 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into site_items (
-          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body
+          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
         )
         values (
           ${id}, ${m.chapterId}, ${data.kind}, ${title}, ${data.subtitle || null}, ${data.summary || null},
           ${data.url || null}, ${data.location || null}, ${data.whenLabel || null}, ${data.audience || null},
-          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}
+          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}
         )
       `;
     } catch (err) {
@@ -281,14 +333,27 @@ export const getPublicPage = createServerFn({ method: "POST" })
       const sql = await getSql();
       const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
       if (!chapters[0]) return null;
-      const rows = await sql<SiteItemRow & { public_title: string | null }>`
+      await ensureSiteContent(sql, chapters[0].id);
+      await backfillSlugs(sql, chapters[0].id);
+      await backfillConference(sql, chapters[0].id);
+      const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
         select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
-               i.featured, i.published, i.sort_order, i.slug, i.body, s.public_title
+               i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id,
+               s.public_title, s.contact_email
         from site_items i
         left join site_settings s on s.chapter_id = i.chapter_id
         where i.chapter_id = ${chapters[0].id} and i.slug = ${slug} and i.published
       `;
-      return rows[0] ?? null;
+      const page = rows[0];
+      if (!page) return null;
+      if (page.layout !== "conference") return { ...page, program: [] as SiteItemRow[] };
+      const program = await sql<SiteItemRow>`
+        select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
+        from site_items
+        where chapter_id = ${chapters[0].id} and conference_id = ${page.id} and published
+        order by kind, sort_order, title
+      `;
+      return { ...page, program };
     } catch {
       return null;
     }
@@ -301,6 +366,14 @@ export const removeSiteItem = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    try {
+      await sql`
+        update site_items set conference_id = null
+        where conference_id = ${data.id} and chapter_id = ${m.chapterId}
+      `;
+    } catch {
+      // 0013 may not have applied yet.
+    }
     await sql`delete from site_items where id = ${data.id} and chapter_id = ${m.chapterId}`;
     return { ok: true };
   });
