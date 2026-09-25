@@ -4,13 +4,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { announcementCardHtml } from "@/lib/crm/announcement-html";
-import { siteImageSrc } from "@/lib/crm/site-image";
+import { fileToBase64, PictureField } from "@/components/picture-field";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/website/")({ component: WebsitePage });
+export const Route = createFileRoute("/website/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    item: typeof search.item === "string" ? search.item : "",
+    announce: typeof search.announce === "string" ? search.announce : "",
+  }),
+  component: WebsitePage,
+});
 
 type SiteData = Awaited<ReturnType<typeof listSite>>;
 type SiteItem = SiteData["items"][number];
@@ -32,6 +38,7 @@ const emptyItem = (kind: SiteKind) => ({
   layout: "page" as "page" | "conference",
   conferenceId: "",
   imageId: "",
+  gatheringId: "",
 });
 
 function WebsitePage() {
@@ -43,6 +50,8 @@ function WebsitePage() {
 }
 
 function WebsiteInner() {
+  const search = Route.useSearch();
+  const opened = useRef(false);
   const [data, setData] = useState<SiteData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<SiteKind>("announcement");
@@ -98,9 +107,26 @@ function WebsiteInner() {
       layout: item.layout === "conference" ? "conference" : "page",
       conferenceId: item.conference_id ?? "",
       imageId: item.image_id ?? "",
+      gatheringId: item.gathering_id ?? "",
     });
     setPendingFile(null);
   }
+
+  useEffect(() => {
+    if (!data || opened.current) return;
+    if (search.item) {
+      const item = data.items.find((row) => row.id === search.item);
+      if (!item) return;
+      setTab(item.kind);
+      startEdit(item);
+      opened.current = true;
+    } else if (search.announce) {
+      setTab("announcement");
+      setPendingFile(null);
+      setForm({ ...emptyItem("announcement"), gatheringId: search.announce });
+      opened.current = true;
+    }
+  }, [data, search.announce, search.item]);
 
   if (err) return <p className="text-danger">{err}</p>;
   if (!data) return <p className="text-muted">Opening the website shelf…</p>;
@@ -255,6 +281,7 @@ function WebsiteInner() {
                   layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
                   conferenceId: form.kind === "event" ? "" : form.conferenceId,
                   imageId,
+                  gatheringId: form.kind === "announcement" ? form.gatheringId : "",
                 },
               });
               const row = {
@@ -275,6 +302,7 @@ function WebsiteInner() {
                 layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
                 conference_id: form.kind === "event" ? null : form.conferenceId || null,
                 image_id: imageId || null,
+                gathering_id: form.kind === "announcement" ? form.gatheringId || null : null,
               };
               setData((prev) =>
                 prev
@@ -308,6 +336,21 @@ function WebsiteInner() {
               ))}
             </Select>
           </Field>
+          {form.kind === "announcement" ? (
+            <Field label="Event">
+              <Select value={form.gatheringId} onChange={(e) => setForm({ ...form, gatheringId: e.target.value })}>
+                <option value="">Not for a specific event</option>
+                {(data.gatherings ?? []).map((gathering) => (
+                  <option key={gathering.id} value={gathering.id}>
+                    {gathering.title}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-sm text-ink-soft">
+                The public announcement shows that event's web page, plus the title, summary, and page you write here.
+              </p>
+            </Field>
+          ) : null}
           {form.kind === "event" ? (
             <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
               <input
@@ -521,6 +564,14 @@ function WebsiteInner() {
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">{item.title}</p>
                   {item.layout === "conference" ? <Badge tone="bronze">Conference</Badge> : null}
+                  {(data.gatherings ?? []).some((gathering) => gathering.public_item_id === item.id) ? (
+                    <Badge tone="bronze">Event page</Badge>
+                  ) : null}
+                  {item.kind === "announcement" && item.gathering_id ? (
+                    <Badge>
+                      {(data.gatherings ?? []).find((gathering) => gathering.id === item.gathering_id)?.title ?? "Event"}
+                    </Badge>
+                  ) : null}
                   {item.featured ? <Badge tone="bronze">Featured</Badge> : null}
                   {!item.published ? <Badge>Draft</Badge> : null}
                 </div>
@@ -579,58 +630,4 @@ function WebsiteInner() {
   );
 }
 
-function PictureField({
-  label,
-  imageId,
-  file,
-  onFile,
-  onClear,
-}: {
-  label: string;
-  imageId: string;
-  file: File | null;
-  onFile: (file: File | null) => void;
-  onClear: () => void;
-}) {
-  const [preview, setPreview] = useState<string | null>(null);
-  useEffect(() => {
-    if (!file) {
-      setPreview(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  const src = preview || siteImageSrc(imageId);
-  return (
-    <Field label={label}>
-      <p className="text-sm text-ink-soft">JPEG, PNG, GIF, or WebP from your computer. Up to 1.5 MB.</p>
-      {src ? <img src={src} alt="" className="mt-2 max-h-40 w-full rounded-lg object-cover" /> : null}
-      <input
-        type="file"
-        accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
-        className="mt-2 block min-h-11 w-full text-sm"
-        onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-      />
-      {src ? (
-        <button type="button" className="mt-2 min-h-11 text-sm text-bronze" onClick={onClear}>
-          Remove picture
-        </button>
-      ) : null}
-    </Field>
-  );
-}
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result ?? "");
-      const comma = result.indexOf(",");
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = () => reject(new Error("Could not read that picture"));
-    reader.readAsDataURL(file);
-  });
-}

@@ -34,6 +34,7 @@ function NewEventInner() {
   const [hostId, setHostId] = useState("");
   const [theme, setTheme] = useState("");
   const [companion, setCompanion] = useState("");
+  const [webPage, setWebPage] = useState(false);
   const [parishes, setParishes] = useState<{ id: string; name: string }[]>([]);
   const [events, setEvents] = useState<{ id: string; title: string; status: string }[]>([]);
 
@@ -76,6 +77,7 @@ function NewEventInner() {
               companionEventId: companion || undefined,
               venueDetail: typeKey === "gold_mass" ? "Main church" : undefined,
               admission,
+              webPage,
             },
           });
           await nav({ to: "/events/$eventId", params: { eventId: r.id } });
@@ -147,6 +149,20 @@ function NewEventInner() {
           ))}
         </Select>
       </Field>
+      <label className="flex min-h-11 items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-5"
+          checked={webPage}
+          onChange={(e) => setWebPage(e.target.checked)}
+        />
+        <span>
+          Web page
+          <span className="mt-1 block text-ink-soft">
+            Adds a page on Website for this gathering. You edit that page there.
+          </span>
+        </span>
+      </label>
       <Button type="submit" disabled={Boolean(existing)}>
         Create workspace
       </Button>

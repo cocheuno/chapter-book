@@ -85,6 +85,12 @@ function PublicPage() {
         {page.when_label ? <p className="text-sm text-muted">{page.when_label}</p> : null}
         {page.location ? <p className="text-sm text-ink-soft">{page.location}</p> : null}
         {page.audience ? <p className="text-sm text-muted">{page.audience}</p> : null}
+        {page.eventPage ? (
+          <a href={page.eventPage.href} className="block rounded-xl border border-line bg-surface p-5">
+            <p className="text-xs tracking-wide text-bronze uppercase">Event page</p>
+            <p className="mt-1 font-display text-2xl">{page.eventPage.title}</p>
+          </a>
+        ) : null}
         {rich ? (
           <div
             className="announcement-html text-lg leading-relaxed text-ink-soft"

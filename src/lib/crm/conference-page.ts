@@ -5,6 +5,19 @@
 
 import { siteImageSrc } from "./site-image.ts";
 
+export function chooseConferenceItem(
+  items: { id: string; title: string; kind: string; layout: string | null }[],
+  eventTitle: string,
+  linkedId: string | null,
+): string | null {
+  if (linkedId && items.some((item) => item.id === linkedId && item.kind === "event")) return linkedId;
+  const conferences = items.filter((item) => item.kind === "event" && item.layout === "conference");
+  const titled = conferences.find((item) => item.title.trim().toLowerCase() === eventTitle.trim().toLowerCase());
+  if (titled) return titled.id;
+  if (conferences.length === 1) return conferences[0]!.id;
+  return null;
+}
+
 export type ConferenceItem = {
   id: string;
   kind: string;
@@ -17,11 +30,12 @@ export type ConferenceItem = {
   featured: boolean;
   slug: string | null;
   image_id?: string | null;
+  body?: string | null;
 };
 
 export type ConferenceTrack = { name: string; anchor: string; talks: ConferenceItem[] };
 
-export type ConferenceSpeaker = { name: string; headshot: string | null; talks: ConferenceItem[] };
+export type ConferenceSpeaker = { name: string; headshot: string | null; bio: string | null; talks: ConferenceItem[] };
 
 export type ConferenceProgram = {
   notices: ConferenceItem[];
@@ -94,11 +108,12 @@ export function buildConferenceProgram(items: ConferenceItem[]): ConferenceProgr
     const key = groupKey(name);
     let speaker = speakerIndex.get(key);
     if (!speaker) {
-      speaker = { name, headshot: null, talks: [] };
+      speaker = { name, headshot: null, bio: null, talks: [] };
       speakerIndex.set(key, speaker);
       speakers.push(speaker);
     }
     if (!speaker.headshot) speaker.headshot = siteImageSrc(talk.image_id);
+    if (!speaker.bio && clean(talk.body)) speaker.bio = clean(talk.body);
     speaker.talks.push(talk);
   }
 

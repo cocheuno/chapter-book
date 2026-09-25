@@ -202,6 +202,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
                     )}
                     <div className="min-w-0">
                       <h3 className="font-display text-xl leading-snug">{speaker.name}</h3>
+                      {speaker.bio ? <p className="mt-2 text-sm leading-relaxed text-ink-soft">{speaker.bio}</p> : null}
                       <ul className="mt-2 space-y-1">
                         {speaker.talks.map((talk) => {
                           const href = pieceHref(talk);
@@ -347,6 +348,11 @@ function TalkCard({ talk, kicker }: { talk: ConferenceItem; kicker?: string }) {
       {href ? (
         <p className="mt-3">
           <TextLink href={href}>{talk.slug ? "Read the abstract" : "Related link"}</TextLink>
+        </p>
+      ) : null}
+      {talk.url && /^https?:\/\//i.test(talk.url) ? (
+        <p className="mt-2">
+          <TextLink href={talk.url}>Article</TextLink>
         </p>
       ) : null}
     </li>

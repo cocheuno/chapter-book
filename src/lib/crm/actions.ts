@@ -8,6 +8,7 @@ import { formatWhen, schoolYearStartIso } from "./format";
 import { composedHonorific, LIST_KEYS, type ListKey } from "./lists";
 import { foldName } from "./match";
 import { composePersonName, listedName, splitMiddle, splitWalkupName } from "./names";
+import { ensureEventWebPage } from "./event-page";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
 
 type Row = Record<string, string | number | boolean | null>;
@@ -970,6 +971,7 @@ export const createEvent = createServerFn({ method: "POST" })
       theme: z.string().optional(),
       companionEventId: z.string().optional(),
       admission: z.enum(["private", "free"]).optional(),
+      webPage: z.boolean().optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -1021,6 +1023,7 @@ export const createEvent = createServerFn({ method: "POST" })
       await sql`insert into event_links (event_id_a, event_id_b) values (${a}, ${b})`;
     }
     await spawnChecklist(sql, m.chapterId, id, data.typeKey, data.startsAt || null);
+    if (data.webPage) await ensureEventWebPage(sql, m.chapterId, id);
     return { id };
   });
 
