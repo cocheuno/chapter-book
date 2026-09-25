@@ -3,11 +3,11 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { ConferencePublicEditor } from "@/components/conference-public-editor";
 import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
 import { formatWhen, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
   addProgramPiece,
-  addSession,
   cloneEvent,
   closeDoor,
   exportNametags,
@@ -37,7 +37,6 @@ function EventInner() {
   const [parishes, setParishes] = useState<{ id: string; name: string }[]>([]);
   const [pieceKind, setPieceKind] = useState("lecture");
   const [pieceTitle, setPieceTitle] = useState("");
-  const [sessionTitle, setSessionTitle] = useState("");
 
   function load() {
     getEvent({ data: eventId }).then(setData);
@@ -243,8 +242,11 @@ function EventInner() {
         </div>
       </section>
 
+      {!isGold ? <ConferencePublicEditor key={eventId} eventId={eventId} /> : null}
+
+      {isGold ? (
       <section className="rounded-xl border border-line bg-surface p-4">
-        <h2 className="font-display text-xl">{isGold ? "Program" : "Sessions"}</h2>
+        <h2 className="font-display text-xl">Program</h2>
         <ul className="mt-2 space-y-1 text-sm">
           {data.pieces.map((p) => (
             <li key={p.id}>
@@ -255,43 +257,27 @@ function EventInner() {
             <li key={s.id}>{s.title}{s.room ? ` · ${s.room}` : ""}</li>
           ))}
         </ul>
-        {isGold ? (
-          <form
-            className="mt-3 flex flex-col gap-2 sm:flex-row"
-            onSubmit={async (ev) => {
-              ev.preventDefault();
-              await addProgramPiece({ data: { eventId, kindKey: pieceKind, title: pieceTitle } });
-              setPieceTitle("");
-              load();
-            }}
-          >
-            <Select value={pieceKind} onChange={(e) => setPieceKind(e.target.value)}>
-              <option value="lecture">Lecture</option>
-              <option value="reception">Reception</option>
-              <option value="dinner">Dinner</option>
-            </Select>
-            <Input value={pieceTitle} onChange={(e) => setPieceTitle(e.target.value)} placeholder="Title / notes" />
-            <Button type="submit" variant="secondary">
-              Add
-            </Button>
-          </form>
-        ) : (
-          <form
-            className="mt-3 flex gap-2"
-            onSubmit={async (ev) => {
-              ev.preventDefault();
-              await addSession({ data: { eventId, title: sessionTitle } });
-              setSessionTitle("");
-              load();
-            }}
-          >
-            <Input value={sessionTitle} onChange={(e) => setSessionTitle(e.target.value)} placeholder="Session title" required />
-            <Button type="submit" variant="secondary">
-              Add session
-            </Button>
-          </form>
-        )}
+        <form
+          className="mt-3 flex flex-col gap-2 sm:flex-row"
+          onSubmit={async (ev) => {
+            ev.preventDefault();
+            await addProgramPiece({ data: { eventId, kindKey: pieceKind, title: pieceTitle } });
+            setPieceTitle("");
+            load();
+          }}
+        >
+          <Select value={pieceKind} onChange={(e) => setPieceKind(e.target.value)}>
+            <option value="lecture">Lecture</option>
+            <option value="reception">Reception</option>
+            <option value="dinner">Dinner</option>
+          </Select>
+          <Input value={pieceTitle} onChange={(e) => setPieceTitle(e.target.value)} placeholder="Title / notes" />
+          <Button type="submit" variant="secondary">
+            Add
+          </Button>
+        </form>
       </section>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Button
