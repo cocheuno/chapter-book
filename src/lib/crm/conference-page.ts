@@ -3,6 +3,8 @@
  * Speaker lines are text on those items. This module never reads People.
  */
 
+import { siteImageSrc } from "./site-image.ts";
+
 export type ConferenceItem = {
   id: string;
   kind: string;
@@ -14,11 +16,12 @@ export type ConferenceItem = {
   audience: string | null;
   featured: boolean;
   slug: string | null;
+  image_id?: string | null;
 };
 
 export type ConferenceTrack = { name: string; anchor: string; talks: ConferenceItem[] };
 
-export type ConferenceSpeaker = { name: string; talks: ConferenceItem[] };
+export type ConferenceSpeaker = { name: string; headshot: string | null; talks: ConferenceItem[] };
 
 export type ConferenceProgram = {
   notices: ConferenceItem[];
@@ -91,10 +94,11 @@ export function buildConferenceProgram(items: ConferenceItem[]): ConferenceProgr
     const key = groupKey(name);
     let speaker = speakerIndex.get(key);
     if (!speaker) {
-      speaker = { name, talks: [] };
+      speaker = { name, headshot: null, talks: [] };
       speakerIndex.set(key, speaker);
       speakers.push(speaker);
     }
+    if (!speaker.headshot) speaker.headshot = siteImageSrc(talk.image_id);
     speaker.talks.push(talk);
   }
 

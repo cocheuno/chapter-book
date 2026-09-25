@@ -6,6 +6,7 @@ import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicSummaryFields } from "./announcement-html";
+import { siteImageSrc, sniffSiteImage } from "./site-image";
 import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
 
 function isUniqueViolation(err: unknown): boolean {
@@ -37,6 +38,7 @@ export type SiteItemRow = {
   body: string | null;
   layout: string | null;
   conference_id: string | null;
+  image_id: string | null;
 };
 
 const emptySettings: SettingsRow = {
@@ -61,14 +63,14 @@ async function readItems(
 ): Promise<SiteItemRow[]> {
   if (publishedOnly) {
     return sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id
       from site_items
       where chapter_id = ${chapterId} and published
       order by kind, sort_order, title
     `;
   }
   return sql<SiteItemRow>`
-    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
+    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id
     from site_items
     where chapter_id = ${chapterId}
     order by kind, sort_order, title
@@ -128,6 +130,7 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
       featured: i.featured,
       slug: i.slug,
       layout: i.layout === "conference" ? "conference" : "page",
+      imageSrc: siteImageSrc(i.image_id),
       href: i.slug ? `/p/${i.slug}` : i.url,
     })),
   };
@@ -230,6 +233,64 @@ async function uniqueSlug(
   return `${base}-${nid().slice(0, 8)}`;
 }
 
+async function itemImageId(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  id: string,
+): Promise<string | null> {
+  const rows = await sql<{ image_id: string | null }>`
+    select image_id from site_items where id = ${id} and chapter_id = ${chapterId}
+  `;
+  return rows[0]?.image_id ?? null;
+}
+
+async function ownedImageId(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  requested: string | undefined,
+): Promise<string | null> {
+  const id = requested?.trim() ?? "";
+  if (!id) return null;
+  if (!siteImageSrc(id)) throw new Error("That picture is not in this book.");
+  const rows = await sql<{ id: string }>`
+    select id from site_images where id = ${id} and chapter_id = ${chapterId}
+  `;
+  if (!rows[0]) throw new Error("That picture is not in this book.");
+  return rows[0].id;
+}
+
+async function releaseSiteImage(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  imageId: string,
+) {
+  await sql`
+    delete from site_images
+    where id = ${imageId} and chapter_id = ${chapterId}
+      and not exists (
+        select 1 from site_items where image_id = ${imageId} and chapter_id = ${chapterId}
+      )
+  `;
+}
+
+export const uploadSiteImage = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ data: z.string().min(16).max(2_100_000) }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    const bytes = new Uint8Array(Buffer.from(data.data, "base64"));
+    const mime = sniffSiteImage(bytes);
+    if (!mime) throw new Error("Choose a JPEG, PNG, GIF, or WebP picture, up to 1.5 MB.");
+    const sql = await getSql();
+    const id = nid();
+    await sql`
+      insert into site_images (id, chapter_id, mime, bytes)
+      values (${id}, ${m.chapterId}, ${mime}, ${bytes})
+    `;
+    return { id };
+  });
+
 const itemInput = z.object({
   id: z.string().optional(),
   kind: z.enum(["announcement", "event", "article", "document", "course"]),
@@ -246,6 +307,7 @@ const itemInput = z.object({
   body: z.string().optional(),
   layout: z.enum(["page", "conference"]).optional(),
   conferenceId: z.string().optional(),
+  imageId: z.string().optional(),
 });
 
 export const saveSiteItem = createServerFn({ method: "POST" })
@@ -267,6 +329,8 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     const featured = data.featured ?? false;
     const slug = await uniqueSlug(sql, m.chapterId, title, data.slug, data.id);
     const body = data.body?.trim() || null;
+    const imageId = await ownedImageId(sql, m.chapterId, data.imageId);
+    const previousImageId = data.id ? await itemImageId(sql, m.chapterId, data.id) : null;
     const layout = data.kind === "event" && data.layout === "conference" ? "conference" : "page";
     let conferenceId: string | null = null;
     if (layout !== "conference" && data.conferenceId?.trim()) {
@@ -296,9 +360,13 @@ export const saveSiteItem = createServerFn({ method: "POST" })
           slug = ${slug},
           body = ${body},
           layout = ${layout},
-          conference_id = ${conferenceId}
+          conference_id = ${conferenceId},
+          image_id = ${imageId}
         where id = ${data.id} and chapter_id = ${m.chapterId}
       `;
+      if (previousImageId && previousImageId !== imageId) {
+        await releaseSiteImage(sql, m.chapterId, previousImageId);
+      }
       return { id: data.id, slug };
     }
     const id = nid();
@@ -309,12 +377,12 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into site_items (
-          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
+          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id
         )
         values (
           ${id}, ${m.chapterId}, ${data.kind}, ${title}, ${data.subtitle || null}, ${data.summary || null},
           ${data.url || null}, ${data.location || null}, ${data.whenLabel || null}, ${data.audience || null},
-          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}
+          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}, ${imageId}
         )
       `;
     } catch (err) {
@@ -338,7 +406,7 @@ export const getPublicPage = createServerFn({ method: "POST" })
       await backfillConference(sql, chapters[0].id);
       const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
         select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
-               i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id,
+               i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id,
                s.public_title, s.contact_email
         from site_items i
         left join site_settings s on s.chapter_id = i.chapter_id
@@ -348,7 +416,7 @@ export const getPublicPage = createServerFn({ method: "POST" })
       if (!page) return null;
       if (page.layout !== "conference") return { ...page, program: [] as SiteItemRow[] };
       const program = await sql<SiteItemRow>`
-        select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id
+        select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id
         from site_items
         where chapter_id = ${chapters[0].id} and conference_id = ${page.id} and published
         order by kind, sort_order, title
@@ -366,6 +434,7 @@ export const removeSiteItem = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    const imageId = await itemImageId(sql, m.chapterId, data.id);
     try {
       await sql`
         update site_items set conference_id = null
@@ -375,5 +444,6 @@ export const removeSiteItem = createServerFn({ method: "POST" })
       // 0013 may not have applied yet.
     }
     await sql`delete from site_items where id = ${data.id} and chapter_id = ${m.chapterId}`;
+    if (imageId) await releaseSiteImage(sql, m.chapterId, imageId);
     return { ok: true };
   });

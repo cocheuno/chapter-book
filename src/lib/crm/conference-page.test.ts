@@ -72,6 +72,7 @@ describe("conference program", () => {
     );
     assert.equal(program.speakers.length, 2);
     assert.equal(program.speakers[0]?.name, "Dr. Ada More");
+    assert.equal(program.speakers[0]?.headshot, null);
     assert.deepEqual(
       program.speakers[0]?.talks.map((talk) => talk.title),
       ["The human person and the machine", "What the systems actually do"],
@@ -93,6 +94,26 @@ describe("conference program", () => {
     ]);
     assert.equal(program.speakers.length, 0);
     assert.equal(program.tracks[0]?.name, "Sessions");
+  });
+
+  it("uses an uploaded headshot and ignores a web address", () => {
+    const program = buildConferenceProgram([
+      item({
+        id: "a",
+        kind: "article",
+        title: "Opening",
+        subtitle: "Ada More",
+        image_id: "https://example.edu/ada.jpg",
+      }),
+      item({
+        id: "b",
+        kind: "article",
+        title: "Second talk",
+        subtitle: "Ada More",
+        image_id: "11111111-1111-4111-8111-111111111111",
+      }),
+    ]);
+    assert.equal(program.speakers[0]?.headshot, "/api/site-image/11111111-1111-4111-8111-111111111111");
   });
 
   it("links a shelf page before an external url", () => {

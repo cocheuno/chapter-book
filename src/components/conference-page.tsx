@@ -3,6 +3,7 @@ import {
   pieceHref,
   type ConferenceItem,
 } from "@/lib/crm/conference-page";
+import { siteImageSrc } from "@/lib/crm/site-image";
 import { announcementCardHtml } from "@/lib/crm/announcement-html";
 
 export type ConferencePageData = ConferenceItem & {
@@ -52,6 +53,7 @@ function RegisterLink({ href, className }: { href: string; className: string }) 
 export function ConferencePage({ page }: { page: ConferencePageData }) {
   const program = buildConferenceProgram(page.program);
   const register = pieceHref({ url: page.url });
+  const venuePhoto = siteImageSrc(page.image_id);
   const about = paragraphs(page.body);
   const hasProgram = program.keynotes.length + program.tracks.length + program.workshops.length > 0;
   const chapter = page.public_title || "Society of Catholic Scientists";
@@ -184,12 +186,20 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
               {program.speakers.map((speaker) => (
                 <li key={speaker.name} className="rounded-xl border border-line bg-surface p-5">
                   <div className="flex items-start gap-3">
-                    <span
-                      className="grid size-12 shrink-0 place-items-center rounded-full bg-paper-2 font-display text-lg text-bronze"
-                      aria-hidden
-                    >
-                      {initial(speaker.name)}
-                    </span>
+                    {speaker.headshot ? (
+                      <img
+                        src={speaker.headshot}
+                        alt=""
+                        className="size-16 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span
+                        className="grid size-12 shrink-0 place-items-center rounded-full bg-paper-2 font-display text-lg text-bronze"
+                        aria-hidden
+                      >
+                        {initial(speaker.name)}
+                      </span>
+                    )}
                     <div className="min-w-0">
                       <h3 className="font-display text-xl leading-snug">{speaker.name}</h3>
                       <ul className="mt-2 space-y-1">
@@ -273,9 +283,16 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           </section>
         ) : null}
 
-        {page.when_label || page.location ? (
+        {page.when_label || page.location || venuePhoto ? (
           <section id="visit" className="scroll-mt-20 rounded-xl border border-line bg-surface p-5 sm:p-8">
             <h2 className="font-display text-3xl">When and where</h2>
+            {venuePhoto ? (
+              <img
+                src={venuePhoto}
+                alt={page.location ? `Venue, ${page.location}` : "Conference venue"}
+                className="mt-6 aspect-video w-full rounded-lg object-cover"
+              />
+            ) : null}
             <div className="mt-4 grid gap-6 sm:grid-cols-2">
               {page.when_label ? (
                 <p>
