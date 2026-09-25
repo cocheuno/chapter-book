@@ -11,15 +11,16 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ApiPublicSiteRouteImport } from './routes/api/public-site'
 import { Route as ChapterIndexRouteImport } from './routes/chapter/index'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
 import { Route as EventsNewRouteImport } from './routes/events/new'
 import { Route as MailIndexRouteImport } from './routes/mail/index'
 import { Route as MailMailingIdRouteImport } from './routes/mail/$mailingId'
 import { Route as MailComposeRouteImport } from './routes/mail/compose'
+import { Route as PSlugRouteImport } from './routes/p/$slug'
 import { Route as PartnersIndexRouteImport } from './routes/partners/index'
 import { Route as PartnersOrgIdRouteImport } from './routes/partners/$orgId'
-import { Route as PSlugRouteImport } from './routes/p/$slug'
 import { Route as PeopleIndexRouteImport } from './routes/people/index'
 import { Route as PeoplePersonIdRouteImport } from './routes/people/$personId'
 import { Route as SchoolsIndexRouteImport } from './routes/schools/index'
@@ -27,7 +28,7 @@ import { Route as SchoolsSchoolIdRouteImport } from './routes/schools/$schoolId'
 import { Route as SiteIndexRouteImport } from './routes/site/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiPublicSiteRouteImport } from './routes/api/public-site'
+import { Route as ApiSiteImageIdRouteImport } from './routes/api/site-image/$id'
 import { Route as EventsEventIdIndexRouteImport } from './routes/events/$eventId/index'
 import { Route as EventsEventIdCheckInRouteImport } from './routes/events/$eventId/check-in'
 import { Route as EventsEventIdInvitesRouteImport } from './routes/events/$eventId/invites'
@@ -41,6 +42,11 @@ const IndexRoute = IndexRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicSiteRoute = ApiPublicSiteRouteImport.update({
+  id: '/api/public-site',
+  path: '/api/public-site',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChapterIndexRoute = ChapterIndexRouteImport.update({
@@ -73,6 +79,11 @@ const MailComposeRoute = MailComposeRouteImport.update({
   path: '/mail/compose',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PSlugRoute = PSlugRouteImport.update({
+  id: '/p/$slug',
+  path: '/p/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PartnersIndexRoute = PartnersIndexRouteImport.update({
   id: '/partners/',
   path: '/partners/',
@@ -81,11 +92,6 @@ const PartnersIndexRoute = PartnersIndexRouteImport.update({
 const PartnersOrgIdRoute = PartnersOrgIdRouteImport.update({
   id: '/partners/$orgId',
   path: '/partners/$orgId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PSlugRoute = PSlugRouteImport.update({
-  id: '/p/$slug',
-  path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PeopleIndexRoute = PeopleIndexRouteImport.update({
@@ -123,9 +129,9 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicSiteRoute = ApiPublicSiteRouteImport.update({
-  id: '/api/public-site',
-  path: '/api/public-site',
+const ApiSiteImageIdRoute = ApiSiteImageIdRouteImport.update({
+  id: '/api/site-image/$id',
+  path: '/api/site-image/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsEventIdIndexRoute = EventsEventIdIndexRouteImport.update({
@@ -152,11 +158,12 @@ const EventsEventIdReportRoute = EventsEventIdReportRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/public-site': typeof ApiPublicSiteRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
-  '/partners/$orgId': typeof PartnersOrgIdRoute
   '/p/$slug': typeof PSlugRoute
+  '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
@@ -168,7 +175,7 @@ export interface FileRoutesByFullPath {
   '/site/': typeof SiteIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/public-site': typeof ApiPublicSiteRoute
+  '/api/site-image/$id': typeof ApiSiteImageIdRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
@@ -177,11 +184,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/public-site': typeof ApiPublicSiteRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
-  '/partners/$orgId': typeof PartnersOrgIdRoute
   '/p/$slug': typeof PSlugRoute
+  '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter': typeof ChapterIndexRoute
@@ -193,7 +201,7 @@ export interface FileRoutesByTo {
   '/site': typeof SiteIndexRoute
   '/website': typeof WebsiteIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/public-site': typeof ApiPublicSiteRoute
+  '/api/site-image/$id': typeof ApiSiteImageIdRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
@@ -203,11 +211,12 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/public-site': typeof ApiPublicSiteRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
-  '/partners/$orgId': typeof PartnersOrgIdRoute
   '/p/$slug': typeof PSlugRoute
+  '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
@@ -219,7 +228,7 @@ export interface FileRoutesById {
   '/site/': typeof SiteIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/public-site': typeof ApiPublicSiteRoute
+  '/api/site-image/$id': typeof ApiSiteImageIdRoute
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
@@ -230,11 +239,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/api/public-site'
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
-    | '/partners/$orgId'
     | '/p/$slug'
+    | '/partners/$orgId'
     | '/people/$personId'
     | '/schools/$schoolId'
     | '/chapter/'
@@ -246,7 +256,7 @@ export interface FileRouteTypes {
     | '/site/'
     | '/website/'
     | '/api/auth/$'
-    | '/api/public-site'
+    | '/api/site-image/$id'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
@@ -255,11 +265,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/api/public-site'
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
-    | '/partners/$orgId'
     | '/p/$slug'
+    | '/partners/$orgId'
     | '/people/$personId'
     | '/schools/$schoolId'
     | '/chapter'
@@ -271,7 +282,7 @@ export interface FileRouteTypes {
     | '/site'
     | '/website'
     | '/api/auth/$'
-    | '/api/public-site'
+    | '/api/site-image/$id'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
@@ -280,11 +291,12 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/login'
+    | '/api/public-site'
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
-    | '/partners/$orgId'
     | '/p/$slug'
+    | '/partners/$orgId'
     | '/people/$personId'
     | '/schools/$schoolId'
     | '/chapter/'
@@ -296,7 +308,7 @@ export interface FileRouteTypes {
     | '/site/'
     | '/website/'
     | '/api/auth/$'
-    | '/api/public-site'
+    | '/api/site-image/$id'
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
@@ -306,11 +318,12 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  ApiPublicSiteRoute: typeof ApiPublicSiteRoute
   EventsNewRoute: typeof EventsNewRoute
   MailMailingIdRoute: typeof MailMailingIdRoute
   MailComposeRoute: typeof MailComposeRoute
-  PartnersOrgIdRoute: typeof PartnersOrgIdRoute
   PSlugRoute: typeof PSlugRoute
+  PartnersOrgIdRoute: typeof PartnersOrgIdRoute
   PeoplePersonIdRoute: typeof PeoplePersonIdRoute
   SchoolsSchoolIdRoute: typeof SchoolsSchoolIdRoute
   ChapterIndexRoute: typeof ChapterIndexRoute
@@ -322,7 +335,7 @@ export interface RootRouteChildren {
   SiteIndexRoute: typeof SiteIndexRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiPublicSiteRoute: typeof ApiPublicSiteRoute
+  ApiSiteImageIdRoute: typeof ApiSiteImageIdRoute
   EventsEventIdCheckInRoute: typeof EventsEventIdCheckInRoute
   EventsEventIdInvitesRoute: typeof EventsEventIdInvitesRoute
   EventsEventIdReportRoute: typeof EventsEventIdReportRoute
@@ -343,6 +356,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public-site': {
+      id: '/api/public-site'
+      path: '/api/public-site'
+      fullPath: '/api/public-site'
+      preLoaderRoute: typeof ApiPublicSiteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chapter/': {
@@ -387,6 +407,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MailComposeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$slug': {
+      id: '/p/$slug'
+      path: '/p/$slug'
+      fullPath: '/p/$slug'
+      preLoaderRoute: typeof PSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/partners/': {
       id: '/partners/'
       path: '/partners'
@@ -399,13 +426,6 @@ declare module '@tanstack/react-router' {
       path: '/partners/$orgId'
       fullPath: '/partners/$orgId'
       preLoaderRoute: typeof PartnersOrgIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/p/$slug': {
-      id: '/p/$slug'
-      path: '/p/$slug'
-      fullPath: '/p/$slug'
-      preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/people/': {
@@ -457,11 +477,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public-site': {
-      id: '/api/public-site'
-      path: '/api/public-site'
-      fullPath: '/api/public-site'
-      preLoaderRoute: typeof ApiPublicSiteRouteImport
+    '/api/site-image/$id': {
+      id: '/api/site-image/$id'
+      path: '/api/site-image/$id'
+      fullPath: '/api/site-image/$id'
+      preLoaderRoute: typeof ApiSiteImageIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events/$eventId/': {
@@ -498,11 +518,12 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  ApiPublicSiteRoute: ApiPublicSiteRoute,
   EventsNewRoute: EventsNewRoute,
   MailMailingIdRoute: MailMailingIdRoute,
   MailComposeRoute: MailComposeRoute,
-  PartnersOrgIdRoute: PartnersOrgIdRoute,
   PSlugRoute: PSlugRoute,
+  PartnersOrgIdRoute: PartnersOrgIdRoute,
   PeoplePersonIdRoute: PeoplePersonIdRoute,
   SchoolsSchoolIdRoute: SchoolsSchoolIdRoute,
   ChapterIndexRoute: ChapterIndexRoute,
@@ -514,7 +535,7 @@ const rootRouteChildren: RootRouteChildren = {
   SiteIndexRoute: SiteIndexRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiPublicSiteRoute: ApiPublicSiteRoute,
+  ApiSiteImageIdRoute: ApiSiteImageIdRoute,
   EventsEventIdCheckInRoute: EventsEventIdCheckInRoute,
   EventsEventIdInvitesRoute: EventsEventIdInvitesRoute,
   EventsEventIdReportRoute: EventsEventIdReportRoute,

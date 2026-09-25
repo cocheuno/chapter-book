@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { announcementCardHtml } from "@/lib/crm/announcement-html";
-import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings } from "@/lib/crm/site";
+import { siteImageSrc } from "@/lib/crm/site-image";
+import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ const emptyItem = (kind: SiteKind) => ({
   body: "",
   layout: "page" as "page" | "conference",
   conferenceId: "",
+  imageId: "",
 });
 
 function WebsitePage() {
@@ -46,6 +48,7 @@ function WebsiteInner() {
   const [tab, setTab] = useState<SiteKind>("announcement");
   const [copied, setCopied] = useState(false);
   const [form, setForm] = useState(emptyItem("event"));
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [settings, setSettings] = useState({
     publicTitle: "",
     publicTagline: "",
@@ -94,7 +97,9 @@ function WebsiteInner() {
       body: item.body ?? "",
       layout: item.layout === "conference" ? "conference" : "page",
       conferenceId: item.conference_id ?? "",
+      imageId: item.image_id ?? "",
     });
+    setPendingFile(null);
   }
 
   if (err) return <p className="text-danger">{err}</p>;
@@ -211,6 +216,7 @@ function WebsiteInner() {
             onClick={() => {
               setTab(k.key);
               setForm(emptyItem(k.key));
+              setPendingFile(null);
             }}
           >
             {k.label}
@@ -225,6 +231,12 @@ function WebsiteInner() {
           onSubmit={async (e) => {
             e.preventDefault();
             try {
+              let imageId = form.imageId;
+              if (pendingFile) {
+                if (pendingFile.size > 1_500_000) throw new Error("That picture is larger than 1.5 MB.");
+                const uploaded = await uploadSiteImage({ data: { data: await fileToBase64(pendingFile) } });
+                imageId = uploaded.id;
+              }
               const saved = await saveSiteItem({
                 data: {
                   id: form.id || undefined,
@@ -242,6 +254,7 @@ function WebsiteInner() {
                   body: form.body,
                   layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
                   conferenceId: form.kind === "event" ? "" : form.conferenceId,
+                  imageId,
                 },
               });
               const row = {
@@ -261,6 +274,7 @@ function WebsiteInner() {
                 body: form.body || null,
                 layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
                 conference_id: form.kind === "event" ? null : form.conferenceId || null,
+                image_id: imageId || null,
               };
               setData((prev) =>
                 prev
@@ -273,6 +287,7 @@ function WebsiteInner() {
                   : prev,
               );
               toast.success(form.id ? "Updated" : "Added to the shelf");
+              setPendingFile(null);
               setForm(emptyItem(tab));
               load();
             } catch (ex) {
@@ -328,8 +343,9 @@ function WebsiteInner() {
             <p className="text-sm text-ink-soft sm:col-span-2">
               Title, headline, summary, when, where, and the register link fill the top of the page. The Page field is
               the longer introduction. Add talks as Articles, workshops as Courses, and practical notes as Documents,
-              then choose this conference under Show on conference. Type each speaker in the article subtitle. People
-              in the book are not copied onto the page.
+              then choose this conference under Show on conference. Type each speaker in the article subtitle, and
+              choose a headshot file on that article. Choose a venue photo file on this event. People in the book are
+              not copied onto the page.
             </p>
           ) : null}
           {(form.kind === "event" || (onProgram && (form.kind === "article" || form.kind === "course"))) && (
@@ -350,6 +366,18 @@ function WebsiteInner() {
               />
             </Field>
           )}
+          {onConference ? (
+            <PictureField
+              label="Venue photo"
+              imageId={form.imageId}
+              file={pendingFile}
+              onFile={setPendingFile}
+              onClear={() => {
+                setPendingFile(null);
+                setForm({ ...form, imageId: "" });
+              }}
+            />
+          ) : null}
           {(form.kind === "course" || (onProgram && form.kind === "article")) && (
             <Field label={onProgram ? "Track" : "Audience"}>
               <Input
@@ -379,6 +407,18 @@ function WebsiteInner() {
               placeholder={onProgram && form.kind === "article" ? "Name, role, institution" : undefined}
             />
           </Field>
+          {onProgram && form.kind === "article" ? (
+            <PictureField
+              label="Headshot"
+              imageId={form.imageId}
+              file={pendingFile}
+              onFile={setPendingFile}
+              onClear={() => {
+                setPendingFile(null);
+                setForm({ ...form, imageId: "" });
+              }}
+            />
+          ) : null}
           <Field label={onConference ? "Register link" : "Link"}>
             <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://" />
           </Field>
@@ -456,7 +496,14 @@ function WebsiteInner() {
           <div className="flex flex-wrap gap-2 sm:col-span-2">
             <Button type="submit">{form.id ? "Save changes" : "Add to shelf"}</Button>
             {form.id ? (
-              <Button type="button" variant="secondary" onClick={() => setForm(emptyItem(tab))}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setPendingFile(null);
+                  setForm(emptyItem(tab));
+                }}
+              >
                 Cancel
               </Button>
             ) : null}
@@ -507,7 +554,10 @@ function WebsiteInner() {
                     onClick={async () => {
                       try {
                         await removeSiteItem({ data: { id: item.id } });
-                        if (form.id === item.id) setForm(emptyItem(tab));
+                        if (form.id === item.id) {
+                          setPendingFile(null);
+                          setForm(emptyItem(tab));
+                        }
                         toast.success("Removed");
                         load();
                       } catch (ex) {
@@ -527,4 +577,60 @@ function WebsiteInner() {
       </ul>
     </div>
   );
+}
+
+function PictureField({
+  label,
+  imageId,
+  file,
+  onFile,
+  onClear,
+}: {
+  label: string;
+  imageId: string;
+  file: File | null;
+  onFile: (file: File | null) => void;
+  onClear: () => void;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  const src = preview || siteImageSrc(imageId);
+  return (
+    <Field label={label}>
+      <p className="text-sm text-ink-soft">JPEG, PNG, GIF, or WebP from your computer. Up to 1.5 MB.</p>
+      {src ? <img src={src} alt="" className="mt-2 max-h-40 w-full rounded-lg object-cover" /> : null}
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
+        className="mt-2 block min-h-11 w-full text-sm"
+        onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+      />
+      {src ? (
+        <button type="button" className="mt-2 min-h-11 text-sm text-bronze" onClick={onClear}>
+          Remove picture
+        </button>
+      ) : null}
+    </Field>
+  );
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(new Error("Could not read that picture"));
+    reader.readAsDataURL(file);
+  });
 }

@@ -48,6 +48,7 @@ function PublicPage() {
           audience: page.audience,
           featured: page.featured,
           slug: page.slug,
+          image_id: page.image_id,
           location: page.location,
           body: page.body,
           public_title: page.public_title,
