@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildConferenceProgram, pieceHref, type ConferenceItem } from "./conference-page.ts";
+import { buildConferenceProgram, pieceHref, speakerCardText, type ConferenceItem } from "./conference-page.ts";
 
 function item(partial: Partial<ConferenceItem> & Pick<ConferenceItem, "id" | "kind" | "title">): ConferenceItem {
   return {
@@ -114,6 +114,25 @@ describe("conference program", () => {
       }),
     ]);
     assert.equal(program.speakers[0]?.headshot, "/api/site-image/11111111-1111-4111-8111-111111111111");
+  });
+
+  it("splits a speaker line into a name and a role, and gives the portrait a stable address", () => {
+    assert.deepEqual(speakerCardText("Ada More, professor of physics"), {
+      title: "Ada More",
+      line: "professor of physics",
+    });
+    const program = buildConferenceProgram([
+      item({
+        id: "a",
+        kind: "article",
+        title: "Opening",
+        subtitle: "Ada More, professor of physics",
+        body: "A short biography.",
+      }),
+    ]);
+    assert.equal(program.speakers[0]?.slug, "ada-more");
+    assert.equal(program.speakers[0]?.title, "Ada More");
+    assert.equal(program.speakers[0]?.bio, "A short biography.");
   });
 
   it("links a shelf page before an external url", () => {

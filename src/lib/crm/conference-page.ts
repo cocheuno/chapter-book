@@ -3,6 +3,7 @@
  * Speaker lines are text on those items. This module never reads People.
  */
 
+import { slugify } from "./ids.ts";
 import { siteImageSrc } from "./site-image.ts";
 
 export function chooseConferenceItem(
@@ -35,7 +36,25 @@ export type ConferenceItem = {
 
 export type ConferenceTrack = { name: string; anchor: string; talks: ConferenceItem[] };
 
-export type ConferenceSpeaker = { name: string; headshot: string | null; bio: string | null; talks: ConferenceItem[] };
+export type ConferenceSpeaker = {
+  name: string;
+  slug: string;
+  title: string;
+  line: string | null;
+  headshot: string | null;
+  bio: string | null;
+  talks: ConferenceItem[];
+};
+
+/** "Name, role" becomes a heading and the line under the portrait. */
+export function speakerCardText(name: string): { title: string; line: string | null } {
+  const comma = name.indexOf(",");
+  if (comma < 0) return { title: name, line: null };
+  const title = name.slice(0, comma).trim();
+  const line = name.slice(comma + 1).trim();
+  if (!title) return { title: name, line: null };
+  return { title, line: line || null };
+}
 
 export type ConferenceProgram = {
   notices: ConferenceItem[];
@@ -102,13 +121,22 @@ export function buildConferenceProgram(items: ConferenceItem[]): ConferenceProgr
 
   const speakers: ConferenceSpeaker[] = [];
   const speakerIndex = new Map<string, ConferenceSpeaker>();
+  const usedSlugs = new Set<string>();
   for (const talk of talks) {
     const name = clean(talk.subtitle);
     if (!name) continue;
     const key = groupKey(name);
     let speaker = speakerIndex.get(key);
     if (!speaker) {
-      speaker = { name, headshot: null, bio: null, talks: [] };
+      const card = speakerCardText(name);
+      let slug = slugify(card.title);
+      let n = 2;
+      while (usedSlugs.has(slug)) {
+        slug = `${slugify(card.title)}-${n}`;
+        n += 1;
+      }
+      usedSlugs.add(slug);
+      speaker = { name, slug, title: card.title, line: card.line, headshot: null, bio: null, talks: [] };
       speakerIndex.set(key, speaker);
       speakers.push(speaker);
     }
