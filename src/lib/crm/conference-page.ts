@@ -70,6 +70,21 @@ function clean(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
+/** Keeps the line breaks typed into a biography. Enter starts a new paragraph. */
+export function biographyParagraphs(body: string | null | undefined): string[] {
+  const text = (body ?? "").replace(/\r\n/g, "\n").trim();
+  if (!text) return [];
+  return text
+    .split(/\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function biographyText(body: string | null | undefined): string | null {
+  const text = (body ?? "").replace(/\r\n/g, "\n").trim();
+  return text || null;
+}
+
 function groupKey(value: string): string {
   return value.toLowerCase();
 }
@@ -141,7 +156,7 @@ export function buildConferenceProgram(items: ConferenceItem[]): ConferenceProgr
       speakers.push(speaker);
     }
     if (!speaker.headshot) speaker.headshot = siteImageSrc(talk.image_id);
-    if (!speaker.bio && clean(talk.body)) speaker.bio = clean(talk.body);
+    if (!speaker.bio) speaker.bio = biographyText(talk.body);
     speaker.talks.push(talk);
   }
 

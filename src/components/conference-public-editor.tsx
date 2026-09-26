@@ -267,7 +267,8 @@ function SessionCard({
           </div>
           <div className="sm:col-span-2">
             <Field label="Biography">
-              <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-32" />
+              <p className="text-sm text-ink-soft">Press Enter to start a new paragraph.</p>
+              <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-40" />
             </Field>
           </div>
           <PictureField
