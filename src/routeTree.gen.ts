@@ -33,6 +33,8 @@ import { Route as EventsEventIdIndexRouteImport } from './routes/events/$eventId
 import { Route as EventsEventIdCheckInRouteImport } from './routes/events/$eventId/check-in'
 import { Route as EventsEventIdInvitesRouteImport } from './routes/events/$eventId/invites'
 import { Route as EventsEventIdReportRouteImport } from './routes/events/$eventId/report'
+import { Route as PSlugIndexRouteImport } from './routes/p/$slug/index'
+import { Route as PSlugSpeakersSpeakerRouteImport } from './routes/p/$slug/speakers/$speaker'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -154,6 +156,16 @@ const EventsEventIdReportRoute = EventsEventIdReportRouteImport.update({
   path: '/events/$eventId/report',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PSlugIndexRoute = PSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PSlugRoute,
+} as any)
+const PSlugSpeakersSpeakerRoute = PSlugSpeakersSpeakerRouteImport.update({
+  id: '/speakers/$speaker',
+  path: '/speakers/$speaker',
+  getParentRoute: () => PSlugRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -162,7 +174,7 @@ export interface FileRoutesByFullPath {
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
-  '/p/$slug': typeof PSlugRoute
+  '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
@@ -180,6 +192,8 @@ export interface FileRoutesByFullPath {
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
+  '/p/$slug/': typeof PSlugIndexRoute
+  '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -188,7 +202,6 @@ export interface FileRoutesByTo {
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
-  '/p/$slug': typeof PSlugRoute
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
@@ -206,6 +219,8 @@ export interface FileRoutesByTo {
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/events/$eventId': typeof EventsEventIdIndexRoute
+  '/p/$slug': typeof PSlugIndexRoute
+  '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -215,7 +230,7 @@ export interface FileRoutesById {
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
-  '/p/$slug': typeof PSlugRoute
+  '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
@@ -233,6 +248,8 @@ export interface FileRoutesById {
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
+  '/p/$slug/': typeof PSlugIndexRoute
+  '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -261,6 +278,8 @@ export interface FileRouteTypes {
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
     | '/events/$eventId/'
+    | '/p/$slug/'
+    | '/p/$slug/speakers/$speaker'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -269,7 +288,6 @@ export interface FileRouteTypes {
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
-    | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
     | '/schools/$schoolId'
@@ -287,6 +305,8 @@ export interface FileRouteTypes {
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
     | '/events/$eventId'
+    | '/p/$slug'
+    | '/p/$slug/speakers/$speaker'
   id:
     | '__root__'
     | '/'
@@ -313,6 +333,8 @@ export interface FileRouteTypes {
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
     | '/events/$eventId/'
+    | '/p/$slug/'
+    | '/p/$slug/speakers/$speaker'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -322,7 +344,7 @@ export interface RootRouteChildren {
   EventsNewRoute: typeof EventsNewRoute
   MailMailingIdRoute: typeof MailMailingIdRoute
   MailComposeRoute: typeof MailComposeRoute
-  PSlugRoute: typeof PSlugRoute
+  PSlugRoute: typeof PSlugRouteWithChildren
   PartnersOrgIdRoute: typeof PartnersOrgIdRoute
   PeoplePersonIdRoute: typeof PeoplePersonIdRoute
   SchoolsSchoolIdRoute: typeof SchoolsSchoolIdRoute
@@ -512,8 +534,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsEventIdReportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$slug/': {
+      id: '/p/$slug/'
+      path: '/'
+      fullPath: '/p/$slug/'
+      preLoaderRoute: typeof PSlugIndexRouteImport
+      parentRoute: typeof PSlugRoute
+    }
+    '/p/$slug/speakers/$speaker': {
+      id: '/p/$slug/speakers/$speaker'
+      path: '/speakers/$speaker'
+      fullPath: '/p/$slug/speakers/$speaker'
+      preLoaderRoute: typeof PSlugSpeakersSpeakerRouteImport
+      parentRoute: typeof PSlugRoute
+    }
   }
 }
+
+interface PSlugRouteChildren {
+  PSlugIndexRoute: typeof PSlugIndexRoute
+  PSlugSpeakersSpeakerRoute: typeof PSlugSpeakersSpeakerRoute
+}
+
+const PSlugRouteChildren: PSlugRouteChildren = {
+  PSlugIndexRoute: PSlugIndexRoute,
+  PSlugSpeakersSpeakerRoute: PSlugSpeakersSpeakerRoute,
+}
+
+const PSlugRouteWithChildren = PSlugRoute._addFileChildren(PSlugRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -522,7 +570,7 @@ const rootRouteChildren: RootRouteChildren = {
   EventsNewRoute: EventsNewRoute,
   MailMailingIdRoute: MailMailingIdRoute,
   MailComposeRoute: MailComposeRoute,
-  PSlugRoute: PSlugRoute,
+  PSlugRoute: PSlugRouteWithChildren,
   PartnersOrgIdRoute: PartnersOrgIdRoute,
   PeoplePersonIdRoute: PeoplePersonIdRoute,
   SchoolsSchoolIdRoute: SchoolsSchoolIdRoute,

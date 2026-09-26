@@ -182,41 +182,45 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
         {program.speakers.length > 0 ? (
           <section id="speakers" className="scroll-mt-20">
             <h2 className="font-display text-3xl">Speakers</h2>
-            <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {program.speakers.map((speaker) => (
-                <li key={speaker.name} className="rounded-xl border border-line bg-surface p-5">
-                  <div className="flex items-start gap-3">
-                    {speaker.headshot ? (
-                      <img
-                        src={speaker.headshot}
-                        alt=""
-                        className="size-16 shrink-0 rounded-full object-cover"
-                      />
-                    ) : (
-                      <span
-                        className="grid size-12 shrink-0 place-items-center rounded-full bg-paper-2 font-display text-lg text-bronze"
-                        aria-hidden
-                      >
-                        {initial(speaker.name)}
-                      </span>
-                    )}
-                    <div className="min-w-0">
-                      <h3 className="font-display text-xl leading-snug">{speaker.name}</h3>
-                      {speaker.bio ? <p className="mt-2 text-sm leading-relaxed text-ink-soft">{speaker.bio}</p> : null}
-                      <ul className="mt-2 space-y-1">
-                        {speaker.talks.map((talk) => {
-                          const href = pieceHref(talk);
-                          return (
-                            <li key={talk.id} className="text-sm text-ink-soft">
-                              {href ? <TextLink href={href}>{talk.title}</TextLink> : talk.title}
-                            </li>
-                          );
-                        })}
-                      </ul>
+            <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
+              {program.speakers.map((speaker) => {
+                const href = page.slug ? `/p/${page.slug}/speakers/${speaker.slug}` : null;
+                const card = (
+                  <>
+                    <div className="aspect-square overflow-hidden bg-paper-2">
+                      {speaker.headshot ? (
+                        <img src={speaker.headshot} alt="" className="size-full object-cover" />
+                      ) : (
+                        <span className="grid size-full place-items-center font-display text-4xl text-bronze" aria-hidden>
+                          {initial(speaker.title)}
+                        </span>
+                      )}
                     </div>
-                  </div>
-                </li>
-              ))}
+                    <div className="p-4">
+                      <h3 className="font-display text-xl leading-snug">{speaker.title}</h3>
+                      {speaker.line ? (
+                        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-ink-soft">{speaker.line}</p>
+                      ) : speaker.bio ? (
+                        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-ink-soft">{speaker.bio}</p>
+                      ) : null}
+                    </div>
+                  </>
+                );
+                return (
+                  <li key={speaker.slug}>
+                    {href ? (
+                      <a
+                        href={href}
+                        className="block bg-surface shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bronze"
+                      >
+                        {card}
+                      </a>
+                    ) : (
+                      <div className="bg-surface shadow-sm">{card}</div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ) : null}
