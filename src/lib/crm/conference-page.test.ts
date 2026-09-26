@@ -1,6 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { biographyParagraphs, buildConferenceProgram, pieceHref, speakerCardText, type ConferenceItem } from "./conference-page.ts";
+import {
+  biographyParagraphs,
+  buildConferenceProgram,
+  lineupFromSpeakers,
+  pieceHref,
+  speakerCardText,
+  type ConferenceItem,
+} from "./conference-page.ts";
 
 function item(partial: Partial<ConferenceItem> & Pick<ConferenceItem, "id" | "kind" | "title">): ConferenceItem {
   return {
@@ -150,6 +157,26 @@ describe("conference program", () => {
       "Second paragraph.",
       "Third paragraph.",
     ]);
+  });
+
+  it("keeps the first speaker when a second speaker is added", () => {
+    const talks = [
+      item({ id: "talk-1", kind: "article", title: "Opening", subtitle: "Ada More" }),
+      item({ id: "talk-2", kind: "article", title: "Closing", subtitle: "John Cole" }),
+    ];
+    const lineup = lineupFromSpeakers(
+      [
+        { name: "Ada More", role: "professor of physics", body: "First biography.", imageId: null, talkIds: ["talk-1"] },
+        { name: "John Cole", role: "parish priest", body: "Second biography.", imageId: null, talkIds: ["talk-2"] },
+      ],
+      talks,
+    );
+    assert.deepEqual(
+      lineup.map((speaker) => speaker.title),
+      ["Ada More", "John Cole"],
+    );
+    assert.equal(lineup[0]?.bio, "First biography.");
+    assert.equal(lineup[1]?.talks[0]?.title, "Closing");
   });
 
   it("links a shelf page before an external url", () => {

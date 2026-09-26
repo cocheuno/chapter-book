@@ -108,18 +108,6 @@ async function ensurePublicItem(sql: Sql, chapterId: string, eventId: string) {
   return itemId;
 }
 
-const pageShape = z.object({
-  eventId: z.string(),
-  title: z.string().min(1),
-  headline: z.string().optional(),
-  summary: z.string().optional(),
-  whenLabel: z.string().optional(),
-  location: z.string().optional(),
-  registerUrl: z.string().optional(),
-  body: z.string().optional(),
-  imageId: z.string().optional(),
-});
-
 export const getConferenceDesk = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((eventId: string) => eventId)
@@ -144,6 +132,7 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
     `;
     const page = pages[0];
     if (!page) throw new Error("The public page could not be opened.");
+    await backfillSpeakers(sql, eventId);
     const sessions = await sql<{
       id: string;
       title: string;
@@ -156,17 +145,105 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
       article_url: string | null;
       image_id: string | null;
       featured: boolean;
+      speaker_id: string | null;
     }>`
-      select id, title, room, when_label, track, public_speaker, summary, body, article_url, image_id, featured
+      select id, title, room, when_label, track, public_speaker, summary, body, article_url, image_id, featured, speaker_id
       from event_sessions where event_id = ${eventId}
       order by sort_order, title
     `;
-    return { page, sessions };
+    const speakers = await sql<{
+      id: string;
+      name: string;
+      role: string | null;
+      body: string | null;
+      image_id: string | null;
+    }>`
+      select id, name, role, body, image_id
+      from event_speakers where event_id = ${eventId}
+      order by sort_order, name
+    `;
+    return { page, sessions, speakers };
   });
 
-export const saveConferencePage = createServerFn({ method: "POST" })
+async function backfillSpeakers(sql: Sql, eventId: string) {
+  const sessions = await sql<{
+    id: string;
+    public_speaker: string | null;
+    body: string | null;
+    image_id: string | null;
+    speaker_id: string | null;
+  }>`
+    select id, public_speaker, body, image_id, speaker_id
+    from event_sessions where event_id = ${eventId}
+  `;
+  const existing = await sql<{ id: string; name: string }>`
+    select id, name from event_speakers where event_id = ${eventId}
+  `;
+  for (const session of sessions) {
+    const typed = session.public_speaker?.trim();
+    if (!typed || session.speaker_id) continue;
+    const comma = typed.indexOf(",");
+    const name = (comma < 0 ? typed : typed.slice(0, comma)).trim();
+    const role = comma < 0 ? null : typed.slice(comma + 1).trim() || null;
+    if (!name) continue;
+    let speaker = existing.find((row) => row.name.trim().toLowerCase() === name.toLowerCase());
+    if (!speaker) {
+      const id = nid();
+      const max = await sql<{ n: number }>`
+        select coalesce(max(sort_order), 0)::int as n from event_speakers where event_id = ${eventId}
+      `;
+      await sql`
+        insert into event_speakers (id, event_id, name, role, body, image_id, sort_order)
+        values (${id}, ${eventId}, ${name}, ${role}, ${session.body}, ${session.image_id}, ${(max[0]?.n ?? 0) + 1})
+      `;
+      speaker = { id, name };
+      existing.push(speaker);
+    }
+    await sql`update event_sessions set speaker_id = ${speaker.id} where id = ${session.id}`;
+  }
+}
+
+export const saveConferenceCopy = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator(pageShape.parse)
+  .validator(
+    z.object({
+      eventId: z.string(),
+      title: z.string().min(1),
+      headline: z.string().optional(),
+      summary: z.string().optional(),
+      registerUrl: z.string().optional(),
+      body: z.string().optional(),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    const itemId = await ensurePublicItem(sql, m.chapterId, data.eventId);
+    await sql`
+      update site_items set
+        title = ${data.title.trim()},
+        subtitle = ${data.headline?.trim() || null},
+        summary = ${data.summary?.trim() || null},
+        url = ${data.registerUrl?.trim() || null},
+        body = ${data.body?.trim() || null},
+        layout = ${"conference"},
+        published = ${true}
+      where id = ${itemId} and chapter_id = ${m.chapterId}
+    `;
+    return { ok: true };
+  });
+
+export const saveConferenceVenue = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      eventId: z.string(),
+      whenLabel: z.string().optional(),
+      location: z.string().optional(),
+      imageId: z.string().optional(),
+    }).parse,
+  )
   .handler(async ({ context, data }) => {
     const m = await loadMember(context.userId);
     assertEditor(m.role);
@@ -178,20 +255,108 @@ export const saveConferencePage = createServerFn({ method: "POST" })
     `;
     await sql`
       update site_items set
-        title = ${data.title.trim()},
-        subtitle = ${data.headline?.trim() || null},
-        summary = ${data.summary?.trim() || null},
         when_label = ${data.whenLabel?.trim() || null},
         location = ${data.location?.trim() || null},
-        url = ${data.registerUrl?.trim() || null},
-        body = ${data.body?.trim() || null},
-        image_id = ${imageId},
-        layout = ${"conference"},
-        published = ${true}
+        image_id = ${imageId}
       where id = ${itemId} and chapter_id = ${m.chapterId}
     `;
     const old = previous[0]?.image_id ?? null;
     if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    return { ok: true };
+  });
+
+const speakerShape = z.object({
+  eventId: z.string(),
+  speakerId: z.string(),
+  name: z.string().min(1),
+  role: z.string().optional(),
+  body: z.string().optional(),
+  imageId: z.string().optional(),
+});
+
+export const addConferenceSpeaker = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string(), name: z.string().min(1) }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    await requireConference(sql, m.chapterId, data.eventId);
+    const max = await sql<{ n: number }>`
+      select coalesce(max(sort_order), 0)::int as n from event_speakers where event_id = ${data.eventId}
+    `;
+    const id = nid();
+    await sql`
+      insert into event_speakers (id, event_id, name, sort_order)
+      values (${id}, ${data.eventId}, ${data.name.trim()}, ${(max[0]?.n ?? 0) + 1})
+    `;
+    return { id };
+  });
+
+export const saveConferenceSpeaker = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(speakerShape.parse)
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    await requireConference(sql, m.chapterId, data.eventId);
+    const owns = await sql<{ id: string }>`
+      select id from event_speakers where id = ${data.speakerId} and event_id = ${data.eventId}
+    `;
+    if (!owns[0]) throw new Error("That speaker is not on this conference.");
+    const imageId = await ownedImage(sql, m.chapterId, data.imageId);
+    const name = data.name.trim();
+    const role = data.role?.trim() || null;
+    const body = data.body?.trim() || null;
+    const previous = await sql<{ image_id: string | null }>`
+      select image_id from event_speakers where id = ${data.speakerId}
+    `;
+    await sql`
+      update event_speakers set
+        name = ${name},
+        role = ${role},
+        body = ${body},
+        image_id = ${imageId}
+      where id = ${data.speakerId} and event_id = ${data.eventId}
+    `;
+    const spoken = role ? `${name}, ${role}` : name;
+    await sql`
+      update event_sessions set
+        public_speaker = ${spoken},
+        body = ${body},
+        image_id = ${imageId}
+      where speaker_id = ${data.speakerId} and event_id = ${data.eventId}
+    `;
+    await sql`
+      update site_items set
+        subtitle = ${spoken},
+        body = ${body},
+        image_id = ${imageId}
+      where chapter_id = ${m.chapterId}
+        and id in (
+          select site_item_id from event_sessions
+          where speaker_id = ${data.speakerId} and event_id = ${data.eventId} and site_item_id is not null
+        )
+    `;
+    const old = previous[0]?.image_id ?? null;
+    if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    return { ok: true };
+  });
+
+export const removeConferenceSpeaker = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string(), speakerId: z.string() }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    await requireConference(sql, m.chapterId, data.eventId);
+    await sql`
+      update event_sessions set speaker_id = null
+      where speaker_id = ${data.speakerId} and event_id = ${data.eventId}
+    `;
+    await sql`delete from event_speakers where id = ${data.speakerId} and event_id = ${data.eventId}`;
     return { ok: true };
   });
 
@@ -208,6 +373,7 @@ const sessionShape = z.object({
   articleUrl: z.string().optional(),
   imageId: z.string().optional(),
   featured: z.boolean().optional(),
+  speakerId: z.string().optional(),
 });
 
 async function writeTalk(
@@ -222,6 +388,13 @@ async function writeTalk(
     select site_item_id from event_sessions where id = ${sessionId} and event_id = ${data.eventId}
   `;
   let talkId = existing[0]?.site_item_id ?? null;
+  if (talkId) {
+    const shared = await sql<{ id: string }>`
+      select id from event_sessions
+      where site_item_id = ${talkId} and event_id = ${data.eventId} and id <> ${sessionId}
+    `;
+    if (shared[0]) talkId = null;
+  }
   const title = data.title.trim();
   const speaker = data.speaker?.trim() || null;
   const summary = data.summary?.trim() || null;
@@ -285,11 +458,37 @@ export const saveConferenceSession = createServerFn({ method: "POST" })
     assertEditor(m.role);
     const sql = await getSql();
     const conferenceId = await ensurePublicItem(sql, m.chapterId, data.eventId);
-    const imageId = await ownedImage(sql, m.chapterId, data.imageId);
+    let imageId = await ownedImage(sql, m.chapterId, data.imageId);
+    let speakerName: string | null = data.speaker?.trim() || null;
+    let speakerBody: string | null = data.body?.trim() || null;
+    let speakerId: string | null = null;
+    if (data.speakerId?.trim()) {
+      const people = await sql<{ id: string; name: string; role: string | null; body: string | null; image_id: string | null }>`
+        select id, name, role, body, image_id from event_speakers
+        where id = ${data.speakerId.trim()} and event_id = ${data.eventId}
+      `;
+      const person = people[0];
+      if (!person) throw new Error("That speaker is not on this conference.");
+      speakerId = person.id;
+      speakerName = person.role ? `${person.name}, ${person.role}` : person.name;
+      speakerBody = person.body;
+      imageId = person.image_id;
+    }
     const previous = await sql<{ image_id: string | null }>`
       select image_id from event_sessions where id = ${data.sessionId} and event_id = ${data.eventId}
     `;
-    await writeTalk(sql, m.chapterId, conferenceId, data.sessionId, data, imageId);
+    await writeTalk(
+      sql,
+      m.chapterId,
+      conferenceId,
+      data.sessionId,
+      { ...data, speaker: speakerName ?? undefined, body: speakerBody ?? undefined, speakerId: speakerId ?? undefined },
+      imageId,
+    );
+    await sql`
+      update event_sessions set speaker_id = ${speakerId}
+      where id = ${data.sessionId} and event_id = ${data.eventId}
+    `;
     const old = previous[0]?.image_id ?? null;
     if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
     return { ok: true };

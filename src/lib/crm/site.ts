@@ -6,6 +6,7 @@ import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicSummaryFields } from "./announcement-html";
+import { type SpeakerRecord } from "./conference-page";
 import { eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
 import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
@@ -465,14 +466,42 @@ export const getPublicPage = createServerFn({ method: "POST" })
         shelf,
         gatherings.find((gathering) => gathering.id === page.gathering_id)?.public_item_id ?? null,
       );
-      if (page.layout !== "conference") return { ...page, program: [] as SiteItemRow[], eventPage };
+      if (page.layout !== "conference") return { ...page, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[] };
       const program = await sql<SiteItemRow>`
         select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
         from site_items
         where chapter_id = ${chapterId} and conference_id = ${page.id} and published
         order by kind, sort_order, title
       `;
-      return { ...page, program, eventPage };
+      const people = await sql<{
+        id: string;
+        name: string;
+        role: string | null;
+        body: string | null;
+        image_id: string | null;
+      }>`
+        select sp.id, sp.name, sp.role, sp.body, sp.image_id
+        from event_speakers sp
+        join events e on e.id = sp.event_id
+        where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
+        order by sp.sort_order, sp.name
+      `;
+      const links = await sql<{ speaker_id: string | null; site_item_id: string | null }>`
+        select s.speaker_id, s.site_item_id
+        from event_sessions s
+        join events e on e.id = s.event_id
+        where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
+      `;
+      const speakerLineup: SpeakerRecord[] = people.map((person) => ({
+        name: person.name,
+        role: person.role,
+        body: person.body,
+        imageId: person.image_id,
+        talkIds: links
+          .filter((link) => link.speaker_id === person.id && link.site_item_id)
+          .map((link) => link.site_item_id as string),
+      }));
+      return { ...page, program, eventPage, speakerLineup };
     } catch {
       return null;
     }

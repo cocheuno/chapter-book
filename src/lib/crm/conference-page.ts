@@ -56,6 +56,47 @@ export function speakerCardText(name: string): { title: string; line: string | n
   return { title, line: line || null };
 }
 
+export type SpeakerRecord = {
+  name: string;
+  role: string | null;
+  body: string | null;
+  imageId: string | null;
+  talkIds: string[];
+};
+
+export function speakerSlug(name: string, used: Set<string>): string {
+  const base = slugify(name) || "speaker";
+  let slug = base;
+  let n = 2;
+  while (used.has(slug)) {
+    slug = `${base}-${n}`;
+    n += 1;
+  }
+  used.add(slug);
+  return slug;
+}
+
+/** Speakers saved on their own. A later speaker does not replace an earlier one. */
+export function lineupFromSpeakers(records: SpeakerRecord[], talks: ConferenceItem[]): ConferenceSpeaker[] {
+  const used = new Set<string>();
+  const byId = new Map(talks.map((talk) => [talk.id, talk]));
+  return records
+    .filter((record) => record.name.trim())
+    .map((record) => {
+      const title = record.name.trim();
+      const line = record.role?.trim() || null;
+      return {
+        name: line ? `${title}, ${line}` : title,
+        slug: speakerSlug(title, used),
+        title,
+        line,
+        headshot: siteImageSrc(record.imageId),
+        bio: biographyText(record.body),
+        talks: record.talkIds.map((id) => byId.get(id)).filter((talk): talk is ConferenceItem => Boolean(talk)),
+      };
+    });
+}
+
 export type ConferenceProgram = {
   notices: ConferenceItem[];
   keynotes: ConferenceItem[];

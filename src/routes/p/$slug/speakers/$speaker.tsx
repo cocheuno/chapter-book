@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { biographyParagraphs, buildConferenceProgram } from "@/lib/crm/conference-page";
+import { biographyParagraphs, buildConferenceProgram, lineupFromSpeakers } from "@/lib/crm/conference-page";
 import { getPublicPage } from "@/lib/crm/site";
 
 export const Route = createFileRoute("/p/$slug/speakers/$speaker")({ component: SpeakerBioPage });
@@ -27,7 +27,9 @@ function SpeakerBioPage() {
       </main>
     );
   }
-  const speaker = buildConferenceProgram(page.program).speakers.find((row) => row.slug === speakerSlug);
+  const derived = buildConferenceProgram(page.program);
+  const lineup = page.speakerLineup?.length ? lineupFromSpeakers(page.speakerLineup, page.program) : derived.speakers;
+  const speaker = lineup.find((row) => row.slug === speakerSlug);
   if (!speaker) {
     return (
       <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
