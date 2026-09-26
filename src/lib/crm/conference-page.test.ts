@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildConferenceProgram, pieceHref, speakerCardText, type ConferenceItem } from "./conference-page.ts";
+import { biographyParagraphs, buildConferenceProgram, pieceHref, speakerCardText, type ConferenceItem } from "./conference-page.ts";
 
 function item(partial: Partial<ConferenceItem> & Pick<ConferenceItem, "id" | "kind" | "title">): ConferenceItem {
   return {
@@ -133,6 +133,23 @@ describe("conference program", () => {
     assert.equal(program.speakers[0]?.slug, "ada-more");
     assert.equal(program.speakers[0]?.title, "Ada More");
     assert.equal(program.speakers[0]?.bio, "A short biography.");
+  });
+
+  it("keeps biography paragraph breaks that were typed", () => {
+    const program = buildConferenceProgram([
+      item({
+        id: "a",
+        kind: "article",
+        title: "Opening",
+        subtitle: "Ada More",
+        body: "First paragraph.\n\nSecond paragraph.\nThird paragraph.",
+      }),
+    ]);
+    assert.deepEqual(biographyParagraphs(program.speakers[0]?.bio), [
+      "First paragraph.",
+      "Second paragraph.",
+      "Third paragraph.",
+    ]);
   });
 
   it("links a shelf page before an external url", () => {

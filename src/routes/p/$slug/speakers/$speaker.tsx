@@ -1,18 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { buildConferenceProgram } from "@/lib/crm/conference-page";
+import { biographyParagraphs, buildConferenceProgram } from "@/lib/crm/conference-page";
 import { getPublicPage } from "@/lib/crm/site";
 
 export const Route = createFileRoute("/p/$slug/speakers/$speaker")({ component: SpeakerBioPage });
-
-function paragraphs(body: string | null) {
-  const text = body?.trim() ?? "";
-  if (!text) return [];
-  return text
-    .split(/\n\s*\n/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
 
 function SpeakerBioPage() {
   const { slug, speaker: speakerSlug } = Route.useParams();
@@ -44,7 +35,7 @@ function SpeakerBioPage() {
       </main>
     );
   }
-  const bio = paragraphs(speaker.bio);
+  const bio = biographyParagraphs(speaker.bio);
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
