@@ -1,7 +1,9 @@
 import {
   buildConferenceProgram,
+  lineupFromSpeakers,
   pieceHref,
   type ConferenceItem,
+  type SpeakerRecord,
 } from "@/lib/crm/conference-page";
 import { siteImageSrc } from "@/lib/crm/site-image";
 import { announcementCardHtml } from "@/lib/crm/announcement-html";
@@ -12,6 +14,7 @@ export type ConferencePageData = ConferenceItem & {
   public_title: string | null;
   contact_email: string | null;
   program: ConferenceItem[];
+  speakerLineup?: SpeakerRecord[];
 };
 
 function paragraphs(body: string | null | undefined) {
@@ -52,6 +55,7 @@ function RegisterLink({ href, className }: { href: string; className: string }) 
 
 export function ConferencePage({ page }: { page: ConferencePageData }) {
   const program = buildConferenceProgram(page.program);
+  const speakers = page.speakerLineup?.length ? lineupFromSpeakers(page.speakerLineup, page.program) : program.speakers;
   const register = pieceHref({ url: page.url });
   const venuePhoto = siteImageSrc(page.image_id);
   const about = paragraphs(page.body);
@@ -179,11 +183,11 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           ) : null}
         </section>
 
-        {program.speakers.length > 0 ? (
+        {speakers.length > 0 ? (
           <section id="speakers" className="scroll-mt-20">
             <h2 className="font-display text-3xl">Speakers</h2>
             <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
-              {program.speakers.map((speaker) => {
+              {speakers.map((speaker) => {
                 const href = page.slug ? `/p/${page.slug}/speakers/${speaker.slug}` : null;
                 const card = (
                   <>

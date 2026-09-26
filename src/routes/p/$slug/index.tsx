@@ -54,6 +54,7 @@ function PublicPage() {
           public_title: page.public_title,
           contact_email: page.contact_email,
           program: page.program,
+          speakerLineup: page.speakerLineup,
         }}
       />
     );
