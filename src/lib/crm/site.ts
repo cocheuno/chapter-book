@@ -7,7 +7,7 @@ import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicSummaryFields } from "./announcement-html";
 import { type SpeakerRecord } from "./conference-page";
-import { eventPageLink } from "./event-link";
+import { canonicalDetailPaths, eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
 import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
 
@@ -43,6 +43,7 @@ export type SiteItemRow = {
   image_id: string | null;
   gathering_id: string | null;
   eventPage?: { href: string; title: string } | null;
+  detailsHref?: string | null;
 };
 
 const emptySettings: SettingsRow = {
@@ -136,13 +137,21 @@ export async function loadPublishedSite() {
     const settings = await readSettings(sql, chapterId);
     const items = await readItems(sql, chapterId, true);
     const gatherings = await listGatherings(sql, chapterId);
-    return { settings, items: withEventPages(items, gatherings) };
+    const paths = canonicalDetailPaths(items);
+    return {
+      settings,
+      items: withEventPages(items, gatherings).map((item) => ({
+        ...item,
+        detailsHref: paths.get(item.id) ?? (item.slug ? `/p/${item.slug}` : null),
+      })),
+    };
   } catch {
     return empty;
   }
 }
 
 export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[] }) {
+  const paths = canonicalDetailPaths(data.items);
   return {
     settings: {
       publicTitle: data.settings.public_title,
@@ -165,7 +174,7 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
       layout: i.layout === "conference" ? "conference" : "page",
       imageSrc: siteImageSrc(i.image_id),
       eventPage: i.eventPage ?? null,
-      href: i.slug ? `/p/${i.slug}` : i.url,
+      href: paths.get(i.id) ?? (i.slug ? `/p/${i.slug}` : i.url),
     })),
   };
 }
@@ -458,6 +467,22 @@ export const getPublicPage = createServerFn({ method: "POST" })
       const page = rows[0];
       if (!page) return null;
       const chapterId = chapters[0].id;
+      const siblings = await sql<{
+        id: string;
+        kind: string;
+        title: string;
+        slug: string | null;
+        summary: string | null;
+        body: string | null;
+      }>`
+        select id, kind, title, slug, summary, body from site_items
+        where chapter_id = ${chapterId} and published and kind in ('event', 'announcement')
+      `;
+      const canonicalPath = canonicalDetailPaths(siblings).get(page.id);
+      const canonicalSlug = canonicalPath?.startsWith("/p/") ? canonicalPath.slice(3) : null;
+      if (canonicalSlug && canonicalSlug !== page.slug) {
+        return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[] };
+      }
       const gatherings = await listGatherings(sql, chapterId);
       const shelf = await sql<{ id: string; slug: string | null; title: string; published: boolean }>`
         select id, slug, title, published from site_items where chapter_id = ${chapterId}
@@ -466,7 +491,9 @@ export const getPublicPage = createServerFn({ method: "POST" })
         shelf,
         gatherings.find((gathering) => gathering.id === page.gathering_id)?.public_item_id ?? null,
       );
-      if (page.layout !== "conference") return { ...page, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[] };
+      if (page.layout !== "conference") {
+        return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[] };
+      }
       const program = await sql<SiteItemRow>`
         select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
         from site_items
@@ -501,7 +528,7 @@ export const getPublicPage = createServerFn({ method: "POST" })
           .filter((link) => link.speaker_id === person.id && link.site_item_id)
           .map((link) => link.site_item_id as string),
       }));
-      return { ...page, program, eventPage, speakerLineup };
+      return { ...page, canonicalSlug: null, program, eventPage, speakerLineup };
     } catch {
       return null;
     }

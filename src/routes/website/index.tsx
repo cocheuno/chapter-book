@@ -3,7 +3,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { announcementCardHtml } from "@/lib/crm/announcement-html";
+import { publicRichHtml } from "@/lib/crm/announcement-html";
 import { fileToBase64, PictureField } from "@/components/picture-field";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
@@ -493,15 +493,16 @@ function WebsiteInner() {
               <p className="mb-1 text-sm text-ink-soft">
                 {form.kind === "announcement" ? (
                   <>
-                    Full public page at /p/… . Plain text (a blank line starts a paragraph), or one{" "}
+                    Full public page at /p/… . Press Enter for a new paragraph, or use HTML
+                    (<code>p</code>, headings, lists, links). Or one{" "}
                     <code>{"<section>…</section>"}</code> of HTML. No length limit.
                   </>
                 ) : onConference ? (
-                  "Longer introduction on the conference page. A blank line starts a new paragraph. The public address is /p/… on Chapter Book."
+                  "Longer introduction. Press Enter for a new paragraph, or use HTML (p, headings, lists, links). The public address is /p/… ."
                 ) : onProgram && form.kind === "article" ? (
-                  "Optional longer abstract. A blank line starts a new paragraph. The public address is /p/… ."
+                  "Optional longer text. Press Enter for a new paragraph, or use HTML. The public address is /p/… ."
                 ) : (
-                  "Full public page for this item. Blank lines start a new paragraph. No length limit. Saved pages are at /p/… on Chapter Book (not GoDaddy)."
+                  "Full public page. Press Enter for a new paragraph, or use HTML (p, headings, lists, links). Saved pages are at /p/… on Chapter Book."
                 )}
               </p>
               <Textarea
@@ -556,7 +557,7 @@ function WebsiteInner() {
 
       <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
         {rows.map((item) => {
-          const rich = item.kind === "announcement" ? announcementCardHtml(item.summary, item.body) : null;
+          const rich = publicRichHtml(item.summary) ?? (item.summary?.trim() ? null : publicRichHtml(item.body));
           return (
           <li key={item.id} className="px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">

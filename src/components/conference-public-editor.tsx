@@ -198,7 +198,7 @@ function CopyForm({ eventId, page, onSaved }: { eventId: string; page: Desk["pag
       </Field>
       <div className="sm:col-span-2">
         <Field label="Introduction">
-          <p className="text-sm text-ink-soft">Press Enter to start a new paragraph.</p>
+          <p className="text-sm text-ink-soft">Press Enter for a new paragraph, or use HTML (p, headings, lists, links).</p>
           <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-32" />
         </Field>
       </div>
@@ -333,7 +333,7 @@ function SpeakerCard({
           />
           <div className="sm:col-span-2">
             <Field label="Biography">
-              <p className="text-sm text-ink-soft">Press Enter to start a new paragraph.</p>
+              <p className="text-sm text-ink-soft">Press Enter for a new paragraph, or use HTML (p, headings, lists, links).</p>
               <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-40" />
             </Field>
           </div>

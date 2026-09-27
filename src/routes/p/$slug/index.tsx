@@ -2,16 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConferencePage } from "@/components/conference-page";
-import { announcementRichHtml } from "@/lib/crm/announcement-html";
+import { PublicCopy } from "@/components/public-copy";
 import { getPublicPage } from "@/lib/crm/site";
 
 export const Route = createFileRoute("/p/$slug/")({ component: PublicPage });
-
-function paragraphs(body: string | null | undefined, fallback: string | null | undefined) {
-  const text = (body && body.trim()) || (fallback && fallback.trim()) || "";
-  if (!text) return [];
-  return text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-}
 
 function PublicPage() {
   const { slug } = Route.useParams();
@@ -32,6 +26,11 @@ function PublicPage() {
         <p>That page is not published.</p>
       </main>
     );
+  }
+
+  if (page.canonicalSlug && page.canonicalSlug !== slug) {
+    window.location.replace(`/p/${page.canonicalSlug}`);
+    return <main className="grid min-h-dvh place-items-center bg-paper text-muted">Opening the page…</main>;
   }
 
   if (page.layout === "conference") {
@@ -61,8 +60,6 @@ function PublicPage() {
   }
 
   const source = (page.body && page.body.trim()) || (page.summary && page.summary.trim()) || "";
-  const rich = page.kind === "announcement" ? announcementRichHtml(source) : null;
-  const blocks = rich ? [] : paragraphs(page.body, page.summary);
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
@@ -92,18 +89,7 @@ function PublicPage() {
             <p className="mt-1 font-display text-2xl">{page.eventPage.title}</p>
           </a>
         ) : null}
-        {rich ? (
-          <div
-            className="announcement-html text-lg leading-relaxed text-ink-soft"
-            dangerouslySetInnerHTML={{ __html: rich }}
-          />
-        ) : (
-          blocks.map((p) => (
-            <p key={p.slice(0, 40)} className="text-lg leading-relaxed text-ink-soft whitespace-pre-wrap">
-              {p}
-            </p>
-          ))
-        )}
+        <PublicCopy text={source} className="text-lg leading-relaxed text-ink-soft" />
         {page.url ? (
           <p>
             <a

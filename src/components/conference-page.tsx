@@ -6,6 +6,7 @@ import {
   type SpeakerRecord,
 } from "@/lib/crm/conference-page";
 import { siteImageSrc } from "@/lib/crm/site-image";
+import { PublicCopy } from "@/components/public-copy";
 import { announcementCardHtml } from "@/lib/crm/announcement-html";
 
 export type ConferencePageData = ConferenceItem & {
@@ -16,15 +17,6 @@ export type ConferencePageData = ConferenceItem & {
   program: ConferenceItem[];
   speakerLineup?: SpeakerRecord[];
 };
-
-function paragraphs(body: string | null | undefined) {
-  const text = body?.trim() ?? "";
-  if (!text) return [];
-  return text
-    .split(/\n\s*\n/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
 
 function initial(name: string) {
   const ch = name.trim().charAt(0).toUpperCase();
@@ -58,7 +50,6 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
   const speakers = page.speakerLineup?.length ? lineupFromSpeakers(page.speakerLineup, page.program) : program.speakers;
   const register = pieceHref({ url: page.url });
   const venuePhoto = siteImageSrc(page.image_id);
-  const about = paragraphs(page.body);
   const hasProgram = program.keynotes.length + program.tracks.length + program.workshops.length > 0;
   const chapter = page.public_title || "Society of Catholic Scientists";
 
@@ -279,16 +270,10 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           </section>
         ) : null}
 
-        {about.length > 0 ? (
+        {page.body?.trim() ? (
           <section id="about" className="scroll-mt-20">
             <h2 className="font-display text-3xl">The gathering</h2>
-            <div className="mt-4 max-w-3xl space-y-4">
-              {about.map((part) => (
-                <p key={part.slice(0, 48)} className="text-lg leading-relaxed whitespace-pre-wrap text-ink-soft">
-                  {part}
-                </p>
-              ))}
-            </div>
+            <PublicCopy text={page.body} className="mt-4 max-w-3xl text-lg leading-relaxed text-ink-soft" />
           </section>
         ) : null}
 
@@ -352,7 +337,7 @@ function TalkCard({ talk, kicker }: { talk: ConferenceItem; kicker?: string }) {
       <h4 className="mt-1 font-display text-xl">{talk.title}</h4>
       {kicker && talk.when_label ? <p className="mt-1 text-sm text-muted">{talk.when_label}</p> : null}
       {talk.subtitle ? <p className="mt-2 text-sm text-ink-soft">{talk.subtitle}</p> : null}
-      {talk.summary ? <p className="mt-3 leading-relaxed text-ink-soft">{talk.summary}</p> : null}
+      {talk.summary ? <PublicCopy text={talk.summary} className="mt-3 leading-relaxed text-ink-soft" /> : null}
       {href ? (
         <p className="mt-3">
           <TextLink href={href}>{talk.slug ? "Read the abstract" : "Related link"}</TextLink>
