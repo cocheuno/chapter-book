@@ -78,14 +78,14 @@ function PublicSite() {
           </section>
         ) : null}
 
-        <Section title="Announcements" empty="No announcements posted yet.">
-          {grouped.announcements.map((e) => (
+        <Section title="Upcoming Events" empty="No public gatherings posted yet.">
+          {grouped.events.map((e) => (
             <EventCard key={e.id} item={e} />
           ))}
         </Section>
 
-        <Section title="Gatherings" empty="No public gatherings posted yet.">
-          {grouped.events.map((e) => (
+        <Section title="Announcements" empty="No announcements posted yet.">
+          {grouped.announcements.map((e) => (
             <EventCard key={e.id} item={e} />
           ))}
         </Section>
