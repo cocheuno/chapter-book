@@ -13,6 +13,22 @@
   var origin = src ? src.replace(/\/embed\/chapter-site\.js(?:\?.*)?$/i, "") : "";
   if (!origin) return;
 
+  // Upcoming Events sits above Announcements, even when the GoDaddy markup lists announcements first.
+  var eventList = document.querySelector("[data-scs-list=\"event\"]");
+  var announcementList = document.querySelector("[data-scs-list=\"announcement\"]");
+  if (eventList && announcementList) {
+    var eventSection = eventList.closest("section") || eventList;
+    var announcementSection = announcementList.closest("section") || announcementList;
+    if (
+      eventSection !== announcementSection &&
+      eventSection.parentNode &&
+      eventSection.parentNode === announcementSection.parentNode &&
+      (eventSection.compareDocumentPosition(announcementSection) & Node.DOCUMENT_POSITION_PRECEDING)
+    ) {
+      announcementSection.parentNode.insertBefore(eventSection, announcementSection);
+    }
+  }
+
   function text(el, value) {
     if (!el) return;
     el.textContent = value || "";

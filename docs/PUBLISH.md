@@ -16,8 +16,8 @@ Then mark the spots that should fill from the book:
 <h1 data-scs="title"></h1>
 <p data-scs="tagline"></p>
 <p data-scs="about"></p>
-<div data-scs-list="announcement"></div>
 <div data-scs-list="event"></div>
+<div data-scs-list="announcement"></div>
 <div data-scs-list="article"></div>
 <div data-scs-list="document"></div>
 <div data-scs-list="course"></div>
