@@ -29,7 +29,9 @@
     var rich = safeSection(item.summaryHtml);
     if (rich) html += rich;
     else if (item.summary) html += "<p>" + escapeHtml(item.summary) + "</p>";
-    var details = item.slug ? origin + "/p/" + encodeURIComponent(item.slug) : "";
+    var details = item.href && String(item.href).indexOf("/p/") === 0
+      ? origin + item.href
+      : (item.slug ? origin + "/p/" + encodeURIComponent(item.slug) : "");
     var extra = item.url
       ? /^https?:\/\//i.test(item.url)
         ? item.url
@@ -37,7 +39,7 @@
       : "";
     var detailsLabel = item.layout === "conference" ? "Conference page" : "Event details";
     if (details) html += "<p><a href=\"" + escapeHtml(details) + "\">" + detailsLabel + "</a></p>";
-    if (item.eventPage && item.eventPage.href) {
+    if (item.eventPage && item.eventPage.href && origin + item.eventPage.href !== details) {
       html += "<p><a href=\"" + escapeHtml(origin + item.eventPage.href) + "\">Event page: " + escapeHtml(item.eventPage.title || "") + "</a></p>";
     }
     else if (extra) html += "<p><a href=\"" + escapeHtml(extra) + "\">Read more</a></p>";

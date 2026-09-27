@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { announcementPlainText, announcementRichHtml, publicSummaryFields } from "./announcement-html.ts";
+import { announcementPlainText, announcementRichHtml, publicRichHtml, publicSummaryFields } from "./announcement-html.ts";
 
 describe("announcement HTML", () => {
   it("leaves plain text as text", () => {
@@ -73,14 +73,16 @@ describe("announcement HTML", () => {
     assert.match(published.summary ?? "", /Madison-area Gold Mass/);
   });
 
-  it("does not treat an event section as public HTML", () => {
+  it("sanitizes HTML on event details and biographies, not only announcements", () => {
     const raw = "<section><script>alert(1)</script><p>Hi</p></section>";
     const event = publicSummaryFields("event", raw);
-    assert.equal(event.summaryHtml, null);
-    assert.equal(event.summary, raw);
+    assert.equal(event.summaryHtml, "<section><p>Hi</p></section>");
+    assert.equal(event.summary, "Hi");
+    const bio = publicRichHtml("<p>First paragraph.</p><p>Second <em>paragraph</em>.</p>");
+    assert.equal(bio, "<p>First paragraph.</p><p>Second <em>paragraph</em>.</p>");
+    assert.equal(publicRichHtml("Plain biography."), null);
     const announcement = publicSummaryFields("announcement", raw);
     assert.equal(announcement.summaryHtml, "<section><p>Hi</p></section>");
-    assert.equal(announcement.summary, "Hi");
     assert.equal(announcementPlainText(announcement.summaryHtml ?? ""), "Hi");
   });
 });

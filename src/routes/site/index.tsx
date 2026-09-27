@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { announcementCardHtml } from "@/lib/crm/announcement-html";
+import { publicRichHtml } from "@/lib/crm/announcement-html";
 import { getPublicSite } from "@/lib/crm/site";
 import type { SiteItemRow } from "@/lib/crm/site";
 
@@ -13,6 +13,7 @@ function hrefFor(url: string | null | undefined) {
 }
 
 function pageHref(item: SiteItemRow) {
+  if (item.detailsHref) return item.detailsHref;
   if (item.slug) return `/p/${item.slug}`;
   return hrefFor(item.url);
 }
@@ -141,7 +142,7 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 
 function EventCard({ item }: { item: SiteItemRow }) {
   const url = pageHref(item);
-  const rich = item.kind === "announcement" ? announcementCardHtml(item.summary, item.body) : null;
+  const rich = publicRichHtml(item.summary) ?? (item.summary?.trim() ? null : publicRichHtml(item.body));
   return (
     <li className="rounded-xl border border-line bg-surface p-5">
       <p className="text-xs tracking-wide text-bronze uppercase">
@@ -155,7 +156,7 @@ function EventCard({ item }: { item: SiteItemRow }) {
       ) : item.summary ? (
         <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p>
       ) : null}
-      {item.eventPage ? (
+      {item.eventPage && item.eventPage.href !== url ? (
         <a href={item.eventPage.href} className="mt-3 block text-sm text-bronze underline-offset-2 hover:underline">
           Event page: {item.eventPage.title}
         </a>

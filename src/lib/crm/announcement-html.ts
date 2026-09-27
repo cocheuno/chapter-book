@@ -386,6 +386,18 @@ function serialize(nodes: Node[]): string {
   return html;
 }
 
+/**
+ * Sanitized HTML for any public page: event details, biographies, announcements.
+ * Plain text stays plain. Tags outside the allowed set are removed.
+ */
+export function publicRichHtml(raw: string | null | undefined): string | null {
+  const text = raw?.trim() ?? "";
+  if (!text || !/<\s*[a-z!/]/i.test(text)) return null;
+  const clean = sanitizeNodes(parseFragment(text));
+  if (!clean.some((node) => node.kind === "el")) return null;
+  return serialize(clean);
+}
+
 /** Sanitized section HTML, or null when the value should stay plain text. */
 export function announcementRichHtml(raw: string | null | undefined): string | null {
   const text = raw?.trim() ?? "";
@@ -425,14 +437,13 @@ export function announcementCardHtml(
   return announcementRichHtml(body);
 }
 
-/** Public list fields. Only announcements may publish a section as HTML. */
+/** Public list fields. HTML in the summary or page is sanitized for every kind. */
 export function publicSummaryFields(
-  kind: string,
+  _kind: string,
   summary: string | null,
   body: string | null = null,
 ): PublicSummary {
-  if (kind !== "announcement") return { summary, summaryHtml: null };
-  const summaryHtml = announcementCardHtml(summary, body);
+  const summaryHtml = publicRichHtml(summary) ?? (summary?.trim() ? null : publicRichHtml(body));
   return {
     summary: summaryHtml ? announcementPlainText(summaryHtml) : summary,
     summaryHtml,

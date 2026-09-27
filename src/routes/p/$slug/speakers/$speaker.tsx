@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { biographyParagraphs, buildConferenceProgram, lineupFromSpeakers } from "@/lib/crm/conference-page";
+import { PublicCopy } from "@/components/public-copy";
+import { buildConferenceProgram, lineupFromSpeakers } from "@/lib/crm/conference-page";
 import { getPublicPage } from "@/lib/crm/site";
 
 export const Route = createFileRoute("/p/$slug/speakers/$speaker")({ component: SpeakerBioPage });
@@ -37,7 +38,7 @@ function SpeakerBioPage() {
       </main>
     );
   }
-  const bio = biographyParagraphs(speaker.bio);
+  const bio = speaker.bio;
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
@@ -64,14 +65,8 @@ function SpeakerBioPage() {
         <div>
           <h1 className="font-display text-4xl leading-tight">{speaker.title}</h1>
           {speaker.line ? <p className="mt-3 text-lg text-ink-soft">{speaker.line}</p> : null}
-          {bio.length > 0 ? (
-            <div className="mt-6 space-y-4">
-              {bio.map((part) => (
-                <p key={part.slice(0, 48)} className="text-lg leading-relaxed whitespace-pre-wrap text-ink-soft">
-                  {part}
-                </p>
-              ))}
-            </div>
+          {bio ? (
+            <PublicCopy text={bio} className="mt-6 text-lg leading-relaxed text-ink-soft" />
           ) : (
             <p className="mt-6 text-lg text-ink-soft">The biography will be posted here.</p>
           )}
