@@ -109,6 +109,11 @@ Rules for the seam:
    - `{{registration_code}}`
    - `{{unsubscribe_url}}`, now a real link
 
+5. **Templates accept `<section>` HTML,** like every public field (review section 7).
+   - When a template body is `<section>…</section>`, the sanitized HTML becomes `html_body` and its plain words (`announcementPlainText`) become `text_body`. A plain body stays text only.
+   - Mail clients ignore the site's stylesheet, so HTML mail keeps to inline `style` and the tags the sanitizer already allows.
+   - Subjects stay plain text.
+
 The Mail desk's typed-count confirmation stays. It then writes `broadcast` outbox rows instead of pretending to send.
 
 ## Until mail is on: what covers the gap

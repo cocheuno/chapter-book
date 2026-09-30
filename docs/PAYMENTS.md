@@ -34,7 +34,7 @@ Not in scope:
 scs-wisconsin-usa.org ─► /p/ai-conference            conference page (exists)
                                │ Register
                                ▼
-                  /p/ai-conference/register            public; no CRM login; no editor HTML
+                  /p/ai-conference/register            public; no CRM login; <section> copy + app-drawn form
                   who · which days · tickets · consents
                                │ createRegistration (server)
                                │   price from the book, never from the browser
@@ -214,7 +214,7 @@ create table if not exists guardian_consents (
   emergency_phone text,
   medical_notes text,            -- optional; hidden from Viewers; deleted 30 days after the event
   photo_release boolean not null default false,
-  consent_version text not null, -- which consent text they agreed to
+  consent_text_id text not null, -- the exact consent text they agreed to (consent_texts)
   signed_name text,
   signed_at timestamptz,
   signed_ip text,
@@ -273,6 +273,26 @@ create table if not exists public_throttle (
   count integer not null
 );
 
+-- The exact wording people agree to, kept forever. Editing the consent copy adds a row.
+create table if not exists consent_texts (
+  id text primary key,
+  chapter_id text not null,
+  event_id text references events (id),
+  kind text not null check (kind in ('guardian', 'privacy', 'refund', 'conduct', 'photo')),
+  html text not null,            -- sanitized <section> HTML as shown
+  created_at timestamptz not null default now(),
+  created_by text not null
+);
+
+-- Guardian ↔ student, spouse, and similar links between people in the book.
+create table if not exists person_relationships (
+  person_id text not null references persons (id) on delete cascade,
+  related_person_id text not null references persons (id) on delete cascade,
+  kind text not null check (kind in ('guardian_of', 'spouse_of', 'household')),
+  created_at timestamptz not null default now(),
+  primary key (person_id, related_person_id, kind)
+);
+
 alter table participations add column if not exists registration_attendee_id text;
 
 -- News is separate from receipts. 'unknown' keeps today's behavior for people leadership entered.
@@ -322,7 +342,21 @@ If you would rather have real transactions, add a `transaction(fn)` helper to `s
 
 ## Public register page
 
-Route: `src/routes/p/$slug/register.tsx`. It is public (no `authMiddleware`) and shows plain text only: **no editor HTML on this page** (review S5).
+Route: `src/routes/p/$slug/register.tsx`. It is public (no `authMiddleware`).
+
+**Editor copy on this page accepts `<section>` HTML**, like every other public field (review section 7). Copy blocks are kept per event and rendered with `PublicCopy`:
+
+- page intro
+- each ticket type's description
+- "For schools"
+- refund policy
+- code of conduct
+- guardian consent text
+- the message on the manage page
+
+The **form, prices, and Pay button are drawn by the app, outside those blocks**. Together with the tighter style list and `contain: paint` (review S5), editor HTML cannot cover or restyle them.
+
+Where Stripe or a nametag needs text (Checkout `custom_text`, line-item names), the book sends the plain words from `announcementPlainText`.
 
 **The purchaser**
 
@@ -403,7 +437,7 @@ const session = await stripe().checkout.sessions.create(
       metadata: { registration_id: registrationId },
       description: `${eventTitle} · ${code}`,
     },
-    custom_text: { submit: { message: refundPolicyOneLine } },
+    custom_text: { submit: { message: refundPolicyPlainWords } }, // announcementPlainText(policy), max 1200 chars
     success_url: `${origin}/r/${manageToken}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/p/${slug}/register?cancelled=${code}`,
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,   // Stripe's minimum is 30 minutes
@@ -491,7 +525,8 @@ Never reveal on a public page whether an email is already in the book.
   - optional medical notes
   - photo release yes/no
   - typed signature and consent checkbox
-- The server stores `consent_version`, `signed_at`, and `signed_ip`.
+- The server stores `consent_text_id` (the exact `<section>` wording shown), `signed_at`, and `signed_ip`.
+- The guardian also becomes a **person** (`source = 'web'`, `news_consent = 'no'`), linked to the student with `person_relationships` (`guardian_of`). They are matched by email, like everyone else.
 - If the purchaser **is** the guardian, they sign during registration.
 - **School groups:** each student gets a consent link, `/c/<token>` (`consent_token_hash`). The teacher forwards it to parents from their own email; no chapter mailbox is needed. Or the school collects paper forms, and an editor marks them **received**.
 - The desk shows **"consent missing"** per student. The door list flags them. Decide in advance whether a student without consent is admitted; the diocese's safe-environment coordinator will have a view.
@@ -589,7 +624,7 @@ With no `STRIPE_SECRET_KEY`, the register page still takes **free** registration
 **Privacy**
 
 - Typing an existing person's email does not change that person.
-- The register page never shows editor HTML.
+- Editor `<section>` copy on the register page cannot cover or restyle the form or the Pay button. Test with `position: fixed`, `z-index`, and a large negative margin.
 - `npm test` (privacy check included) stays green.
 
 **Live check before opening**
@@ -615,7 +650,7 @@ Each phase can be merged and deployed on its own. Paste the prompt into Grok Bui
 
 **Phase 1: free registration (no Stripe).** Migration, public register page, holds, fulfil step, manage page, registrations desk, exports, `mail_outbox` rows (MAIL.md).
 
-> Read docs/PAYMENTS.md and docs/MAIL.md. Implement Phase 1 only: the migration in "Data" (all tables, even those used later), the public register page, createRegistration for $0 totals only, seat holds with the atomic UPDATE, the fulfil step (people and door list), the /r/<token> manage page, the registrations desk tab without refunds, and mail_outbox rows with status 'held'. Do not add Stripe yet. Keep editor HTML off the register page. Add tests for pricing, holds, and person matching.
+> Read docs/PAYMENTS.md and docs/MAIL.md. Implement Phase 1 only: the migration in "Data" (all tables, even those used later), the public register page, createRegistration for $0 totals only, seat holds with the atomic UPDATE, the fulfil step (people and door list), the /r/<token> manage page, the registrations desk tab without refunds, and mail_outbox rows with status 'held'. Do not add Stripe yet. Register-page copy blocks accept <section> HTML through PublicCopy; the form and Pay button stay outside them. Add tests for pricing, holds, and person matching.
 
 **Phase 2: Stripe (test mode).** Ticket prices, promo codes, Checkout Session, webhook, refunds (admin only), offline payments, walk-up QR, treasurer export.
 
