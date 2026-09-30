@@ -4,7 +4,7 @@ import { BookOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/field";
-import { getLoginState, peekInvite } from "@/lib/crm/operators";
+import { acceptInvite, getLoginState, peekInvite } from "@/lib/crm/operators";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (s: Record<string, unknown>): { invite?: string } => ({
@@ -68,11 +68,22 @@ function Login() {
           email,
           password,
           name: name || email.split("@")[0],
+          ...(inviteToken
+            ? { fetchOptions: { headers: { "x-invite-token": inviteToken } } }
+            : {}),
         });
         if (r.error) throw new Error(r.error.message || "Could not create the sign-in");
       } else {
         const r = await authClient.signIn.email({ email, password });
         if (r.error) throw new Error(r.error.message || "Could not sign in");
+      }
+      if (inviteToken) {
+        try {
+          await acceptInvite({ data: inviteToken });
+        } catch (ex) {
+          const message = ex instanceof Error ? ex.message : "Could not accept the invite.";
+          if (message !== "That invite was already used.") throw new Error(message);
+        }
       }
       window.location.href = "/";
     } catch (ex) {

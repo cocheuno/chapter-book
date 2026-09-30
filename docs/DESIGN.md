@@ -33,7 +33,7 @@ One Postgres (not this PC, not GoDaddy MySQL). The public site talks to Chapter 
 | Duplicates | Email is the person key; same name without email is a duplicate; partner unique on name+city |
 | Public site | Masthead + events, articles, documents, courses as *copy in the book*. Live pages stay on GoDaddy. CRM people never appear on the public site |
 | Two-factor | Planned for leadership. **Not in V1 or this operators step** |
-| Operators | **Invite-only.** No public “create an account.” First empty book may open one founder admin. Admin invites by email and role; invitee sets a password from a copied link (no SMTP yet). Admin can change role, disable, restore. The book keeps at least one admin. Google/X broker buttons are not the chapter door. |
+| Operators | **Invite-only.** No public “create an account.” Sign-up without a valid invite token is refused, except the first sign-up on an empty book, which may open one founder admin. Admin invites by email and role; the invitee opens the copied link and sets a password (no SMTP yet). The token, not the email alone, grants the role. Admin can change role, disable, restore, and remove a sign-in that has no access. The book keeps at least one admin. Google/X broker buttons are not the chapter door. |
 
 ## Desks
 

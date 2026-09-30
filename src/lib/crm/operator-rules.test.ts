@@ -6,6 +6,8 @@ import {
   isOperatorRole,
   normalizeOperatorEmail,
   roleChangeBlockedReason,
+  signUpAllowed,
+  type SignUpInvite,
 } from "./operator-rules.ts";
 
 describe("operator emails", () => {
@@ -55,6 +57,100 @@ describe("last admin", () => {
     assert.equal(
       roleChangeBlockedReason({ targetRole: "admin", nextRole: "viewer", enabledAdminCount: 1 }),
       "The book needs at least one admin.",
+    );
+  });
+});
+
+describe("signUpAllowed", () => {
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  const past = new Date(Date.now() - 86_400_000).toISOString();
+  const openInvite: SignUpInvite = {
+    email: "lead@chapter.example",
+    expiresAt: future,
+    acceptedAt: null,
+  };
+
+  it("allows the founder email when the book is empty", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: true,
+        founderAllowed: true,
+        email: "founder@chapter.example",
+        invite: null,
+      }),
+      true,
+    );
+  });
+
+  it("refuses another email when the book is empty", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: true,
+        founderAllowed: false,
+        email: "other@chapter.example",
+        invite: null,
+      }),
+      false,
+    );
+  });
+
+  it("allows a matching unexpired invite", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: false,
+        founderAllowed: false,
+        email: "Lead@Chapter.example",
+        invite: openInvite,
+      }),
+      true,
+    );
+  });
+
+  it("refuses an invite for a different email", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: false,
+        founderAllowed: false,
+        email: "other@chapter.example",
+        invite: openInvite,
+      }),
+      false,
+    );
+  });
+
+  it("refuses an expired invite", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: false,
+        founderAllowed: false,
+        email: "lead@chapter.example",
+        invite: { ...openInvite, expiresAt: past },
+      }),
+      false,
+    );
+  });
+
+  it("refuses an accepted invite", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: false,
+        founderAllowed: false,
+        email: "lead@chapter.example",
+        invite: { ...openInvite, acceptedAt: past },
+      }),
+      false,
+    );
+  });
+
+  it("refuses sign-up when there is no invite", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: false,
+        founderAllowed: true,
+        email: "lead@chapter.example",
+        invite: null,
+      }),
+      false,
     );
   });
 });
