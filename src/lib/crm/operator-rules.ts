@@ -17,6 +17,30 @@ export function normalizeOperatorEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+export type SignUpInvite = {
+  email: string;
+  expiresAt: string | Date;
+  acceptedAt: string | Date | null;
+};
+
+/**
+ * An account may be created only for the founder path on an empty book,
+ * or for an invite that is still open and addressed to this email.
+ */
+export function signUpAllowed(input: {
+  bookEmpty: boolean;
+  founderAllowed: boolean;
+  email: string;
+  invite: SignUpInvite | null;
+}): boolean {
+  if (input.bookEmpty && input.founderAllowed) return true;
+  const invite = input.invite;
+  if (!invite || invite.acceptedAt != null) return false;
+  const expiresAt = new Date(invite.expiresAt).getTime();
+  if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) return false;
+  return normalizeOperatorEmail(invite.email) === normalizeOperatorEmail(input.email);
+}
+
 export function isOperatorRole(value: string): value is OperatorRole {
   return (OPERATOR_ROLES as readonly string[]).includes(value);
 }

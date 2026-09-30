@@ -47,7 +47,7 @@ Empty Neon is fine. `npm run build` on Vercel runs `scripts/migrate.mjs` and app
 4. Deploy
 5. After the first URL exists, set `BETTER_AUTH_URL` to that origin and redeploy if you did not know it yet
 
-The first person to sign in on the **empty** hosted book is founder **admin**. After that, only invites work. Use a real operator email there — it lives in Neon, not in git.
+The first person to sign in on the **empty** hosted book is founder **admin**. After that, sign-up without the invite token is refused. Use a real operator email there — it lives in Neon, not in git.
 
 ## Cloudflare (later)
 

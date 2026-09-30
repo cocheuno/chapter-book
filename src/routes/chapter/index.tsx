@@ -8,6 +8,7 @@ import { getSessionContext } from "@/lib/crm/member";
 import {
   inviteOperator,
   listOperators,
+  removeUnassignedAccount,
   revokeInvite,
   setOperatorDisabled,
   setOperatorRole,
@@ -208,6 +209,45 @@ function ChapterInner() {
               </p>
             )}
           </form>
+        )}
+        {isAdmin && (
+          <div className="space-y-2">
+            <h3 className="font-display text-lg">Accounts without access</h3>
+            <p className="text-sm text-ink-soft">
+              These sign-ins are not operators. Remove one to free the address.
+            </p>
+            <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+              {(ops?.unassigned ?? []).map((row) => (
+                <li
+                  key={row.id}
+                  className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-medium">{row.name || row.email}</p>
+                    <p className="text-sm text-muted">{row.email}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        await removeUnassignedAccount({ data: { userId: row.id } });
+                        setOps(await listOperators());
+                        toast.success("Account removed");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Could not remove");
+                      }
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              ))}
+              {(ops?.unassigned.length ?? 0) === 0 && (
+                <li className="px-4 py-6 text-muted">No accounts are waiting.</li>
+              )}
+            </ul>
+          </div>
         )}
       </section>
 

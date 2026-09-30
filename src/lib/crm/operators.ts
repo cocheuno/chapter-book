@@ -8,14 +8,11 @@ import {
   INVITE_DAYS,
   disableBlockedReason,
   hashInviteToken,
-  isOperatorRole,
   newInviteToken,
   normalizeOperatorEmail,
   roleChangeBlockedReason,
   type OperatorRole,
 } from "./operator-rules";
-
-export { INVITE_DAYS, isOperatorRole, type OperatorRole };
 
 async function enabledAdminCount(
   sql: Awaited<ReturnType<typeof getSql>>,
@@ -88,7 +85,95 @@ export const listOperators = createServerFn({ method: "GET" })
       where chapter_id = ${m.chapterId} and accepted_at is null and expires_at > now()
       order by created_at desc
     `;
-    return { members, invites, selfId: m.userId, role: m.role };
+    const unassigned =
+      m.role === "admin"
+        ? await sql<{ id: string; email: string; name: string }>`
+            select u.id, u.email, u.name
+            from "user" u
+            where not exists (
+              select 1 from chapter_members c where c.user_id = u.id
+            )
+            order by u.email
+          `
+        : [];
+    return { members, invites, unassigned, selfId: m.userId, role: m.role };
+  });
+
+/** Claim the invite for the signed-in user. The token, not the email alone, grants the role. */
+export const acceptInvite = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.string().min(1).parse)
+  .handler(async ({ context, data }) => {
+    const token = data.trim();
+    if (!token) throw new Error("That invite link is not valid.");
+    const sql = await getSql();
+    const users = await sql<{ email: string | null }>`
+      select email from "user" where id = ${context.userId}
+    `;
+    const email = normalizeOperatorEmail(users[0]?.email ?? "");
+    const rows = await sql<{
+      id: string;
+      chapter_id: string;
+      email: string;
+      role: OperatorRole;
+      expires_at: string | Date;
+      accepted_at: string | Date | null;
+    }>`
+      select id, chapter_id, email, role, expires_at, accepted_at
+      from operator_invites
+      where token_hash = ${hashInviteToken(token)}
+    `;
+    const invite = rows[0];
+    if (!invite) throw new Error("That invite link is not valid.");
+    if (invite.accepted_at) throw new Error("That invite was already used.");
+    if (new Date(invite.expires_at).getTime() <= Date.now()) {
+      throw new Error("That invite has expired.");
+    }
+    if (!email || normalizeOperatorEmail(invite.email) !== email) {
+      throw new Error("This invite is for a different email.");
+    }
+    const claimed = await sql<{ id: string }>`
+      update operator_invites set accepted_at = now()
+      where id = ${invite.id} and accepted_at is null
+      returning id
+    `;
+    if (!claimed[0]) throw new Error("That invite was already used.");
+    const already = await sql<{ user_id: string }>`
+      select user_id from chapter_members where user_id = ${context.userId}
+    `;
+    if (!already[0]) {
+      await sql`
+        insert into chapter_members (user_id, chapter_id, role)
+        values (${context.userId}, ${invite.chapter_id}, ${invite.role})
+      `;
+    }
+    return { ok: true as const };
+  });
+
+/** Delete a sign-in that never joined the book, so the address can be invited again. */
+export const removeUnassignedAccount = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ userId: z.string().min(1) }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertAdmin(m.role);
+    const sql = await getSql();
+    // Session and account rows reference "user" with on delete cascade.
+    // One conditional delete, so a membership cannot appear between statements.
+    const removed = await sql<{ id: string }>`
+      delete from "user"
+      where id = ${data.userId}
+        and not exists (
+          select 1 from chapter_members where user_id = ${data.userId}
+        )
+      returning id
+    `;
+    if (removed[0]) return { ok: true as const };
+    const still = await sql<{ id: string }>`
+      select id from "user" where id = ${data.userId}
+    `;
+    if (still[0]) throw new Error("That account has access to the book.");
+    throw new Error("That account was not found.");
   });
 
 export const inviteOperator = createServerFn({ method: "POST" })

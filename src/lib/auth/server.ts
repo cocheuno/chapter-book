@@ -30,12 +30,14 @@
  * a verified id via `@/lib/auth/middleware`.
  */
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
-import { ensureDbReady, getPglite } from "../db";
+import { hashInviteToken, signUpAllowed, type SignUpInvite } from "../crm/operator-rules";
+import { ensureDbReady, getPglite, getSql } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
 import { GROK_PROVIDERS } from "./providers";
@@ -173,6 +175,41 @@ const grokOAuthPlugin = authConfigured
     })
   : null;
 
+/**
+ * Close open sign-up. A request to `/sign-up/email` needs a live invite token
+ * for that email, unless the book is empty (the founder path).
+ */
+const inviteOnlySignUp = createAuthMiddleware(async (ctx) => {
+  if (ctx.path !== "/sign-up/email") return;
+  const rawEmail =
+    ctx.body && typeof ctx.body === "object" && "email" in ctx.body ? ctx.body.email : "";
+  const email = typeof rawEmail === "string" ? rawEmail : "";
+  const token = (ctx.getHeader("x-invite-token") ?? "").trim();
+  const sql = await getSql();
+  const chapters = await sql<{ n: number }>`select count(*)::int as n from chapters`;
+  const bookEmpty = (chapters[0]?.n ?? 0) === 0;
+  let invite: SignUpInvite | null = null;
+  if (token) {
+    const rows = await sql<{
+      email: string;
+      expires_at: string | Date;
+      accepted_at: string | Date | null;
+    }>`
+      select email, expires_at, accepted_at
+      from operator_invites
+      where token_hash = ${hashInviteToken(token)}
+    `;
+    const row = rows[0];
+    if (row) {
+      invite = { email: row.email, expiresAt: row.expires_at, acceptedAt: row.accepted_at };
+    }
+  }
+  // No founder-email check yet: any address may open an empty book.
+  if (!signUpAllowed({ bookEmpty, founderAllowed: true, email, invite })) {
+    throw new APIError("FORBIDDEN", { message: "Chapter Book is invite-only." });
+  }
+});
+
 export const auth = betterAuth({
   baseURL,
   // Deployed apps inject BETTER_AUTH_SECRET. Preview: process-stable secret on
@@ -213,6 +250,10 @@ export const auth = betterAuth({
 
   // Local email/password — toggled only via `./email-password` (not a plugin).
   ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),
+
+  hooks: {
+    before: inviteOnlySignUp,
+  },
 
   // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
   // carries a `Domain` attribute, so a sibling `*.grok.me` app cannot "toss" a

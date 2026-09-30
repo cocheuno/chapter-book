@@ -86,29 +86,6 @@ export async function loadMember(userId: string): Promise<MemberContext> {
     };
   }
 
-  const users = await sql<{ email: string | null }>`
-    select email from "user" where id = ${userId}
-  `;
-  const email = users[0]?.email?.trim().toLowerCase() ?? "";
-  if (email) {
-    const invites = await sql<{ id: string; chapter_id: string; role: ChapterRole }>`
-      select id, chapter_id, role from operator_invites
-      where email = ${email} and accepted_at is null and expires_at > now()
-      order by created_at desc
-      limit 1
-    `;
-    if (invites[0]) {
-      await sql`
-        insert into chapter_members (user_id, chapter_id, role)
-        values (${userId}, ${invites[0].chapter_id}, ${invites[0].role})
-      `;
-      await sql`
-        update operator_invites set accepted_at = now() where id = ${invites[0].id}
-      `;
-      return loadMember(userId);
-    }
-  }
-
   const chapters = await sql<{ id: string }>`select id from chapters limit 1`;
   if (chapters[0]) {
     throw new NotOperatorError();
