@@ -12,6 +12,9 @@ Built for a Society of Catholic Scientists chapter that found commercial CRMs to
 - **[Review](docs/REVIEW.md)** — architecture and functionality vs the Wisconsin chapter’s needs
 - **[Hosting](docs/HOSTING.md)** — Neon + Vercel; secrets stay in the host environment
 - **[Publish](docs/PUBLISH.md)** — Website desk → scs-wisconsin-usa.org
+- **[Review, September 2026](docs/REVIEW-2026-09.md)** — website, CRM gaps, and the April 2027 conference (proposed)
+- **[Payments](docs/PAYMENTS.md)** — public registration and Stripe, in phases (proposed)
+- **[Mail](docs/MAIL.md)** — an outbox now, a real mailbox later (proposed)
 
 This repository is meant to be **public**. Real members, passwords, and host secrets are **not** in git. They live in the chapter’s database and in the host’s environment. Read [docs/PRIVACY.md](docs/PRIVACY.md) before you add a file.
 
