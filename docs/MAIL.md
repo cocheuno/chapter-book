@@ -5,7 +5,7 @@
 ## What happens today
 
 - **Nothing is sent.** `sendMail` (`src/lib/crm/actions.ts:1875`) writes `mailings`, `mail_messages`, and touches with status `'sent'`, but no mail leaves the server. Because the desk says "sent," someone may believe a bulletin request went out when it did not.
-  - Fix: until a mailer exists, record these as `'recorded'` and label them "Recorded, not sent."
+  - Fix: until a mailer exists, record **new** sends as `'recorded'` and label them "Recorded, not sent." Existing rows keep their status (BUILD-PLAN.md, Rule 1); the desk can label past sends "Recorded, not sent" because no mailer existed then.
 - **The unsubscribe link is fake.** The `{{unsubscribe_url}}` merge field is the literal text `(unsubscribe)` (`actions.ts:1639`).
 - **Bounces are never counted.** `persons.email_bounce_count` exists, but nothing writes to it.
 

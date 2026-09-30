@@ -8,10 +8,31 @@
 2. Use the prompt template below with the package number.
 3. A package marked **Needs D#** waits for that decision, and one marked **Needs H#** waits for a human task. Both are listed below, with the defaults.
 4. Review each pull request against the package's **Done when** list before merging.
+5. **Do WP-00 first.** It adds the tools that prove each later package leaves the chapter's content alone.
 
 **Prompt template** (replace `WP-XX`):
 
-> Read docs/BUILD-PLAN.md: the "House rules" section and work package WP-XX, plus any review, PAYMENTS.md, or MAIL.md sections it names. Implement only WP-XX, on a new branch. Follow the steps, meet every "Done when" item, and add the listed tests. Run `npm test`, `npm run typecheck`, and `npm run lint`, and fix anything they report. Open a pull request titled "WP-XX: <package title>". If a step does not match the code as it is now, stop and explain the mismatch instead of guessing.
+> Read docs/BUILD-PLAN.md: the "House rules" section and work package WP-XX, plus any review, PAYMENTS.md, or MAIL.md sections it names. Implement only WP-XX, on a new branch. Follow the steps, meet every "Done when" item, and add the listed tests. Run `npm test`, `npm run typecheck`, and `npm run lint`, and fix anything they report. Obey "Rule 1: existing content never changes": no migration or code may alter, delete, hide, reorder, or rewrite existing data, and the public pages must look the same. Open a pull request titled "WP-XX: <package title>", and include the content snapshot diff from WP-00 in its description. If a step does not match the code as it is now, or seems to need changing existing content, stop and explain instead of guessing.
+
+## Rule 1: existing content never changes
+
+Code changes must not change the chapter's current data, or what the public website shows. Content changes only when an editor changes it, on a desk, on purpose.
+
+- **Migrations only add.** They may add:
+  - new tables
+  - new columns, either empty or with a default that keeps today's behavior
+  - new indexes
+
+  They may **not** `update`, `delete`, `truncate`, `drop`, or `rename` anything that exists. No backfills that fill in or rewrite values. WP-00 adds a check that fails the tests if a new migration tries.
+- **Code never rewrites stored content,** whether on load, on read, or on deploy: no re-seeding, normalizing, auto-fixing, auto-archiving, or auto-hiding.
+- **New behavior is opt-in for existing items.** A new flag or setting defaults to what the site does today. Editors turn it on item by item. New items may start with the new default.
+- **The public sees the same thing.** Every published page, the GoDaddy embed, and the JSON feed stay the same, with one exception: a package whose stated purpose is to fix how content displays. That pull request lists every affected item with before and after, and the chapter approves it before merging.
+- **Prove it on every package.** Using WP-00's tools on a copy of production data (H1):
+  - run the content snapshot and the data checksum before and after
+  - put the diff in the pull request
+
+  An empty diff is the normal result.
+- **If a package seems to need changing existing content, stop and ask.** Do not work around this rule.
 
 ## House rules (every package)
 
@@ -27,6 +48,7 @@
 
 - Add a new numbered file in `migrations/`. The next number is `0019`; check the highest existing number first.
 - Idempotent: `create table if not exists`, `add column if not exists`. PGLite-safe: no extensions. Never edit a migration that already exists.
+- **Additive only (Rule 1).** No `update`, `delete`, `drop`, `truncate`, or `rename` in a migration.
 - Ids are text from `nid()` (`src/lib/crm/ids.ts`).
 - Every table has `chapter_id`, and every query filters on it.
 - **Migrations run on every Vercel build against that environment's database**, so each one must be safe on production data.
@@ -100,7 +122,7 @@
 
 | ID | Task | Needed by |
 | --- | --- | --- |
-| H1 | Vercel: give Preview its own Neon branch, or no `DATABASE_URL`. Never production (review S9) | Now |
+| H1 | Vercel Preview gets its own `DATABASE_URL`: a **Neon branch copied from production**, refreshed before each package. It is never production itself (review S9). Pull requests then run their migrations and pages against real content without touching it. Turn on Vercel Deployment Protection for previews, since the copy holds real records | Before WP-00 is used |
 | H2 | Vercel Production: set `FOUNDER_EMAIL` (the current admin's address), `GROK_CHROME=off`, `PUBLIC_ORIGIN` | WP-02, WP-03, WP-12 |
 | H3 | Cloudflare: a chapter hostname for the book (review W2). Then update `BETTER_AUTH_URL` and the embed `<script src>` on GoDaddy | Before flyers |
 | H4 | A short address on the main domain, for example `scs-wisconsin-usa.org/ai`, redirecting to the conference page. Use it on all print | Before flyers |
@@ -121,7 +143,8 @@
 | WP | Title | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
 | **Phase 0: security and foundations (October)** | | | | |
-| 01 | Invites need the token | — | Ready | S1 |
+| 00 | Content guard: migration check, content snapshot, data checksum | — | Ready (H1) | Rule 1 |
+| 01 | Invites need the token | — | In review (PR 10); no data changes | S1 |
 | 02 | Founder path only for `FOUNDER_EMAIL`; one chapter | 01 | Ready (H2) | S6 |
 | 03 | No Grok script or share-tag stripping in production | — | Ready (H2) | S12, W1 |
 | 04 | Broker sign-in off in production | — | Ready | S3 |
@@ -168,6 +191,54 @@
 ---
 
 ## Phase 0: security and foundations
+
+### WP-00 Content guard
+
+**Why:** Rule 1. Every later package must show that it leaves the chapter's content alone.
+
+**Steps:**
+
+1. **Migration check.**
+   - Add `scripts/migration-guard.mjs` and `scripts/migration-guard.test.mjs`, and add the test to `SCRIPT_TESTS` in `scripts/run-tests.mjs`.
+   - It fails when any migration **numbered after `0018`** contains, outside comments:
+     - `update`, `delete`, `truncate`, `drop`, or `rename`
+     - `alter column … type`
+     - `alter column … set default` on an existing column
+   - `drop` does not apply to `drop index` of an index the same migration created.
+   - Existing migrations are not checked.
+2. **Content snapshot.**
+   - Add `scripts/content-snapshot.mjs <base-url> <out.json>`. It uses Playwright, with `executablePath` from `CHROMIUM_PATH` if set, because public pages render in the browser until WP-12. It saves:
+     - the `/api/public-site` JSON
+     - the visible text of `/site`, of every `/p/<slug>` in the feed, and of each speaker page
+     - a full-page screenshot of each, next to the JSON
+   - Add `scripts/content-diff.mjs <before.json> <after.json>`, which prints every difference, page by page.
+3. **Data checksum.**
+   - Add `scripts/content-checksum.mjs <out.json>`. It runs **read-only** with `DATABASE_URL`.
+   - For each content table it records the row count and an `md5` over the columns that existed at snapshot time, ordered by id. The column list is saved in the file, so columns added later do not change the sum.
+   - Content tables:
+     - `site_settings`, `site_items`, `site_images` (id and mime)
+     - `events`, `event_sessions`, `event_speakers`
+     - `mail_templates`, the list tables
+     - `persons`, `organizations`, `affiliations`, `participations`, `touches`, `tasks`
+   - A second mode, `--compare <before.json>`, prints any table whose count or sum changed.
+4. **Pull request checklist.** Add `.github/pull_request_template.md` with:
+   - "Snapshot diff (paste, or 'none')"
+   - "Checksum compare (paste, or 'unchanged')"
+   - "Rule 1: this PR changes no existing content (yes/no; if no, list items and get approval)"
+
+**How each later package uses it:** the chapter refreshes the Neon preview branch (H1). The pull request's Vercel preview then runs the package's migrations on that copy. Before and after:
+
+- `content-checksum` against the branch
+- `content-snapshot` against production and against the preview
+
+Both diffs go in the pull request.
+
+**Done when:**
+
+- A new migration containing `update site_items …` fails `npm test`.
+- A snapshot of production and one of an unchanged preview produce an empty diff.
+
+**Tests:** the migration guard (catches each forbidden form; allows `create table`, `add column`, `create index`; ignores comments).
 
 ### WP-01 Invites need the token
 
@@ -235,6 +306,7 @@
 2. **Use it** in `loadMember` before `bootstrapChapter`, and in WP-01's `signUpAllowed`.
 3. **Login state.** `getLoginState` reports `founder: true` only when the book is empty. It never reveals the founder address.
 4. **One chapter.** Migration: `create unique index if not exists chapters_one_uq on chapters ((true));`. The database then refuses a second chapter, even from two first sign-ups at once.
+   - First check production **read-only** with `select count(*) from chapters`. If it is not exactly 1, skip this step and tell the chapter; the migration would fail.
 5. **Docs.** Add `FOUNDER_EMAIL` to `.env.example` (name only) and to `docs/HOSTING.md`.
 
 **Done when:** on a hosted empty database, only `FOUNDER_EMAIL` can open the book, and a second chapter row cannot be inserted.
@@ -253,7 +325,13 @@
 1. **Switch.** Add a pure `grokChromeEnabled(env)` in `src/lib/grok-chrome.ts`. It returns `false` when `GROK_CHROME === "off"`, and `true` otherwise, so the Grok preview is unchanged.
 2. **Guard the middleware.** At the top of the handler in `server/middleware/grok-pwa.ts`, pass the response through untouched when `grokChromeEnabled` is false.
    - This is the **one** allowed change to that file: a guard, nothing else. If Grok Build regenerates the file, re-apply the guard.
-3. **Docs.** Add `GROK_CHROME` to `.env.example`. Document in `docs/HOSTING.md`: set `GROK_CHROME=off` on Vercel Production.
+3. **Keep a share card.** With the middleware off, pages would have no share tags until WP-12. Add site-wide defaults to the `head` in `src/routes/__root.tsx`:
+   - `og:title`: the site title
+   - `og:description`: the existing description
+   - `twitter:card`
+
+   Link previews then keep a card.
+4. **Docs.** Add `GROK_CHROME` to `.env.example`. Document in `docs/HOSTING.md`: set `GROK_CHROME=off` on Vercel Production.
 
 **Done when:**
 
@@ -299,13 +377,20 @@
    - `border`, `border-radius`
    - `list-style-type`, `vertical-align`
 
-   Keep the existing `STYLE_BAD` checks on the values. Everything else is dropped: `position`, `z-index`, `opacity`, `transform`, `display`, and so on.
+   Keep the existing `STYLE_BAD` checks on the values. Everything else is dropped: `position`, `z-index`, `opacity`, `transform`, and so on.
+
+   **Rule 1 first.** Before narrowing the list:
+   - Run a read-only query over every stored public field (`site_settings.about`; `site_items.summary` and `body`; `event_sessions.summary` and `body`; `event_speakers.body`) for `style=`, and list every property in use.
+   - Add each one to the allowlist, unless it is `position`, `z-index`, or `transform`.
+   - If a published item uses one of those three, list it in the pull request and **stop for the chapter's decision**.
 3. **Contain the copy.** In `src/styles.css`: `.announcement-html { contain: paint; }`. In `public/embed/chapter-site.js`, wrap rich HTML in `<div class="scs-rich" style="contain:paint">`.
+   - `contain: paint` clips anything that reaches outside its box. Compare the WP-00 screenshots of every published page before and after. If anything is clipped, list it and stop for the chapter's decision.
 
 **Done when:**
 
 - The headers appear on the deployed host. Framing is refused there, and the Grok preview still loads.
 - `position:fixed` and `z-index` are removed from editor HTML.
+- The WP-00 snapshot and screenshot diff of published pages is empty, or every difference has been approved.
 
 **Tests:** in `announcement-html.test.ts`, allowed properties are kept, blocked properties are dropped, and mixed declarations keep only the allowed part.
 
@@ -395,6 +480,12 @@
    - `chapter-site.js` renders `aboutHtml` for `data-scs="about"` when `safeSection` passes, and otherwise uses `textContent`.
 5. **Editor hints.** On each multi-line field on the Website desk and in the conference builder, add the hint "Start with `<section>` for HTML". Show the live preview the Website desk already has for summaries.
 
+**Rule 1:** this package exists to fix how content displays, so the snapshot diff will not be empty.
+
+- The pull request lists every published item whose display changes, with before and after text and screenshots: raw tags that become formatting, and GoDaddy cards that now show formatting instead of plain words.
+- Nothing else may change. A value with no tags must render exactly as today.
+- The chapter approves the list before merging.
+
 **Done when:** `<section><h2>Hi</h2><p>Text</p></section>` in any multi-line public field renders formatted on:
 
 - `/p/…` pages
@@ -416,12 +507,12 @@ No literal `<section` or `&lt;section` appears anywhere public.
 
 **Steps:**
 
-1. **Talks leave the shelves.** Items of kind `article` with a `conference_id` are conference talks. Leave them out of:
-   - the feed (`publicSiteDto` and `loadPublishedSite`)
-   - `/site`
-   - the Website desk's Articles tab. Show them there as "Talk on <conference>", edited in the conference builder.
-
-   Notices (announcements with a `conference_id`) stay on the announcements shelf.
+1. **A switch for talks on the Articles shelf.** Items of kind `article` with a `conference_id` are conference talks.
+   - Migration: `site_items` add `on_shelf boolean not null default true`. Every existing item keeps showing where it shows today.
+   - The feed (`publicSiteDto` and `loadPublishedSite`) and `/site` leave out items where `on_shelf` is false.
+   - The conference builder creates **new** talks with `on_shelf = false`.
+   - Existing talks stay on the Articles shelf until an editor unticks "Also list on the Articles shelf". The checkbox is on the Website desk and in the conference builder, and the desk marks these items "Talk on <conference>".
+   - Notices (announcements with a `conference_id`) are unaffected.
 2. **Drafts by default.** New items start unpublished: `emptyItem` sets `published: false`, and the server uses `data.published ?? false`. Lists show a "Draft" badge.
 3. **Preview drafts.**
    - New server function `getPreviewPage(slug)` with `authMiddleware`: the same data as `getPublicPage`, but without the `published` filter.
@@ -431,7 +522,7 @@ No literal `<section` or `&lt;section` appears anywhere public.
 
 **Done when:**
 
-- Talks appear only on the conference page.
+- New talks appear only on the conference page. Existing talks move only when an editor unticks the box. The snapshot diff is empty.
 - A new item is a draft until published, and its preview works for operators only.
 - Remove asks first.
 
@@ -442,12 +533,20 @@ No literal `<section` or `&lt;section` appears anywhere public.
 **Steps:**
 
 1. **Migration:** `alter table site_items add column if not exists starts_on date; … ends_on date;`.
-2. **Website desk:** date fields for events, and an optional "Show until" (`ends_on`) for announcements and courses. For an event item linked to a gathering, default to that gathering's `starts_at` date.
-3. **Upcoming.** Public event lists sort by `starts_on`. An item whose `ends_on` (or `starts_on`, when there is no end) is before today in `America/Chicago` leaves "Upcoming" by itself. It keeps its `/p/` address and appears under "Past events" on `/site`.
-4. **"When" text.** When `when_label` is empty, derive it from the dates. For example: "Thursday–Saturday, April 15–17, 2027".
+2. **Website desk:** date fields for events, and an optional "Show until" (`ends_on`) for announcements and courses.
+   - For an event item linked to a gathering, the desk **suggests** that gathering's date. It is saved only when an editor saves the item.
+   - No migration or code fills in dates for existing items.
+3. **Upcoming.** Only items that have dates are affected:
+   - Dated events sort by `starts_on`.
+   - A dated item whose `ends_on` (or `starts_on`, when there is no end) is before today in `America/Chicago` leaves "Upcoming" by itself. It keeps its `/p/` address and appears under "Past events" on `/site`.
+   - **Undated items keep today's order and visibility exactly.**
+4. **"When" text.** When `when_label` is empty **and** the item has dates, derive it from them. For example: "Thursday–Saturday, April 15–17, 2027".
 5. **Feed:** add `startsOn` and `endsOn`.
 
-**Done when:** a past event drops off "Upcoming" with no editor action, and events list in date order.
+**Done when:**
+
+- An event an editor has dated drops off "Upcoming" after its date, and dated events list in date order.
+- The snapshot diff on production data is empty, because no existing item has a date yet.
 
 **Tests:** an event today stays; the Chicago midnight edge; label formatting for one day and for a range.
 
@@ -479,18 +578,23 @@ No literal `<section` or `&lt;section` appears anywhere public.
    - exactly one `og:title`, the JSON-LD block, and no "Opening the page…"
    - an unknown address returns 404
 
+- **Rule 1:** the WP-00 snapshot diff of visible page text is empty. Only what's in `<head>` changes: titles, share tags, JSON-LD.
+
 **Tests:** a pure `eventJsonLd(item)` and `pageHead(item)`.
 
 ### WP-13 Conference page for three days
 
 **Steps:**
 
-1. **Program by day.** Group the program using `event_sessions.starts_at` from the conference builder. Talks without a time go under "To be scheduled".
+1. **Program by day.** Group the program using `event_sessions.starts_at` from the conference builder, **only when every talk has a time**. Otherwise the program shows exactly as today. An editor switches it on by entering the times.
 2. **Calendar file.** Add a `/p/<slug>/calendar.ics` server route built from `starts_on` / `ends_on`, the location, and the page address. Link it as "Add to calendar".
-3. **Chapter home link.** The conference header's chapter link goes to the same place as on ordinary pages: `https://scs-wisconsin-usa.org/` until D1 is settled.
-4. **Content, not code.** Venue, parking, accessible entrance, hotel block, "For schools", and "Reading" are typed as `<section>` copy by editors. Add those headings to the editor hint as a suggested outline.
+3. **Content, not code.** Venue, parking, accessible entrance, hotel block, "For schools", and "Reading" are typed as `<section>` copy by editors. Add those headings to the editor hint as a suggested outline.
 
-**Done when:** the program groups by Thursday, Friday, and Saturday, and the `.ics` file opens in Google and Apple calendars.
+**Done when:**
+
+- Once every talk has a time, the program groups by Thursday, Friday, and Saturday.
+- The `.ics` file opens in Google and Apple calendars.
+- The snapshot diff on production data shows only the new "Add to calendar" link.
 
 **Tests:** grouping by day in `America/Chicago`; `.ics` output (escaped text, all-day versus timed).
 
@@ -501,20 +605,26 @@ No literal `<section` or `&lt;section` appears anywhere public.
 **Steps:**
 
 1. **Migration:** `persons` add `post_nominals text` and `salutation_override text`.
-2. **Move degrees out of the title list.**
-   - Degrees and order initials become post-nominals: "Ph.D.", "M.D.", "Sc.D.", "M.Sc.", "M.A.", "B.S." move out of the academic-title seed and stored lists into a new list `post_nominal`. Add S.J., O.P., O.F.M., O.S.B., C.S.C., and O.Carm.
-   - The migration moves existing `academic_title` degree values into `post_nominals`.
-3. **Names.** `composePersonName`: the prefix is the religious title, or else the academic prefix; then `, <post-nominals>`. Example: "Rev. John Doe, S.J., Ph.D."
+2. **A post-nominal list.**
+   - Add a **new** list, `post_nominal`: Ph.D., M.D., Sc.D., M.Sc., M.A., B.S., S.J., O.P., O.F.M., O.S.B., C.S.C., O.Carm.
+   - The existing academic-title list and every person's stored titles stay as they are.
+   - Add a People filter, "Degree in the title field". An editor can then move degrees to post-nominals person by person, on purpose.
+3. **Names.** `composePersonName`: the prefix is the religious title, or else the academic prefix; then `, <post-nominals>` **when post-nominals are filled**.
+   - With `post_nominals` empty, which is everyone at first, every name composes exactly as today.
+   - Example once filled: "Rev. John Doe, S.J., Ph.D."
 4. **Salutations.** A pure `salutation(person)` following the table in review §5; `salutation_override` wins. Women religious get "Dear Sister <given name>" by default; the override covers sisters known by surname.
 5. **Mail.**
    - Add the merge field `{{salutation}}`.
-   - Seeds: `Dear {{honorific}} {{family_name}},` becomes `Dear {{salutation}},`.
-   - Migration: `update mail_templates set body = replace(body, 'Dear {{honorific}} {{family_name}},', 'Dear {{salutation}},')`.
+   - Seeds for a **new** chapter: `Dear {{honorific}} {{family_name}},` becomes `Dear {{salutation}},`.
+   - **Existing templates are not changed.** On the Mail desk, each template offers a button: "Use the salutation field", which an editor may press. Nothing changes until they do.
 6. **Person form:** a post-nominals field, and a salutation preview with an override box.
 
 **Done when:** the person page and mail preview show correct names and salutations for every row of the §5 table.
 
-**Tests:** `names.test.ts`, one case per row of the table, plus a priest-scientist with both titles.
+**Tests:**
+
+- `names.test.ts`: one case per row of the table, plus a priest-scientist with both titles.
+- A case proving that with empty post-nominals the new `composePersonName` returns exactly what the old one did, for every seeded title combination.
 
 ### WP-15 Conference checklist and treasurer hat
 
@@ -522,7 +632,7 @@ No literal `<section` or `&lt;section` appears anywhere public.
 
 1. **New checklist.** Replace `CONFERENCE_CHECKLIST` in `src/lib/crm/constants.ts` with the table in review §4: keys, titles, offsets, hats.
 2. **Treasurer hat.** Add `treasurer` wherever hats are listed; search for `hat`.
-3. **Refresh an existing event.** On the event desk, add "Add missing checklist items". It adds items whose keys are missing and never touches existing tasks. This updates the AI conference already in the book.
+3. **Refresh an existing event, only when an editor asks.** On the event desk, add "Add missing checklist items". It adds items whose keys are missing and never touches existing tasks. Nothing changes for existing events until an editor presses it; the new list applies automatically only to events created afterwards.
 
 **Done when:** for an event starting 2027-04-16, the due dates match the review's table.
 
@@ -553,11 +663,12 @@ No literal `<section` or `&lt;section` appears anywhere public.
 2. **Dated affiliations.** Migration: `affiliations` add `started_on date`, `ended_on date`.
    - Marking an office "not current" sets `ended_on` to today.
    - The partner desk shows "since <year>".
-3. **June reminder.** On Home, from June 1: if no task with `checklist_key = 'clergy_assignments_<year>'` exists, create "Check clergy assignments (most change July 1)" for the secretary.
+3. **June reminder.** In June, Home shows a reminder card: "Check clergy assignments (most change July 1)". It is a card only; nothing is written to the database. An editor can turn it into a task.
+4. **No backfill.** Existing people keep their status, and existing affiliations have empty dates until an editor fills them.
 
 **Done when:** deceased people never appear in audiences, and past offices keep their dates.
 
-**Tests:** the audience filter (pure); the June task rule.
+**Tests:** the audience filter (pure); the June card rule.
 
 ---
 
@@ -571,6 +682,7 @@ Follow `docs/PAYMENTS.md`, **Phase 1**, with the Phase 1 prompt there, and `docs
 - Turnstile uses `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` (H9). With no keys, which happens only in the preview, the check is skipped.
 - Every export in the registrations desk uses `csvCell` (WP-07).
 - Register-page copy blocks use `PublicCopy` (WP-09). The form and buttons are outside them.
+- **Rule 1:** the conference page's Register button keeps the editor's typed link. An event setting, "Use Chapter Book registration", is off by default; while it is off, nothing on the public page changes. Turning it on is the editor's choice.
 
 ### WP-21 Stripe in test mode
 
@@ -692,7 +804,7 @@ Admin action:
    - `updated_at`, `updated_by`
    - `seo_description`, `share_image_id`, `noindex`
 
-   Backfill `status` from `published`, and keep `published` in step with `status` until every reader uses `status`. Add kind `page` to `SITE_KINDS` and to the validator.
+   **No backfill (Rule 1).** `status` is empty for existing rows, and readers treat an empty status as today's behavior: `published = true` means published, and false means draft. `status` is written only when an editor saves the item, and `published` is kept in step. Add kind `page` to `SITE_KINDS` and to the validator.
 2. **Revisions.** Table `site_item_revisions (id, chapter_id, item_id, snapshot jsonb, saved_by, saved_at)`, written on every save. The editor gets "History": list, compare, restore.
 3. **Redirects.** Table `site_redirects (chapter_id, from_path, to_path, created_at)`, added automatically when an address changes. `/p/<old>` answers 301 to the new address.
 4. **No silent overwrites.** A save sends the `updated_at` it loaded. The server refuses when the row changed since: "Someone else saved this page. Reload to see their changes."
@@ -752,7 +864,9 @@ Admin action:
    - a chapter theme (the existing parchment, ink, and bronze), not a copy of the GoDaddy design
 3. **Home page.** Composed on the Website desk from ordered blocks: hero, upcoming events, announcements, articles, documents, courses, and free `<section>` blocks.
 4. **Old addresses.** Import the old GoDaddy addresses (H13) into `site_redirects`, for example `/formsubmitter.html` → the register page.
-5. **Checklist before the switch:**
+5. **Content comes over by editors, not code.** Each GoDaddy page is re-created in the book by an editor. Nothing is scraped and rewritten.
+6. **Checklist before the switch:**
+   - the chapter has compared each GoDaddy page with its book page, side by side, and approved it
    - every old address redirects
    - the sitemap is live
    - forms work
