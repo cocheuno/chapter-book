@@ -646,7 +646,7 @@ To be settled by the chapter. They are data, not code.
 
 ## Phases
 
-Each phase can be merged and deployed on its own. Paste the prompt into Grok Build.
+Each phase can be merged and deployed on its own. These phases are work packages WP-20, WP-21, WP-22, and WP-25 in `docs/BUILD-PLAN.md`. Use that file's prompt template, which adds the house rules and the packages that must come first. The prompts below give the detail for each phase.
 
 **Phase 1: free registration (no Stripe).** Migration, public register page, holds, fulfil step, manage page, registrations desk, exports, `mail_outbox` rows (MAIL.md).
 
