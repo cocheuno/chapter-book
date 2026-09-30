@@ -2,6 +2,8 @@
 
 **Status:** Proposed design, to be built in phases (see the end of this document). No mailbox is needed. Read with `docs/REVIEW-2026-09.md`.
 
+**Rule 1 applies** (`docs/BUILD-PLAN.md`): this design only adds tables and columns. It never changes existing people, events, or website content, except when an editor acts.
+
 **Settled:**
 
 - Stripe is the processor.
@@ -584,7 +586,11 @@ All cells are guarded against formula injection (review S11).
 
 **Home desk:** registrations since yesterday, money to date, seats left.
 
-**Conference page:** when an event has active ticket types, the Register button points at `/p/<slug>/register` automatically and shows the state ("Opens January 11", "Sold out – join the waitlist"). The JSON feed gains `registration: { state, fromPriceCents }` so the GoDaddy card can say the same.
+**Conference page:** an event setting, "Use Chapter Book registration", is **off by default**. While it is off, the Register button keeps the editor's typed link and nothing public changes (BUILD-PLAN.md, Rule 1). When an editor turns it on:
+
+- the button points at `/p/<slug>/register`
+- it shows the state ("Opens January 11", "Sold out – join the waitlist")
+- the JSON feed gains `registration: { state, fromPriceCents }`, so the GoDaddy card can say the same
 
 ## Host variables
 
