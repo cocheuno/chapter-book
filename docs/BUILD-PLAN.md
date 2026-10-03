@@ -122,7 +122,7 @@ Code changes must not change the chapter's current data, or what the public webs
 
 | ID | Task | Needed by |
 | --- | --- | --- |
-| H1 | Previews get their own database: turn on the Neon integration's **Preview Branching** (Vercel → Storage → `chapter-book-db` → Projects → **⋯** → **Update Project Connection** → **Create database branch for deployment**: Preview only, never Production; done 2026-10-03), so each preview deployment gets a fresh Neon branch copied from production, never production itself (review S9). Turn on Deployment Protection, since the copies hold real records (done 2026-10-03). **Keep `ALLOW_PREVIEW_MIGRATIONS` at `off` for now:** on 2026-10-03 a preview build still connected to production. Turn it on only after the guard checks `PRODUCTION_DB_ENDPOINT` (HOSTING.md, step 3). Follow `docs/HOSTING.md`, "Preview database and secrets (H1)". Until then, preview builds skip migrations | Before WP-00 is used |
+| H1 | Previews get their own database: turn on the Neon integration's **Preview Branching** (Vercel → Storage → `chapter-book-db` → Projects → **⋯** → **Update Project Connection** → **Create database branch for deployment**: Preview only, never Production; done 2026-10-03), so each preview deployment gets a fresh Neon branch copied from production, never production itself (review S9). Turn on Deployment Protection, since the copies hold real records. Set `PRODUCTION_DB_ENDPOINT` and `ALLOW_PREVIEW_MIGRATIONS=on` for Preview, so preview builds migrate their copy and refuse production. **Done 2026-10-03.** A preview of `main` gets no copy and uses production. Follow `docs/HOSTING.md`, "Preview database and secrets (H1)" | Before WP-00 is used |
 | H2 | Vercel Production: set `FOUNDER_EMAIL` (the current admin's address), `GROK_CHROME=off`, `PUBLIC_ORIGIN` | WP-02, WP-03, WP-12 |
 | H3 | Cloudflare: a chapter hostname for the book (review W2). Then update `BETTER_AUTH_URL` and the embed `<script src>` on GoDaddy | Before flyers |
 | H4 | A short address on the main domain, for example `scs-wisconsin-usa.org/ai`, redirecting to the conference page. Use it on all print | Before flyers |
@@ -226,7 +226,7 @@ Code changes must not change the chapter's current data, or what the public webs
    - "Checksum compare (paste, or 'unchanged')"
    - "Rule 1: this PR changes no existing content (yes/no; if no, list items and get approval)"
 
-**How each later package uses it:** each preview deployment gets a fresh Neon branch copied from production (H1, Preview Branching). The pull request's Vercel preview runs the package's migrations on that copy. (Open question from 2026-10-03: the copy reached the running preview but not its build. If HOSTING.md step 3 shows builds still get production's settings, decide where preview migrations run before the first package that adds one.) Before and after:
+**How each later package uses it:** each preview deployment gets a fresh Neon branch copied from production (H1, Preview Branching). The pull request's Vercel preview runs the package's migrations on that copy (verified 2026-10-03). Use the pull request's own branch preview, never a preview of `main`, which uses production. Before and after:
 
 - `content-checksum`: read-only against production (before), then against the preview's branch after its migrations ran (after)
 - `content-snapshot` against production and against the preview

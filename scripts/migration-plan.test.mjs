@@ -119,8 +119,8 @@ test("shouldMigrate allows a preview whose database is a copy, not production", 
 });
 
 test("a preview build holding production's DATABASE_URL is refused, even with the flag on", () => {
-  // 2026-10-03: the preview branch reached the running preview but not its
-  // build, so the build migrated with production's URL.
+  // 2026-10-03: a preview built from main gets no Neon branch, so its build
+  // migrated with production's URL.
   assert.equal(shouldMigrate(preview({ databaseUrl: productionUrl })), false);
   assert.match(migrateSkipReason(preview({ databaseUrl: productionUrl })), /production's/);
   // Direct host, compute-specific host, and a full hostname as the setting.

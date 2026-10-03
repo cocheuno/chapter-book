@@ -58,18 +58,21 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 **How the database is connected.** Vercel's Neon integration (Vercel-Managed) owns `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `PG*`, and `POSTGRES_*`.
 
 - You cannot edit or remove them under Environment Variables.
-- They are set for Production, Preview, and Development. Since step 1, each new preview deployment gets its own branch's values, injected at deploy time, in place of production's.
+- They are set for Production, Preview, and Development. Since step 1, each new preview deployment of a branch **other than `main`** gets its own Neon branch's values, for its build and its running site, in place of production's.
 - Their settings are in Vercel → **Storage** → `chapter-book-db`.
 
 **Never reset the database password in the Neon Console.** Vercel's copy would not update, and the live site would lose its database until the integration is reconnected. If a reset is ever needed, do it through the integration (Vercel → Storage), or ask Vercel support.
 
-**Where this stands (2026-10-03):** steps 1, 2, 4, 5, and the branch clean-up in step 6 are done. **Step 3 waits for the migration guard fix to be merged.** Until then `ALLOW_PREVIEW_MIGRATIONS` stays `off`.
+**Where this stands (2026-10-03): H1 is done.** Steps 1–6 are complete.
 
-- Preview builds skip migrations (`scripts/migrate.mjs`).
-- A running preview deployment reads and writes its own Neon branch, a copy of production. The copy holds real records, which is why step 4 matters.
-- A preview **build** still connects to **production**. On 2026-10-03 a preview redeploy with `ALLOW_PREVIEW_MIGRATIONS=on` ran `scripts/migrate.mjs` against production: Neon's operations log shows production's compute starting in the same second, while the preview branch stayed idle. Nothing was applied (`[migrate] up to date.`).
-- Vercel redacts the host in build logs (`[migrate] target: [REDACTED]`), so the log cannot show which database a build used.
-- A preview built **before** 2026-10-03 still reads and writes the **production** database. Do not edit content on one; redeploy it first.
+- A preview of any branch other than `main` gets its own Neon branch, `preview/<git-branch>`, a copy of production. Its build migrates that copy, and its running site reads and writes it. The copy holds real records, which is why step 4 matters.
+  - Verified on 2026-10-03: the `claude/chapter-book-review-enhancements-ez1onx` preview logged `[migrate] target: ep-… · VERCEL_ENV=preview` with the copy's endpoint id, and Neon showed only that copy waking up. Production stayed asleep.
+- **A preview built from `main` gets no copy.** Its build and its running site both use **production**. Neon never makes a `preview/main` branch.
+  - On 2026-10-03, a redeploy of a `main` preview with the old flag-only guard ran `scripts/migrate.mjs` against production. Nothing was applied (`[migrate] up to date.`).
+  - The guard now skips such builds with `[migrate] WARNING … production's`.
+  - **Do not edit content on a preview of `main`: it is the live database.**
+- A preview built **before** 2026-10-03 also reads and writes **production**. Do not edit content on one; redeploy it first.
+- Vercel redacts full database hosts in build logs (`[REDACTED]`). That is why the migrate line prints only the endpoint id (`ep-…`).
 
 **"Needs Attention" on the database variables.** Vercel marks the integration's password-bearing variables `readable-secret`: anyone with access to the project can read them back.
 
@@ -97,14 +100,15 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - A branch named `preview/<git-branch>` appears in the Neon Console, under Branches, made by Vercel. The 2026-10-03 check made `preview/h1-preview-migrations`.
    - The branch has its own compute, so its host (`ep-…-pooler…neon.tech`) differs from production's.
    - The build log says `[migrate] preview build: skipping migrations`; that is expected.
-3. **Allow preview migrations, only once the guard fix is merged.**
+3. **Allow preview migrations.** *Done 2026-10-03.*
    - The guard (`migrateSkipReason` in `scripts/migration-plan.mjs`) lets a preview build migrate only when `ALLOW_PREVIEW_MIGRATIONS` is exactly `on` **and** its database is a Neon endpoint other than `PRODUCTION_DB_ENDPOINT`. If anything is missing or unclear, it skips.
    - **Find production's endpoint id.** The latest **Production** build log prints `[migrate] target: ep-… · VERCEL_ENV=production`; the `ep-…` part is the id. It is also in the Neon Console under Branches → `main` → Computes. It is not a password, but keep it out of git like every host detail.
-   - Settings → **Environment Variables** → add `PRODUCTION_DB_ENDPOINT` with that id, for **Preview** only.
+   - Settings → **Environment Variables** → add `PRODUCTION_DB_ENDPOINT` with that id. **Sensitive: off** (it is config, not a secret). Environments: **Preview** only. Branch: leave empty.
    - Then edit `ALLOW_PREVIEW_MIGRATIONS`, still **Preview** only, and change `off` to exactly `on`: lowercase, no quotes or spaces.
-   - Push a branch or redeploy a preview, and search its build log for `migrate`:
-     - `[migrate] target: ep-… · VERCEL_ENV=preview` with an id **different** from production's, then `up to date` or `applied …`: the build migrated its own copy.
-     - `[migrate] WARNING preview build: skipping migrations. This build's DATABASE_URL is production's …`: the guard held, and the build had production's settings, as on 2026-10-03. Previews then cannot migrate their copy at build time; choose another way before the first package that adds a migration.
+   - Redeploy a preview of a branch **other than `main`** that was built after the guard was merged, and search its build log for `migrate`:
+     - `[migrate] target: ep-… · VERCEL_ENV=preview` with an id **different** from production's, then `up to date` or `applied …`: the build migrated its own copy. This is the normal result.
+     - `[migrate] WARNING preview build: skipping migrations. This build's DATABASE_URL is production's …`: the guard held. Expected for a preview of `main`. On any other branch, check that Preview Branching (step 1) is still on.
+     - `PRODUCTION_DB_ENDPOINT is not a Neon endpoint id` or `ALLOW_PREVIEW_MIGRATIONS is not on`: fix that variable's value, then redeploy.
 4. **Protect previews.** *Done 2026-10-03.*
    - Settings → **Deployment Protection** → turn **Vercel Authentication** on, with scope **Standard Protection**. Never choose **All Deployments**: it would lock the public site.
    - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Leave the secret box empty so Vercel generates one: 32 letters and digits. Never use an example value from a document or chat, since anyone can read those. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.
