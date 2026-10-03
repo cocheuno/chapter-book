@@ -90,7 +90,7 @@ test("every forbidden form is reported from a fixture file", () => {
 test("allowed forms, comments, and strings are not reported", () => {
   const dir = mkdtempSync(join(tmpdir(), "migration-guard-ok-"));
   const files = {
-    "0019_create.sql": "create table if not exists notes (id text);\n",
+    "0019_create.sql": "create table if not exists scratch (id text);\n",
     "0020_add_column.sql": "alter table notes add column if not exists note text;\n",
     "0021_create_index.sql": "create index if not exists notes_idx on notes (id);\n",
     "0022_comments.sql":
@@ -181,6 +181,47 @@ test("insert, copy, and merge are forbidden unless the same file creates the tab
     "insert into site_items (id) values ('b');\n";
   assert.deepEqual(findForbiddenSql("0019_mix.sql", mixed), [
     { file: "0019_mix.sql", line: 3, form: "insert into" },
+  ]);
+});
+
+test("create table if not exists does not reopen a table from an earlier migration", () => {
+  const sql =
+    "create table if not exists site_items (id text); insert into site_items (id) values ('x');";
+  assert.deepEqual(
+    findForbiddenSql("0019_y.sql", sql, new Set(["site_items"])).map((row) => row.form),
+    ["insert into"],
+  );
+  assert.deepEqual(
+    findForbiddenSql(
+      "0019_new.sql",
+      "create table notes (id text); insert into notes (id) values ('a');",
+      new Set(["site_items"]),
+    ),
+    [],
+  );
+
+  const dir = mkdtempSync(join(tmpdir(), "migration-guard-earlier-"));
+  writeSql(dir, "0002_x.sql", "create table site_items (id text);\n");
+  writeSql(dir, "0019_y.sql", `${sql}\n`);
+  const found = guardMigrationDir(dir);
+  assert.ok(found.some((row) => row.file === "0019_y.sql" && row.form === "insert into"));
+  assert.equal(
+    found.some((row) => row.file === "0002_x.sql"),
+    false,
+  );
+});
+
+test("a table created under migrations/auth already exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "migration-guard-auth-"));
+  mkdirSync(join(dir, "auth"));
+  writeSql(join(dir, "auth"), "0001_auth.sql", 'create table "User" (id text);\n');
+  writeSql(
+    dir,
+    "0019_user.sql",
+    "create table if not exists public.user (id text);\ninsert into \"User\" (id) values ('a');\n",
+  );
+  assert.deepEqual(guardMigrationDir(dir), [
+    { file: "0019_user.sql", line: 2, form: "insert into" },
   ]);
 });
 

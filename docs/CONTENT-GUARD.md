@@ -21,7 +21,7 @@ These are allowed:
 - `on update ...` inside a foreign-key clause
 - `drop index [if exists] X` when the same file creates index `X`
 - `on conflict do nothing`
-- `insert into T`, `copy T ... from`, and `merge into T` when the same file creates table `T` (`create table` or `create table if not exists`). The name matches with or without double quotes and an optional `public.` prefix, ignoring case. `update` inside a merge is still the `update` form.
+- `insert into T`, `copy T ... from`, and `merge into T` when the same file creates table `T`, and no earlier migration created it (`create table` or `create table if not exists`). Earlier migrations are every file numbered below this one, plus every file in `migrations/auth/`. The name matches with or without double quotes and an optional `public.` prefix, ignoring case. `update` inside a merge is still the `update` form.
 - the same words inside a `--` comment, a `/* */` comment, or a `'...'` string
 
 ## Snapshot

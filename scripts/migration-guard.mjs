@@ -3,10 +3,13 @@
  * Fail new migrations that would change existing data (Rule 1).
  *
  * Only files in migrations/ numbered 0019 and up are checked. migrations/auth/
- * is not. Comments and '...' string literals are blanked before matching, and
- * line numbers stay on the original text.
+ * is not checked for forbidden statements. Tables created there, and in every
+ * migration numbered below the file being checked, already exist: a later
+ * create table if not exists does not make them new. Comments and '...'
+ * string literals are blanked before matching, and line numbers stay on the
+ * original text.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./with-app-env.mjs";
@@ -195,10 +198,15 @@ function covered(spans, index) {
 /**
  * @param {string} file
  * @param {string} sql
+ * @param {Iterable<string>} [earlierTables] Table names already created. Omitted means none.
  * @returns {Array<{ file: string, line: number, form: string }>}
  */
-export function findForbiddenSql(file, sql) {
+export function findForbiddenSql(file, sql, earlierTables) {
   const masked = maskSql(sql);
+  const earlier = new Set();
+  if (earlierTables) {
+    for (const name of earlierTables) earlier.add(tableKey(name));
+  }
   const spans = allowedSpans(masked);
   /** @type {Array<{ file: string, line: number, form: string, index: number }>} */
   const found = [];
@@ -229,7 +237,10 @@ export function findForbiddenSql(file, sql) {
       index: match.index,
     });
   }
-  const created = createdTableKeys(masked);
+  const created = new Set();
+  for (const name of createdTableKeys(masked)) {
+    if (!earlier.has(name)) created.add(name);
+  }
   const writes = [
     [INSERT_INTO, "insert into"],
     [COPY_FROM, "copy ... from"],
@@ -269,19 +280,54 @@ export function formatViolation(violation) {
 }
 
 /**
- * Top-level `*.sql` only. Subdirectories, including migrations/auth/, are skipped.
+ * Tables created in one SQL file, after comments and string literals are blanked.
+ * @param {string} sql
+ * @returns {Set<string>}
+ */
+function tablesCreatedBy(sql) {
+  return createdTableKeys(maskSql(sql));
+}
+
+/**
+ * Top-level files numbered 0019 and up are checked. Every numbered file below
+ * the one being checked, and every file in auth/, supplies tables that already
+ * exist. A create table in the checked file is new only when that name is absent.
  * @param {string} dir
  * @returns {Array<{ file: string, line: number, form: string }>}
  */
 export function guardMigrationDir(dir) {
-  const names = readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && isGuardedMigration(entry.name))
+  const top = readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && migrationNumber(entry.name) !== null)
     .map((entry) => entry.name)
-    .sort();
+    .sort((a, b) => migrationNumber(a) - migrationNumber(b) || a.localeCompare(b));
+  /** @type {Map<string, Set<string>>} */
+  const createdByFile = new Map();
+  for (const name of top) {
+    createdByFile.set(name, tablesCreatedBy(readFileSync(join(dir, name), "utf8")));
+  }
+
+  const authTables = new Set();
+  const authDir = join(dir, "auth");
+  if (existsSync(authDir)) {
+    for (const entry of readdirSync(authDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      for (const table of tablesCreatedBy(readFileSync(join(authDir, entry.name), "utf8"))) {
+        authTables.add(table);
+      }
+    }
+  }
+
   /** @type {Array<{ file: string, line: number, form: string }>} */
   const violations = [];
-  for (const name of names) {
-    violations.push(...findForbiddenSql(name, readFileSync(join(dir, name), "utf8")));
+  for (const name of top) {
+    if (!isGuardedMigration(name)) continue;
+    const number = migrationNumber(name);
+    const earlier = new Set(authTables);
+    for (const other of top) {
+      if (migrationNumber(other) >= number) continue;
+      for (const table of createdByFile.get(other)) earlier.add(table);
+    }
+    violations.push(...findForbiddenSql(name, readFileSync(join(dir, name), "utf8"), earlier));
   }
   return violations;
 }
