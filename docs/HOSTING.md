@@ -56,15 +56,16 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 **How the database is connected.** Vercel's Neon integration (Vercel-Managed) owns `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `PG*`, and `POSTGRES_*`.
 
 - You cannot edit or remove them under Environment Variables.
-- Until step 1 below is done, they apply to Production, Preview, and Development.
-- Their settings are in Vercel → **Storage** → the Neon database.
+- They are set for Production, Preview, and Development. Since step 1, each new preview deployment gets its own branch's values, injected at deploy time, in place of production's.
+- Their settings are in Vercel → **Storage** → `chapter-book-db`.
 
 **Never reset the database password in the Neon Console.** Vercel's copy would not update, and the live site would lose its database until the integration is reconnected. If a reset is ever needed, do it through the integration (Vercel → Storage), or ask Vercel support.
 
-**Until step 3:**
+**Where this stands (2026-10-03):** steps 1, 2, and the branch clean-up in step 6 are done. Steps 3–5 are not.
 
-- Preview builds skip migrations (`scripts/migrate.mjs`).
-- A running preview deployment still reads and writes the **production** database. Do not edit content on a preview.
+- Preview builds skip migrations (`scripts/migrate.mjs`) until step 3.
+- A preview deployment built since step 1 reads and writes its own Neon branch, a copy of production. The copy holds real records, which is why step 4 matters.
+- A preview built **before** 2026-10-03 still reads and writes the **production** database. Do not edit content on one; redeploy it first.
 
 **"Needs Attention" on the database variables.** Vercel marks the integration's password-bearing variables `readable-secret`: anyone with access to the project can read them back.
 
@@ -74,14 +75,23 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 
 Do not paste a password, connection string, or secret into git, GitHub, Slack, or chat.
 
-1. **Turn on Preview Branching.**
-   - In Vercel, open **Storage** and click the Neon database. Open **Projects**, then the `chapter-book` connection's settings, then **Advanced Options → Deployments Configuration**.
-   - Turn on **Preview** and **Resource must be active before deployment**. Save.
-   - If the connection cannot be edited there, stop. The alternative is removing and reconnecting the project, which briefly removes the production variables and needs a careful plan.
+1. **Turn on Preview Branching.** *Done 2026-10-03.*
+   - In Vercel, open **Storage** and click `chapter-book-db`. Open the **Projects** tab.
+   - On the `chapter-book` row, click **⋯**. Two choices appear:
+     - **Update Project Connection**: click this one.
+     - **Remove Project Connection**: never click this one. It takes the database variables away from the live site.
+   - The **Update Project Connection** dialog has three parts. There is no "Advanced Options" button.
+     - **Environments**: leave **Production**, **Preview**, and **Development** all ticked. Unticking Production removes the live site's database.
+     - **Require Active Resource Before Deploy**: turn the **Required** switch on. A new option appears, **Create database branch for deployment**, with checkboxes for **Preview** and **Production**.
+       - Tick **Preview**.
+       - **Never tick Production.** The live site must keep using Neon's `main` branch, where the chapter's records are. A branch per production deploy would point the live site at a fresh copy, and entries made after the copy would be left behind.
+     - **Custom Environment Variable Prefix**: leave it empty. A prefix renames the variables (for example `X_DATABASE_URL`), and the book reads `DATABASE_URL`.
+   - Click **Save**.
 
    From then on, each preview deployment gets its own Neon branch, `preview/<git-branch>`, a fresh copy of production. Its connection is injected at deploy time and does not appear under Environment Variables.
-2. **Check it.** Redeploy a preview: Deployments → a preview → **⋯** → **Redeploy**.
-   - A branch named `preview/<git-branch>` appears in the Neon Console.
+2. **Check it.** *Done 2026-10-03.* Redeploy a preview: Deployments → a preview → **⋯** → **Redeploy**.
+   - A branch named `preview/<git-branch>` appears in the Neon Console, under Branches, made by Vercel. The 2026-10-03 check made `preview/h1-preview-migrations`.
+   - The branch has its own compute, so its host (`ep-…-pooler…neon.tech`) differs from production's. Step 3 relies on this.
    - The build log still says `[migrate] preview build: skipping migrations`; that is expected until step 3.
 3. **Allow preview migrations, only after step 2 shows the branch.**
    - Settings → **Environment Variables** → add `ALLOW_PREVIEW_MIGRATIONS` with the value `on`, for **Preview** only.
@@ -95,7 +105,7 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - `https://chapter-book-beryl.vercel.app/p/ai-conference` and `https://scs-wisconsin-usa.org` load without it.
    - Check those two addresses, not a raw `*.vercel.app` deployment URL: Standard Protection can lock generated deployment URLs while the production domain stays public.
 6. **Clean up.**
-   - The manual Neon branch named `preview`, made on 2026-10-02, is no longer needed. Delete it in the Neon Console when convenient.
+   - The manual Neon branch named `preview`, made on 2026-10-02, was deleted on 2026-10-03. Neon now has `main` (production) and the `preview/…` branches Vercel makes.
    - Branches the integration creates are deleted when their Vercel deployments expire (6 months by default). Delete old ones in Neon to save space.
 
 ## Cloudflare (later)
