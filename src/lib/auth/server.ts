@@ -36,7 +36,13 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
-import { hashInviteToken, signUpAllowed, type SignUpInvite } from "../crm/operator-rules";
+import { env } from "../env.server";
+import {
+  founderAllowed,
+  hashInviteToken,
+  signUpAllowed,
+  type SignUpInvite,
+} from "../crm/operator-rules";
 import { ensureDbReady, getPglite, getSql } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
@@ -65,12 +71,6 @@ function previewAuthSecret(): string {
   globalAuthRef.__grokAuthPreviewSecret__ ??= randomBytes(32).toString("hex");
   return globalAuthRef.__grokAuthPreviewSecret__;
 }
-
-/** Read an env var, treating empty/whitespace as unset. */
-const env = (key: string): string | undefined => {
-  const value = process.env[key]?.trim();
-  return value ? value : undefined;
-};
 
 // Explicit off-switch. The deployer sets `VITE_AUTH_ENABLED=true` when it
 // provisions auth; set it to "false" to force auth off everywhere (dev user).
@@ -204,8 +204,17 @@ const inviteOnlySignUp = createAuthMiddleware(async (ctx) => {
       invite = { email: row.email, expiresAt: row.expires_at, acceptedAt: row.accepted_at };
     }
   }
-  // No founder-email check yet: any address may open an empty book.
-  if (!signUpAllowed({ bookEmpty, founderAllowed: true, email, invite })) {
+  if (
+    !signUpAllowed({
+      bookEmpty,
+      founderAllowed: founderAllowed(email, {
+        founderEmail: env("FOUNDER_EMAIL"),
+        databaseUrl: env("DATABASE_URL"),
+      }),
+      email,
+      invite,
+    })
+  ) {
     throw new APIError("FORBIDDEN", { message: "Chapter Book is invite-only." });
   }
 });
