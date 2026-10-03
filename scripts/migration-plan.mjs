@@ -82,9 +82,10 @@ export function sameNeonEndpoint(a, b) {
  *
  * A preview build migrates only when ALLOW_PREVIEW_MIGRATIONS is exactly "on"
  * AND its database is a Neon endpoint other than PRODUCTION_DB_ENDPOINT.
- * The flag alone is not enough: on 2026-10-03 Vercel's Neon preview branch
- * reached the running preview but not its build, which still held
- * production's DATABASE_URL (docs/HOSTING.md, H1). Every doubt skips.
+ * The flag alone is not enough: Vercel's Neon integration makes no preview
+ * branch for a preview built from `main`, so that build holds production's
+ * DATABASE_URL. On 2026-10-03 one such build ran the migrator against
+ * production (docs/HOSTING.md, H1). Every doubt skips.
  * @param {{ vercelEnv?: string, allowPreviewMigrations?: string, databaseUrl?: string, productionEndpoint?: string }} input
  * @returns {string | null}
  */
@@ -105,7 +106,7 @@ export function migrateSkipReason(input) {
     return "preview build: skipping migrations. DATABASE_URL is not a Neon endpoint, so it cannot be checked against production's.";
   }
   if (sameNeonEndpoint(target, production)) {
-    return `WARNING preview build: skipping migrations. This build's DATABASE_URL is production's (${production}); the preview branch did not reach the build.`;
+    return `WARNING preview build: skipping migrations. This build's DATABASE_URL is production's (${production}); no Neon preview branch was made for it (a preview of main never gets one).`;
   }
   return null;
 }
