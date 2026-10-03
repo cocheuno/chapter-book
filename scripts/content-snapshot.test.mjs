@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   bypassHeaders,
   checkedBaseUrl,
+  headersForSnapshotRequest,
   launchOptions,
   pagePathsFromFeed,
   pageUrl,
@@ -20,14 +21,41 @@ test("bypass headers are sent only when the secret is set", () => {
   });
 });
 
+test("bypass headers go only to the snapshotted origin", () => {
+  const base = "https://chapter-book-beryl.vercel.app";
+  const own = { accept: "text/html", "user-agent": "snapshot" };
+  const secret = "example-bypass";
+  assert.deepEqual(headersForSnapshotRequest(`${base}/p/ai`, base, own, secret), {
+    accept: "text/html",
+    "user-agent": "snapshot",
+    "x-vercel-protection-bypass": secret,
+    "x-vercel-set-bypass-cookie": "true",
+  });
+  for (const url of [
+    "https://fonts.googleapis.com/css2?family=Source+Sans+3",
+    "https://fonts.gstatic.com/s/sourcesans3.woff2",
+    "https://chapter-book-beryl.vercel.app.evil.example/p/ai",
+  ]) {
+    assert.equal(headersForSnapshotRequest(url, base, own, secret), null);
+  }
+  assert.equal(headersForSnapshotRequest(`${base}/site`, base, own, ""), null);
+  assert.equal(headersForSnapshotRequest(`${base}/site`, base, own, undefined), null);
+});
+
 test("errors do not keep the bypass secret", () => {
   const secret = "example-bypass";
-  assert.equal(redact(`request failed header ${secret}`, secret), "request failed header [redacted]");
+  assert.equal(
+    redact(`request failed header ${secret}`, secret),
+    "request failed header [redacted]",
+  );
 });
 
 test("CHROMIUM_PATH is the browser executable when it is set", () => {
   assert.equal(launchOptions({}).executablePath, undefined);
-  assert.equal(launchOptions({ CHROMIUM_PATH: "C:\\Chrome\\chrome.exe" }).executablePath, "C:\\Chrome\\chrome.exe");
+  assert.equal(
+    launchOptions({ CHROMIUM_PATH: "C:\\Chrome\\chrome.exe" }).executablePath,
+    "C:\\Chrome\\chrome.exe",
+  );
 });
 
 test("the base URL is http(s) without a password", () => {
@@ -69,5 +97,8 @@ test("feed slugs become /p paths, and speaker links are taken from the rendered 
 test("screenshot names stay next to the snapshot and keep the page path", () => {
   assert.equal(screenshotFile("/site"), "site.png");
   assert.equal(screenshotFile("/api/public-site"), "api_public-site.png");
-  assert.equal(screenshotFile("/p/ai-conference/speakers/jane"), "p_ai-conference_speakers_jane.png");
+  assert.equal(
+    screenshotFile("/p/ai-conference/speakers/jane"),
+    "p_ai-conference_speakers_jane.png",
+  );
 });

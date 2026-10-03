@@ -61,6 +61,11 @@ test("every forbidden form is reported from a fixture file", () => {
       "insert into site_items (id) values ('a') on conflict (id) do update set title = 'x';\n",
       "on conflict do update",
     ],
+    [
+      "0027_data_type.sql",
+      "alter table site_items alter column title set data type text;\n",
+      "alter column ... type",
+    ],
   ];
   for (const [name, sql] of cases) writeSql(dir, name, sql);
   const found = guardMigrationDir(dir);
@@ -73,7 +78,12 @@ test("every forbidden form is reported from a fixture file", () => {
   const conflict = found.filter((row) => row.file === "0026_conflict.sql");
   assert.deepEqual(
     conflict.map((row) => row.form),
-    ["on conflict do update"],
+    ["insert into", "on conflict do update"],
+  );
+  const dataType = found.filter((row) => row.file === "0027_data_type.sql");
+  assert.deepEqual(
+    dataType.map((row) => row.form),
+    ["alter column ... type"],
   );
 });
 
@@ -86,8 +96,11 @@ test("allowed forms, comments, and strings are not reported", () => {
     "0022_comments.sql":
       "-- update site_items set title = 'x'\n" +
       "/*\ndelete from persons;\ntruncate site_items;\ndrop table persons;\nrename column title to name;\n" +
-      "alter column title type text;\nalter column title set default 'a';\n*/\n" +
-      "select 'update delete truncate drop rename' as note;\n",
+      "alter column title type text;\nalter column title set data type text;\n" +
+      "alter column title set default 'a';\n" +
+      "insert into site_items (id) values ('a');\ncopy site_items (id) from stdin;\n" +
+      "merge into site_items t using (select 'a' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n*/\n" +
+      "select 'update delete truncate drop rename insert into copy merge' as note;\n",
     "0023_delete_cascade.sql":
       "alter table notes add column parent_id text references chapters (id) on delete cascade;\n",
     "0024_delete_set_null.sql":
@@ -110,6 +123,7 @@ test("allowed forms, comments, and strings are not reported", () => {
     "0030_drop_index_plain.sql":
       "create unique index Notes_Idx on notes (id);\ndrop index notes_idx;\n",
     "0031_conflict_nothing.sql":
+      "create table if not exists notes (id text);\n" +
       "insert into notes (id) values ('a') on conflict (id) do nothing;\n",
     "0032_string_default.sql":
       "alter table notes add column if not exists note text default 'do not update';\n",
@@ -118,6 +132,66 @@ test("allowed forms, comments, and strings are not reported", () => {
   };
   for (const [name, sql] of Object.entries(files)) writeSql(dir, name, sql);
   assert.deepEqual(guardMigrationDir(dir), []);
+});
+
+test("insert, copy, and merge are forbidden unless the same file creates the table", () => {
+  const forbidden = [
+    ["insert into site_items (id) values ('a');\n", ["insert into"]],
+    ["copy site_items (id) from stdin;\n", ["copy ... from"]],
+    ['copy "Site_Items" (id) from stdin;\n', ["copy ... from"]],
+    [
+      "merge into site_items t using (select 'a' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n",
+      ["merge into"],
+    ],
+    [
+      "merge into public.site_items t using (select 'a' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n",
+      ["merge into"],
+    ],
+    ["-- create table notes (id text);\ninsert into notes (id) values ('a');\n", ["insert into"]],
+  ];
+  for (const [sql, forms] of forbidden) {
+    assert.deepEqual(
+      findForbiddenSql("0019_write.sql", sql).map((row) => row.form),
+      forms,
+    );
+  }
+  assert.equal(
+    findForbiddenSql(
+      "0019_write.sql",
+      "-- create table notes (id text);\ninsert into notes (id) values ('a');\n",
+    )[0].line,
+    2,
+  );
+
+  const allowed = [
+    "create table notes (id text);\ninsert into notes (id) values ('a');\n",
+    "create table if not exists notes (id text);\ncopy notes (id) from stdin;\n",
+    "create table \"Notes\" (id text);\ninsert into public.notes (id) values ('a');\n",
+    'create table public.notes (id text);\ncopy "Notes" (id) from stdin;\n',
+    'create table notes (id text);\nmerge into "public"."Notes" t using (select \'a\' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n',
+    "copy site_items to stdout;\n",
+  ];
+  for (const sql of allowed) {
+    assert.deepEqual(findForbiddenSql("0019_new.sql", sql), []);
+  }
+
+  const mixed =
+    "create table notes (id text);\n" +
+    "insert into notes (id) values ('a');\n" +
+    "insert into site_items (id) values ('b');\n";
+  assert.deepEqual(findForbiddenSql("0019_mix.sql", mixed), [
+    { file: "0019_mix.sql", line: 3, form: "insert into" },
+  ]);
+});
+
+test("alter column set data type is the type form", () => {
+  assert.deepEqual(
+    findForbiddenSql(
+      "0019_type.sql",
+      'alter table site_items alter column "Title" set data type text;\n',
+    ),
+    [{ file: "0019_type.sql", line: 1, form: "alter column ... type" }],
+  );
 });
 
 test("drop index is forbidden when the same file does not create it", () => {
@@ -129,9 +203,14 @@ test("drop index is forbidden when the same file does not create it", () => {
     "-- create index fake_idx on notes (id);\ndrop index if exists fake_idx;\n",
   );
   const found = guardMigrationDir(dir);
-  assert.equal(found.some((row) => row.file === "0019_drop_index.sql" && row.form === "drop"), true);
   assert.equal(
-    found.some((row) => row.file === "0020_commented_create.sql" && row.line === 2 && row.form === "drop"),
+    found.some((row) => row.file === "0019_drop_index.sql" && row.form === "drop"),
+    true,
+  );
+  assert.equal(
+    found.some(
+      (row) => row.file === "0020_commented_create.sql" && row.line === 2 && row.form === "drop",
+    ),
     true,
   );
 });
@@ -149,7 +228,10 @@ test("on delete set default is not one of the allowed actions", () => {
     "0019_set_default.sql",
     "alter table notes add column parent_id text references chapters (id) on delete set default;\n",
   );
-  assert.equal(found.some((row) => row.form === "delete"), true);
+  assert.equal(
+    found.some((row) => row.form === "delete"),
+    true,
+  );
 });
 
 test("a real update is reported on its own line when the file also has an allowed foreign key", () => {
@@ -167,7 +249,10 @@ test("case does not hide a forbidden word, and updated_at is a different word", 
     { file: "0019_case.sql", line: 1, form: "update" },
   ]);
   assert.deepEqual(
-    findForbiddenSql("0019_word.sql", "alter table t add column if not exists updated_at timestamptz;\n"),
+    findForbiddenSql(
+      "0019_word.sql",
+      "alter table t add column if not exists updated_at timestamptz;\n",
+    ),
     [],
   );
 });

@@ -12,19 +12,20 @@ import { fileURLToPath } from "node:url";
 import { isMainModule } from "./with-app-env.mjs";
 
 const FORBIDDEN_WORD = /\b(update|delete|truncate|drop|rename)\b/gi;
-const ON_DELETE =
-  /\bon\s+delete\s+(?:cascade|set\s+null|restrict|no\s+action)\b/gi;
-const ON_UPDATE =
-  /\bon\s+update\s+(?:cascade|set\s+null|set\s+default|restrict|no\s+action)\b/gi;
+const ON_DELETE = /\bon\s+delete\s+(?:cascade|set\s+null|restrict|no\s+action)\b/gi;
+const ON_UPDATE = /\bon\s+update\s+(?:cascade|set\s+null|set\s+default|restrict|no\s+action)\b/gi;
 const CREATE_INDEX =
   /\bcreate\s+(?:unique\s+)?index\s+(?:if\s+not\s+exists\s+)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
-const DROP_INDEX =
-  /\bdrop\s+index\s+(?:if\s+exists\s+)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
+const DROP_INDEX = /\bdrop\s+index\s+(?:if\s+exists\s+)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
 const ON_CONFLICT_UPDATE = /\bon\s+conflict\b[^;]*?\bdo\s+update\b/gi;
-const ALTER_TYPE =
-  /\balter\s+column\s+(?:"[^"]+"|[A-Za-z_][\w$]*)\s+type\b/gi;
-const ALTER_DEFAULT =
-  /\balter\s+column\s+(?:"[^"]+"|[A-Za-z_][\w$]*)\s+set\s+default\b/gi;
+const ALTER_TYPE = /\balter\s+column\s+(?:"[^"]+"|[A-Za-z_][\w$]*)\s+(?:set\s+data\s+)?type\b/gi;
+const CREATE_TABLE =
+  /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?:(?:"public"|public)\s*\.\s*)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
+const INSERT_INTO = /\binsert\s+into\s+(?:(?:"public"|public)\s*\.\s*)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
+const COPY_FROM =
+  /\bcopy\s+(?:(?:"public"|public)\s*\.\s*)?("[^"]+"|[A-Za-z_][\w$]*)[^;]*?\bfrom\b/gi;
+const MERGE_INTO = /\bmerge\s+into\s+(?:(?:"public"|public)\s*\.\s*)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
+const ALTER_DEFAULT = /\balter\s+column\s+(?:"[^"]+"|[A-Za-z_][\w$]*)\s+set\s+default\b/gi;
 
 const FIRST_GUARDED = 19;
 
@@ -109,6 +110,27 @@ export function maskSql(sql) {
 export function indexKey(raw) {
   if (raw.startsWith('"') && raw.endsWith('"')) return `quoted:${raw.slice(1, -1)}`;
   return `plain:${raw.toLowerCase()}`;
+}
+
+/**
+ * Table names match ignoring case and double quotes. The public. prefix is
+ * stripped by the statement patterns before this runs.
+ * @param {string} raw
+ * @returns {string}
+ */
+function tableKey(raw) {
+  const name = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
+  return name.toLowerCase();
+}
+
+/**
+ * @param {string} masked
+ * @returns {Set<string>}
+ */
+function createdTableKeys(masked) {
+  const created = new Set();
+  for (const match of masked.matchAll(CREATE_TABLE)) created.add(tableKey(match[1]));
+  return created;
 }
 
 /**
@@ -206,6 +228,23 @@ export function findForbiddenSql(file, sql) {
       form: "alter column ... set default",
       index: match.index,
     });
+  }
+  const created = createdTableKeys(masked);
+  const writes = [
+    [INSERT_INTO, "insert into"],
+    [COPY_FROM, "copy ... from"],
+    [MERGE_INTO, "merge into"],
+  ];
+  for (const [pattern, form] of writes) {
+    for (const match of masked.matchAll(pattern)) {
+      if (created.has(tableKey(match[1]))) continue;
+      found.push({
+        file,
+        line: lineNumber(sql, match.index),
+        form,
+        index: match.index,
+      });
+    }
   }
   for (const match of masked.matchAll(FORBIDDEN_WORD)) {
     if (covered(spans, match.index)) continue;

@@ -7,8 +7,9 @@ import { PGlite } from "@electric-sql/pglite";
 import {
   COLUMNS_SQL,
   CONTENT_TABLES,
-  READ_ONLY_SESSION_SQL,
-  UTC_SESSION_SQL,
+  BEGIN_READ_ONLY_SQL,
+  ROLLBACK_SQL,
+  SET_LOCAL_UTC_SQL,
   changesForCompare,
   checksumSql,
   checksumTables,
@@ -80,15 +81,16 @@ test("compare uses the saved column list and reports count or hash changes", asy
   assert.equal(hashed[0].includes('"extra"'), false);
   assert.equal(hashed[0].includes('"id"'), true);
   assert.deepEqual(changesForCompare(before, collected), []);
-  assert.deepEqual(Object.keys(collected.document.tables.events).sort(), ["columns", "count", "md5"]);
+  assert.deepEqual(Object.keys(collected.document.tables.events).sort(), [
+    "columns",
+    "count",
+    "md5",
+  ]);
 
   const changed = compareChecksums(before, {
     tables: { events: { count: 2, md5: "other" } },
   });
-  assert.equal(
-    formatChecksumChanges(changed),
-    "events: count 1 -> 2, md5 same -> other",
-  );
+  assert.equal(formatChecksumChanges(changed), "events: count 1 -> 2, md5 same -> other");
   assert.equal(formatChecksumChanges([]), "unchanged");
 });
 
@@ -101,18 +103,22 @@ test("a column saved in the before-file and missing now is named", () => {
   );
 });
 
-test("the session is set read-only before any read, and a missing URL does not connect", async () => {
+test("reads run inside one read-only transaction, and a missing URL does not connect", async () => {
   const calls = [];
-  await runReadOnly(
+  const result = await runReadOnly(
     {
       async query(sql) {
         calls.push(sql);
         return { rows: [] };
       },
     },
-    async () => "done",
+    async (query) => {
+      await query("select 1");
+      return "done";
+    },
   );
-  assert.deepEqual(calls, [READ_ONLY_SESSION_SQL, UTC_SESSION_SQL]);
+  assert.equal(result, "done");
+  assert.deepEqual(calls, [BEGIN_READ_ONLY_SQL, SET_LOCAL_UTC_SQL, "select 1", ROLLBACK_SQL]);
   let connected = false;
   await assert.rejects(
     () =>
@@ -125,7 +131,28 @@ test("the session is set read-only before any read, and a missing URL does not c
   assert.equal(connected, false);
 });
 
-test("row text sorts, nulls and bytea hash, and a read-only session refuses a write", async () => {
+test("a failed read still rolls the transaction back", async () => {
+  const calls = [];
+  await assert.rejects(
+    () =>
+      runReadOnly(
+        {
+          async query(sql) {
+            calls.push(sql);
+            return { rows: [] };
+          },
+        },
+        async (query) => {
+          await query("select 1");
+          throw new Error("read failed");
+        },
+      ),
+    /read failed/,
+  );
+  assert.deepEqual(calls, [BEGIN_READ_ONLY_SQL, SET_LOCAL_UTC_SQL, "select 1", ROLLBACK_SQL]);
+});
+
+test("row text sorts, nulls and bytea hash, and a read-only transaction refuses a write", async () => {
   const db = new PGlite();
   await db.waitReady;
   await db.exec("create table sample (id text, note text, bytes bytea)");
@@ -134,17 +161,18 @@ test("row text sorts, nulls and bytea hash, and a read-only session refuses a wr
     { name: "note", bytea: false },
     { name: "bytes", bytea: true },
   ];
-  await db.exec("insert into sample (id, note, bytes) values ('b', 'hello', decode('00ff', 'hex'))");
+  await db.exec(
+    "insert into sample (id, note, bytes) values ('b', 'hello', decode('00ff', 'hex'))",
+  );
   await db.exec("insert into sample (id, note, bytes) values ('a', null, null)");
-  const byteHash = createHash("md5").update(Buffer.from([0x00, 0xff])).digest("hex");
+  const byteHash = createHash("md5")
+    .update(Buffer.from([0x00, 0xff]))
+    .digest("hex");
   const expected = [`a\t\\N\t\\N`, `b\thello\t${byteHash}`];
   const lines = await db.query(
     `select ${columns.map(columnExpr).join(" || E'\\t' || ")} as line from sample`,
   );
-  assert.deepEqual(
-    lines.rows.map((row) => row.line).sort(),
-    expected,
-  );
+  assert.deepEqual(lines.rows.map((row) => row.line).sort(), expected);
   const hashed = await db.query(checksumSql("sample", columns));
   assert.equal(Number(hashed.rows[0].count), 2);
   assert.equal(hashed.rows[0].md5, createHash("md5").update(expected.join("\n")).digest("hex"));
@@ -154,6 +182,8 @@ test("row text sorts, nulls and bytea hash, and a read-only session refuses a wr
   assert.equal(Number(empty.rows[0].count), 0);
   assert.equal(empty.rows[0].md5, createHash("md5").update("").digest("hex"));
 
-  await db.exec(READ_ONLY_SESSION_SQL);
+  await db.exec(BEGIN_READ_ONLY_SQL);
+  await db.exec(SET_LOCAL_UTC_SQL);
   await assert.rejects(() => db.exec("insert into sample (id) values ('z')"));
+  await db.exec(ROLLBACK_SQL);
 });

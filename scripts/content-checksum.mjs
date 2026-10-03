@@ -2,8 +2,11 @@
 /**
  * Read-only checksum of the chapter tables created by migrations 0002–0018.
  *
- * The first statement sets the session read-only, so a later mistake cannot
- * write. Output is table names, column names, counts, and md5 hashes only.
+ * DATABASE_URL on Vercel is Neon's pooled connection, and the pooler does not
+ * keep session SET statements. Every read runs in one transaction: begin
+ * transaction read only, set local time zone to UTC, the queries, then
+ * rollback (also when a read fails). Output is table names, column names,
+ * counts, and md5 hashes only.
  *
  * Usage:
  *   node scripts/content-checksum.mjs <out.json>
@@ -42,10 +45,10 @@ export const CONTENT_TABLES = [
   "touches",
 ];
 
-export const READ_ONLY_SESSION_SQL = "set session characteristics as transaction read only";
-
-/** Timestamps hash the same way on every machine. Session-local; it does not write. */
-export const UTC_SESSION_SQL = "set time zone 'UTC'";
+/** One transaction. The pooler keeps SET LOCAL for that transaction only. */
+export const BEGIN_READ_ONLY_SQL = "begin transaction read only";
+export const SET_LOCAL_UTC_SQL = "set local time zone 'UTC'";
+export const ROLLBACK_SQL = "rollback";
 
 export const COLUMNS_SQL =
   "select column_name, data_type from information_schema.columns " +
@@ -230,14 +233,19 @@ export function formatChecksumChanges(changes) {
 }
 
 /**
- * Read-only first, then UTC, then the callback. The client cannot write.
+ * One read-only transaction around every read. Rollback runs after success
+ * and after an error. A failed begin is not rolled back.
  * @param {{ query: Function, end?: Function }} client
  * @param {(query: Function) => Promise<unknown>} fn
  */
 export async function runReadOnly(client, fn) {
-  await client.query(READ_ONLY_SESSION_SQL);
-  await client.query(UTC_SESSION_SQL);
-  return fn((sql, params) => client.query(sql, params));
+  await client.query(BEGIN_READ_ONLY_SQL);
+  try {
+    await client.query(SET_LOCAL_UTC_SQL);
+    return await fn((sql, params) => client.query(sql, params));
+  } finally {
+    await client.query(ROLLBACK_SQL);
+  }
 }
 
 /**

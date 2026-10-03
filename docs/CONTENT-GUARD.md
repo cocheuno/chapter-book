@@ -12,7 +12,7 @@ These commands show whether a change leaves the chapter's current data, and the 
 node scripts/migration-guard.mjs
 ```
 
-A forbidden statement prints `filename:line: form` and the command exits 1. The forms are `update`, `delete`, `truncate`, `drop`, `rename`, `alter column ... type`, `alter column ... set default`, and `on conflict do update`.
+A forbidden statement prints `filename:line: form` and the command exits 1. The forms are `update`, `delete`, `truncate`, `drop`, `rename`, `alter column ... type` (also `alter column ... set data type`), `alter column ... set default`, `on conflict do update`, `insert into`, `copy ... from`, and `merge into`.
 
 These are allowed:
 
@@ -21,6 +21,7 @@ These are allowed:
 - `on update ...` inside a foreign-key clause
 - `drop index [if exists] X` when the same file creates index `X`
 - `on conflict do nothing`
+- `insert into T`, `copy T ... from`, and `merge into T` when the same file creates table `T` (`create table` or `create table if not exists`). The name matches with or without double quotes and an optional `public.` prefix, ignoring case. `update` inside a merge is still the `update` form.
 - the same words inside a `--` comment, a `/* */` comment, or a `'...'` string
 
 ## Snapshot
@@ -42,7 +43,7 @@ Pages:
 
 Each page waits for the network to go idle, then records the HTTP status, `document.body.innerText`, and the screenshot.
 
-When `VERCEL_AUTOMATION_BYPASS_SECRET` is set, every request sends that value as `x-vercel-protection-bypass` and sends `x-vercel-set-bypass-cookie: true`. The value is not printed and is not written into the snapshot.
+When `VERCEL_AUTOMATION_BYPASS_SECRET` is set, a request receives `x-vercel-protection-bypass` and `x-vercel-set-bypass-cookie: true` only when its origin is the site being snapshotted. Other origins, including `fonts.googleapis.com` and `fonts.gstatic.com`, are continued unchanged and never receive the secret. The value is not printed and is not written into the snapshot.
 
 ## Diff
 
@@ -56,7 +57,7 @@ A field that is not content, such as a timestamp, has to be named in `IGNORED_FI
 
 ## Checksum
 
-`DATABASE_URL` must be set. The first statement is `set session characteristics as transaction read only`, so the script cannot write. The next statement sets the session time zone to UTC, which does not write; it keeps timestamp text stable. The file contains table names, column names, row counts, and md5 hashes. It does not contain row values, and the command does not print the connection string.
+`DATABASE_URL` must be set. On Vercel that URL is Neon's pooled connection, and the pooler does not keep session `SET` statements. Every read runs in one transaction: `begin transaction read only`, then `set local time zone 'UTC'`, then the queries, then `rollback`. `rollback` also runs when a read fails. The file contains table names, column names, row counts, and md5 hashes. It does not contain row values, and the command does not print the connection string.
 
 ```
 npm run content:checksum -- artifacts/content/before.json

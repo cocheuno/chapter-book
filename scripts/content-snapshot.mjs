@@ -4,8 +4,8 @@
  *
  * Usage: node scripts/content-snapshot.mjs <base-url> [out-dir]
  * Default out-dir is artifacts/content (git-ignored). Writes snapshot.json
- * and a full-page PNG beside it. Does not print or save
- * VERCEL_AUTOMATION_BYPASS_SECRET.
+ * and a full-page PNG beside it. Bypass headers go only to the snapshotted
+ * site. The secret is not printed or saved.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -25,6 +25,30 @@ export function bypassHeaders(secret) {
     "x-vercel-protection-bypass": secret,
     "x-vercel-set-bypass-cookie": "true",
   };
+}
+
+/**
+ * Headers for one request, or null to leave the request unchanged.
+ * The secret is added only when the request origin is the snapshotted origin.
+ * fonts.googleapis.com, fonts.gstatic.com, and any other origin stay as they were.
+ * @param {string} requestUrl
+ * @param {string} base
+ * @param {Record<string, string>} requestHeaders
+ * @param {string | undefined} secret
+ * @returns {Record<string, string> | null}
+ */
+export function headersForSnapshotRequest(requestUrl, base, requestHeaders, secret) {
+  if (!secret) return null;
+  let requestOrigin;
+  let baseOrigin;
+  try {
+    requestOrigin = new URL(requestUrl).origin;
+    baseOrigin = new URL(base).origin;
+  } catch {
+    return null;
+  }
+  if (requestOrigin !== baseOrigin) return null;
+  return { ...requestHeaders, ...bypassHeaders(secret) };
 }
 
 /**
@@ -163,9 +187,9 @@ async function capturePage(page, url) {
     if (document.fonts?.ready) await document.fonts.ready;
   });
   const text = await page.locator("body").innerText();
-  const hrefs = await page.locator("a[href]").evaluateAll((els) =>
-    els.map((el) => el.getAttribute("href") || ""),
-  );
+  const hrefs = await page
+    .locator("a[href]")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("href") || ""));
   const image = await page.screenshot({ fullPage: true, animations: "disabled", caret: "hide" });
   return { status, raw, text, hrefs, image, finalUrl: page.url() };
 }
@@ -182,7 +206,15 @@ export async function writeSnapshot(browser, base, outDir, env) {
     viewport: { width: 1280, height: 800 },
     deviceScaleFactor: 1,
     reducedMotion: "reduce",
-    extraHTTPHeaders: bypassHeaders(secret),
+  });
+  await context.route("**/*", async (route) => {
+    const request = route.request();
+    const headers = headersForSnapshotRequest(request.url(), base, request.headers(), secret);
+    if (!headers) {
+      await route.continue();
+      return;
+    }
+    await route.continue({ headers });
   });
   const page = await context.newPage();
   mkdirSync(outDir, { recursive: true });
