@@ -1,7 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
+import { env } from "@/lib/env.server";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { nid } from "./ids";
+import { founderAllowed } from "./operator-rules";
 import { MAIL_TEMPLATE_SEEDS } from "./templates";
 import { ensureLists, seedLists } from "./lists";
 import { ensureSite } from "./site-seed";
@@ -91,25 +93,46 @@ export async function loadMember(userId: string): Promise<MemberContext> {
     throw new NotOperatorError();
   }
 
+  const account = await sql<{ email: string | null }>`
+    select email from "user" where id = ${userId}
+  `;
+  if (
+    !founderAllowed(account[0]?.email ?? "", {
+      founderEmail: env("FOUNDER_EMAIL"),
+      databaseUrl: env("DATABASE_URL"),
+    })
+  ) {
+    throw new NotOperatorError();
+  }
+
   await bootstrapChapter(userId);
   return loadMember(userId);
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
 }
 
 async function bootstrapChapter(userId: string) {
   const sql = await getSql();
   const chapterId = nid();
-  await sql`
-    insert into chapters (id, name, timezone, contact_line, from_name, from_address, reply_to)
-    values (
-      ${chapterId},
-      ${"SCS Chapter"},
-      ${"America/Chicago"},
-      ${"chapter@catholicscientists.example"},
-      ${"SCS Chapter"},
-      ${"chapter@catholicscientists.example"},
-      ${"chapter@catholicscientists.example"}
-    )
-  `;
+  try {
+    await sql`
+      insert into chapters (id, name, timezone, contact_line, from_name, from_address, reply_to)
+      values (
+        ${chapterId},
+        ${"SCS Chapter"},
+        ${"America/Chicago"},
+        ${"chapter@catholicscientists.example"},
+        ${"SCS Chapter"},
+        ${"chapter@catholicscientists.example"},
+        ${"chapter@catholicscientists.example"}
+      )
+    `;
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new NotOperatorError();
+    throw err;
+  }
   await sql`
     insert into chapter_members (user_id, chapter_id, role)
     values (${userId}, ${chapterId}, 'admin')
