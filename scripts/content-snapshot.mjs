@@ -153,6 +153,21 @@ export function speakerPaths(pagePath, hrefs, pageUrl = "http://snapshot.local")
 }
 
 /**
+ * Where a page ended up, as a path, so a redirect shows in the snapshot.
+ * The origin is dropped: before and after are different hosts.
+ * @param {string} finalUrl
+ * @returns {string}
+ */
+export function finalPathOf(finalUrl) {
+  try {
+    const url = new URL(finalUrl);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * @param {string} base
  * @param {string} pagePath
  * @returns {string}
@@ -176,13 +191,19 @@ export function snapshotDocument(input) {
 }
 
 /**
+ * Only the feed keeps its raw body. A renamed page's old slug replaces itself
+ * with the canonical one in the browser (src/routes/p/$slug/index.tsx), and the
+ * first response's body is gone once that navigation starts.
  * @param {import("playwright").Page} page
  * @param {string} url
+ * @param {boolean} keepRaw
  */
-async function capturePage(page, url) {
+async function capturePage(page, url, keepRaw) {
   const response = await page.goto(url, { waitUntil: "networkidle", timeout: NAV_TIMEOUT_MS });
   const status = response?.status() ?? 0;
-  const raw = response ? await response.text() : "";
+  const raw = keepRaw && response ? await response.text() : "";
+  // Settle after a redirect in the browser, before reading the page.
+  await page.waitForLoadState("networkidle", { timeout: NAV_TIMEOUT_MS });
   await page.evaluate(async () => {
     if (document.fonts?.ready) await document.fonts.ready;
   });
@@ -230,11 +251,12 @@ export async function writeSnapshot(browser, base, outDir, env) {
   async function save(pagePath, keepRaw) {
     if (seen.has(pagePath)) return null;
     seen.add(pagePath);
-    const captured = await capturePage(page, pageUrl(base, pagePath));
+    const captured = await capturePage(page, pageUrl(base, pagePath), keepRaw);
     const file = screenshotFile(pagePath);
     writeFileSync(join(outDir, file), captured.image);
     pages.push({
       path: pagePath,
+      finalPath: finalPathOf(captured.finalUrl),
       status: captured.status,
       text: captured.text,
       screenshot: file,

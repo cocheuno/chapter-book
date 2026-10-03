@@ -55,3 +55,14 @@ test("status, screenshot, feed, and a page that exists on only one side are repo
   assert.deepEqual(byPath["/p/old"], ["only in before"]);
   assert.deepEqual(byPath["/p/new"], ["only in after"]);
 });
+
+test("a page that ends somewhere else is reported; snapshots without final paths still match", () => {
+  const before = { publicSiteRaw: "{}", pages: [{ ...page("Same"), path: "/p/old", finalPath: "/p/new" }] };
+  const after = { publicSiteRaw: "{}", pages: [{ ...page("Same"), path: "/p/old", finalPath: "/p/old" }] };
+  const text = formatDiff(diffSnapshots(before, after));
+  assert.match(text, /ends at: \/p\/new -> \/p\/old/);
+  assert.equal(diffExitCode(text), 1);
+
+  const older = { publicSiteRaw: "{}", pages: [page("Same")] };
+  assert.equal(formatDiff(diffSnapshots(older, structuredClone(older))), "no differences");
+});

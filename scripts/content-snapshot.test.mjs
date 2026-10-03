@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   bypassHeaders,
   checkedBaseUrl,
+  finalPathOf,
   headersForSnapshotRequest,
   launchOptions,
   pagePathsFromFeed,
@@ -101,4 +102,12 @@ test("screenshot names stay next to the snapshot and keep the page path", () => 
     screenshotFile("/p/ai-conference/speakers/jane"),
     "p_ai-conference_speakers_jane.png",
   );
+});
+
+test("the final path drops the host, so before and after compare", () => {
+  // A renamed page's old slug replaces itself with the canonical slug in the browser.
+  assert.equal(finalPathOf("https://chapter-book-beryl.vercel.app/p/new-name"), "/p/new-name");
+  assert.equal(finalPathOf("https://chapter-book-abc-cocheuno.vercel.app/p/new-name"), "/p/new-name");
+  assert.equal(finalPathOf("http://127.0.0.1:8080/site?tab=events"), "/site?tab=events");
+  assert.equal(finalPathOf("not a url"), "");
 });
