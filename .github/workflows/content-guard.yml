@@ -1,0 +1,165 @@
+# Content guard: compare production's public pages with a pull request's
+# Vercel preview (Rule 1, docs/BUILD-PLAN.md; WP-00, docs/CONTENT-GUARD.md).
+#
+# Manual only. Actions → "Content guard" → Run workflow → branch main →
+# the pull request number. Needs the repository secret
+# VERCEL_AUTOMATION_BYPASS_SECRET (Settings → Secrets and variables →
+# Actions), copied from Vercel → Deployment Protection → Protection Bypass
+# for Automation.
+#
+# Safety:
+# - Runs only from main, so the scripts that receive the secret are the
+#   reviewed ones, never a pull request's copy.
+# - The secret goes only to the preview step, and content-snapshot.mjs sends
+#   it only to the preview's own origin.
+# - Inputs reach the shell through env, never through ${{ }} inside run.
+# - The preview URL must be a chapter-book deployment under cocheuno.
+name: Content guard
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number (its Vercel preview is the 'after')"
+        required: true
+        type: number
+      production_url:
+        description: "The 'before' site"
+        required: false
+        default: "https://chapter-book-beryl.vercel.app"
+        type: string
+
+permissions:
+  contents: read
+  deployments: read
+  pull-requests: read
+
+concurrency:
+  group: content-guard-${{ inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  snapshot-diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Run only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run this workflow from main, so the scripts that receive the secret are the reviewed ones."
+          exit 1
+
+      - name: Check the inputs and the secret
+        env:
+          BEFORE_URL: ${{ inputs.production_url }}
+          HAS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET != '' }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$BEFORE_URL" | grep -Eq '^https://[A-Za-z0-9.-]+/?$'; then
+            echo "::error::production_url must be https://host with no path."
+            exit 1
+          fi
+          if [ "$HAS_SECRET" != "true" ]; then
+            echo "::error::Add the repository secret VERCEL_AUTOMATION_BYPASS_SECRET (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Find the pull request's Vercel preview
+        id: preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
+          url=""
+          for id in $(gh api "repos/$REPO/deployments?sha=$sha&environment=Preview&per_page=20" --jq '.[].id'); do
+            url=$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" \
+              --jq '.[0] | select(.state == "success") | .environment_url')
+            if [ -n "$url" ]; then break; fi
+          done
+          if [ -z "$url" ]; then
+            echo "::error::No ready Vercel preview for pull request #$PR at $sha. Wait until its Vercel check passes, then run again."
+            exit 1
+          fi
+          if ! printf '%s' "$url" | grep -Eq '^https://chapter-book-[a-z0-9-]+-cocheuno\.vercel\.app/?$'; then
+            echo "::error::Unexpected preview URL: $url"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Snapshot production (before)
+        env:
+          BEFORE_URL: ${{ inputs.production_url }}
+        run: node scripts/content-snapshot.mjs "$BEFORE_URL" artifacts/content/before
+
+      - name: Snapshot the preview (after)
+        env:
+          AFTER_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/content-snapshot.mjs "$AFTER_URL" artifacts/content/after
+
+      - name: Diff
+        id: diff
+        run: |
+          set +e
+          node scripts/content-diff.mjs \
+            artifacts/content/before/snapshot.json \
+            artifacts/content/after/snapshot.json > artifacts/content/diff.txt
+          code=$?
+          cat artifacts/content/diff.txt
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        env:
+          PR: ${{ inputs.pr }}
+          BEFORE_URL: ${{ inputs.production_url }}
+          AFTER_URL: ${{ steps.preview.outputs.url }}
+          SHA: ${{ steps.preview.outputs.sha }}
+        run: |
+          {
+            echo "### Content snapshot diff: pull request #$PR"
+            echo
+            echo "- Before: $BEFORE_URL"
+            echo "- After: $AFTER_URL (commit ${SHA:0:7})"
+            echo
+            echo "Paste the block below into the pull request's \"Snapshot diff\" line."
+            echo
+            echo '````text'
+            cat artifacts/content/diff.txt 2>/dev/null || echo "(no diff: an earlier step failed; see its log)"
+            echo '````'
+            echo
+            echo "A preview's database is a copy made when its branch first deployed. If editors changed content since then, those edits show up here too; they are not caused by the pull request."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the snapshots for 7 days
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-snapshots-pr-${{ inputs.pr }}
+          path: artifacts/content/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Fail when the pages differ
+        if: steps.diff.outputs.code != '0'
+        run: |
+          echo "::error::The public pages differ. See the summary."
+          exit 1
