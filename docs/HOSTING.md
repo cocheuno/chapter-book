@@ -21,6 +21,8 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `BETTER_AUTH_SECRET` | Long random string (32+ bytes). Not the database password. |
 | `BETTER_AUTH_URL` | Public origin, currently `https://chapter-book-beryl.vercel.app` (no trailing slash) |
 | `VITE_AUTH_ENABLED` | `true` |
+| `ALLOW_PREVIEW_MIGRATIONS` | **Preview** only. `off` until H1 step 3; then exactly `on` |
+| `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
 
 Do not paste these into GitHub, Slack, or chat.
 
@@ -39,7 +41,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 3. Region: **AWS US East (Ohio)** `aws-us-east-2` (or N. Virginia). Region cannot be moved later.
 4. **Connect** → enable **connection pooling** → copy the URI into Vercel as `DATABASE_URL`
 
-Empty Neon is fine. `npm run build` on Vercel runs `scripts/migrate.mjs` and applies `migrations/` to that environment's database. A Preview build skips this until `ALLOW_PREVIEW_MIGRATIONS=on` (see below).
+Empty Neon is fine. `npm run build` on Vercel runs `scripts/migrate.mjs` and applies `migrations/` to that environment's database. A Preview build skips this unless `ALLOW_PREVIEW_MIGRATIONS=on` and its database is not production's (see H1 step 3 below).
 
 ## Vercel
 
@@ -61,7 +63,7 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 
 **Never reset the database password in the Neon Console.** Vercel's copy would not update, and the live site would lose its database until the integration is reconnected. If a reset is ever needed, do it through the integration (Vercel → Storage), or ask Vercel support.
 
-**Where this stands (2026-10-03):** steps 1, 2, 4, 5, and the branch clean-up in step 6 are done. **Step 3 is on hold. Do not set `ALLOW_PREVIEW_MIGRATIONS`.**
+**Where this stands (2026-10-03):** steps 1, 2, 4, 5, and the branch clean-up in step 6 are done. **Step 3 waits for the migration guard fix to be merged.** Until then `ALLOW_PREVIEW_MIGRATIONS` stays `off`.
 
 - Preview builds skip migrations (`scripts/migrate.mjs`).
 - A running preview deployment reads and writes its own Neon branch, a copy of production. The copy holds real records, which is why step 4 matters.
@@ -95,9 +97,14 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - A branch named `preview/<git-branch>` appears in the Neon Console, under Branches, made by Vercel. The 2026-10-03 check made `preview/h1-preview-migrations`.
    - The branch has its own compute, so its host (`ep-…-pooler…neon.tech`) differs from production's.
    - The build log says `[migrate] preview build: skipping migrations`; that is expected.
-3. **Allow preview migrations. On hold: do not do this step.** The preview branch is injected into the running deployment, not into its build, so this flag lets preview builds migrate production (see "Where this stands" above).
-   - It needs a code change first: `scripts/migrate.mjs` must refuse a preview build whose database is production, and print the Neon endpoint id (which Vercel does not redact) instead of the host.
-   - Until then, `ALLOW_PREVIEW_MIGRATIONS` must not exist. Check Settings → **Environment Variables**; if it is there, delete it.
+3. **Allow preview migrations, only once the guard fix is merged.**
+   - The guard (`migrateSkipReason` in `scripts/migration-plan.mjs`) lets a preview build migrate only when `ALLOW_PREVIEW_MIGRATIONS` is exactly `on` **and** its database is a Neon endpoint other than `PRODUCTION_DB_ENDPOINT`. If anything is missing or unclear, it skips.
+   - **Find production's endpoint id.** The latest **Production** build log prints `[migrate] target: ep-… · VERCEL_ENV=production`; the `ep-…` part is the id. It is also in the Neon Console under Branches → `main` → Computes. It is not a password, but keep it out of git like every host detail.
+   - Settings → **Environment Variables** → add `PRODUCTION_DB_ENDPOINT` with that id, for **Preview** only.
+   - Then edit `ALLOW_PREVIEW_MIGRATIONS`, still **Preview** only, and change `off` to exactly `on`: lowercase, no quotes or spaces.
+   - Push a branch or redeploy a preview, and search its build log for `migrate`:
+     - `[migrate] target: ep-… · VERCEL_ENV=preview` with an id **different** from production's, then `up to date` or `applied …`: the build migrated its own copy.
+     - `[migrate] WARNING preview build: skipping migrations. This build's DATABASE_URL is production's …`: the guard held, and the build had production's settings, as on 2026-10-03. Previews then cannot migrate their copy at build time; choose another way before the first package that adds a migration.
 4. **Protect previews.** *Done 2026-10-03.*
    - Settings → **Deployment Protection** → turn **Vercel Authentication** on, with scope **Standard Protection**. Never choose **All Deployments**: it would lock the public site.
    - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Leave the secret box empty so Vercel generates one: 32 letters and digits. Never use an example value from a document or chat, since anyone can read those. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.

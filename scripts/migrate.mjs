@@ -11,35 +11,27 @@
  *
  * No DATABASE_URL -> skip; the PGLite fallback applies the same files at
  * startup instead (see src/lib/db.ts). A Vercel preview also skips, even when
- * DATABASE_URL is set, unless ALLOW_PREVIEW_MIGRATIONS=on. Local builds
- * (VERCEL_ENV unset) still migrate when DATABASE_URL is set.
+ * DATABASE_URL is set, unless ALLOW_PREVIEW_MIGRATIONS=on and its database is
+ * a Neon endpoint other than PRODUCTION_DB_ENDPOINT (see migrateSkipReason).
+ * Local builds (VERCEL_ENV unset) still migrate when DATABASE_URL is set.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
-import { migrateTargetLine, pendingMigrations, shouldMigrate } from "./migration-plan.mjs";
+import { migrateSkipReason, migrateTargetLine, pendingMigrations } from "./migration-plan.mjs";
 
 const databaseUrl = process.env.DATABASE_URL;
 const vercelEnv = process.env.VERCEL_ENV;
-const allowPreviewMigrations = process.env.ALLOW_PREVIEW_MIGRATIONS;
 
-if (
-  !shouldMigrate({
-    vercelEnv,
-    allowPreviewMigrations,
-    databaseUrl,
-  })
-) {
-  if (vercelEnv === "preview" && allowPreviewMigrations !== "on") {
-    console.log(
-      "[migrate] preview build: skipping migrations. Set ALLOW_PREVIEW_MIGRATIONS=on for Preview once Preview has its own database (docs/HOSTING.md).",
-    );
-  } else {
-    console.log(
-      "[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).",
-    );
-  }
+const skipReason = migrateSkipReason({
+  vercelEnv,
+  allowPreviewMigrations: process.env.ALLOW_PREVIEW_MIGRATIONS,
+  databaseUrl,
+  productionEndpoint: process.env.PRODUCTION_DB_ENDPOINT,
+});
+if (skipReason !== null) {
+  console.log(`[migrate] ${skipReason}`);
   process.exit(0);
 }
 

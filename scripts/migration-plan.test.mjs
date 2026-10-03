@@ -12,9 +12,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   isMigrationFile,
+  migrateSkipReason,
   migrateTargetLine,
   migrationName,
+  neonEndpointId,
   pendingMigrations,
+  sameNeonEndpoint,
   shouldMigrate,
 } from "./migration-plan.mjs";
 import { projectRoot } from "./with-app-env.mjs";
@@ -77,6 +80,22 @@ test("a top-level readdir does not descend into migrations/auth", () => {
 
 const sampleUrl = "postgres://db.example/book";
 
+// Made-up endpoint ids. Never put the chapter's real ones in git.
+const PRODUCTION = "ep-example-main-a1b2c3d4";
+const productionUrl = `postgresql://${PRODUCTION}-pooler.c-0.us-east-2.aws.neon.tech/neondb?sslmode=require`;
+const copyUrl = "postgresql://ep-example-copy-e5f6a7b8-pooler.c-0.us-east-2.aws.neon.tech/neondb";
+
+/** A preview build with the flag on and the production endpoint configured. */
+function preview(overrides) {
+  return {
+    vercelEnv: "preview",
+    allowPreviewMigrations: "on",
+    productionEndpoint: PRODUCTION,
+    databaseUrl: copyUrl,
+    ...overrides,
+  };
+}
+
 test("shouldMigrate allows production", () => {
   assert.equal(
     shouldMigrate({ vercelEnv: "production", allowPreviewMigrations: undefined, databaseUrl: sampleUrl }),
@@ -89,13 +108,66 @@ test("shouldMigrate skips a preview without the flag", () => {
     shouldMigrate({ vercelEnv: "preview", allowPreviewMigrations: undefined, databaseUrl: sampleUrl }),
     false,
   );
+  for (const flag of ["On", "ON", "true", "1", " on", '"on"', "off"]) {
+    assert.equal(shouldMigrate(preview({ allowPreviewMigrations: flag })), false, flag);
+  }
 });
 
-test("shouldMigrate allows a preview when the flag is on", () => {
+test("shouldMigrate allows a preview whose database is a copy, not production", () => {
+  assert.equal(migrateSkipReason(preview({})), null);
+  assert.equal(shouldMigrate(preview({})), true);
+});
+
+test("a preview build holding production's DATABASE_URL is refused, even with the flag on", () => {
+  // 2026-10-03: the preview branch reached the running preview but not its
+  // build, so the build migrated with production's URL.
+  assert.equal(shouldMigrate(preview({ databaseUrl: productionUrl })), false);
+  assert.match(migrateSkipReason(preview({ databaseUrl: productionUrl })), /production's/);
+  // Direct host, compute-specific host, and a full hostname as the setting.
+  const direct = `postgresql://${PRODUCTION}.c-0.us-east-2.aws.neon.tech/neondb`;
+  const compute = `postgresql://${PRODUCTION}-vh8-pooler.c-0.us-east-2.aws.neon.tech/neondb`;
+  assert.equal(shouldMigrate(preview({ databaseUrl: direct })), false);
+  assert.equal(shouldMigrate(preview({ databaseUrl: compute })), false);
   assert.equal(
-    shouldMigrate({ vercelEnv: "preview", allowPreviewMigrations: "on", databaseUrl: sampleUrl }),
-    true,
+    shouldMigrate(
+      preview({
+        databaseUrl: productionUrl,
+        productionEndpoint: ` ${PRODUCTION.toUpperCase()}-pooler.c-0.us-east-2.aws.neon.tech `,
+      }),
+    ),
+    false,
   );
+});
+
+test("a preview build is refused when production's endpoint is unset or malformed", () => {
+  for (const productionEndpoint of [undefined, "", "   ", "main", "br-example-1234", "not a host"]) {
+    assert.equal(shouldMigrate(preview({ productionEndpoint })), false, String(productionEndpoint));
+  }
+});
+
+test("a preview build is refused when DATABASE_URL is not a Neon endpoint", () => {
+  assert.equal(shouldMigrate(preview({ databaseUrl: sampleUrl })), false);
+  assert.equal(shouldMigrate(preview({ databaseUrl: "not a url ://" })), false);
+});
+
+test("production and local builds ignore the preview checks", () => {
+  assert.equal(shouldMigrate({ vercelEnv: "production", databaseUrl: productionUrl }), true);
+  assert.equal(shouldMigrate({ vercelEnv: undefined, databaseUrl: productionUrl }), true);
+});
+
+test("neonEndpointId reads a URL, a hostname, or a bare id", () => {
+  assert.equal(neonEndpointId(productionUrl), PRODUCTION);
+  assert.equal(neonEndpointId(`${PRODUCTION}.c-0.us-east-2.aws.neon.tech`), PRODUCTION);
+  assert.equal(neonEndpointId(PRODUCTION), PRODUCTION);
+  assert.equal(neonEndpointId(sampleUrl), null);
+  assert.equal(neonEndpointId(undefined), null);
+});
+
+test("sameNeonEndpoint treats a compute-specific id as its endpoint", () => {
+  assert.equal(sameNeonEndpoint(PRODUCTION, PRODUCTION), true);
+  assert.equal(sameNeonEndpoint(`${PRODUCTION}-vh8`, PRODUCTION), true);
+  assert.equal(sameNeonEndpoint(PRODUCTION, `${PRODUCTION}-vh8`), true);
+  assert.equal(sameNeonEndpoint("ep-example-copy-e5f6a7b8", PRODUCTION), false);
 });
 
 test("shouldMigrate allows an unset environment", () => {
@@ -112,20 +184,28 @@ test("shouldMigrate skips an empty database URL", () => {
   );
 });
 
-test("the migrate target line has the hostname only", () => {
+test("the migrate target line has the Neon endpoint id only", () => {
+  // Vercel redacts the full host in build logs; the endpoint id stays readable.
   const password = "not-the-real-password";
-  const databaseUrl = new URL("postgres://ep-example.neon.tech/neondb");
+  const databaseUrl = new URL("postgres://ep-example-a1b2-pooler.c-0.us-east-2.aws.neon.tech/neondb");
   databaseUrl.username = "appuser";
   databaseUrl.password = password;
   databaseUrl.searchParams.set("sslmode", "require");
   const line = migrateTargetLine({ databaseUrl: databaseUrl.href, vercelEnv: "production" });
   assert.equal(line.includes("@"), false);
   assert.equal(line.includes(password), false);
-  assert.equal(line, "[migrate] target: ep-example.neon.tech · VERCEL_ENV=production");
+  assert.equal(line, "[migrate] target: ep-example-a1b2 · VERCEL_ENV=production");
   const unset = migrateTargetLine({ databaseUrl: databaseUrl.href, vercelEnv: undefined });
   assert.equal(unset.includes("@"), false);
   assert.equal(unset.includes(password), false);
-  assert.equal(unset, "[migrate] target: ep-example.neon.tech · VERCEL_ENV=unset");
+  assert.equal(unset, "[migrate] target: ep-example-a1b2 · VERCEL_ENV=unset");
+});
+
+test("off Neon, the migrate target line falls back to the hostname", () => {
+  assert.equal(
+    migrateTargetLine({ databaseUrl: "postgres://db.example/book", vercelEnv: undefined }),
+    "[migrate] target: db.example · VERCEL_ENV=unset",
+  );
 });
 
 test("this workspace's auth schema copy is byte-identical to its source", () => {
