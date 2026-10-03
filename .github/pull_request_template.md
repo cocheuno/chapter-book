@@ -1,0 +1,3 @@
+- Snapshot diff (paste, or "none")
+- Checksum compare (paste, or "unchanged")
+- Rule 1: this PR changes no existing content (yes/no; if no, list the items and get approval)
