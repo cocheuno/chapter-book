@@ -21,6 +21,8 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `BETTER_AUTH_SECRET` | Long random string (32+ bytes). Not the database password. |
 | `BETTER_AUTH_URL` | Public origin, currently `https://chapter-book-beryl.vercel.app` (no trailing slash) |
 | `VITE_AUTH_ENABLED` | `true` |
+| `ALLOW_PREVIEW_MIGRATIONS` | **Preview** only. `off` until H1 step 3; then exactly `on` |
+| `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
 
 Do not paste these into GitHub, Slack, or chat.
 
@@ -39,7 +41,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 3. Region: **AWS US East (Ohio)** `aws-us-east-2` (or N. Virginia). Region cannot be moved later.
 4. **Connect** → enable **connection pooling** → copy the URI into Vercel as `DATABASE_URL`
 
-Empty Neon is fine. `npm run build` on Vercel runs `scripts/migrate.mjs` and applies `migrations/` to that environment's database. A Preview build skips this until `ALLOW_PREVIEW_MIGRATIONS=on` (see below).
+Empty Neon is fine. `npm run build` on Vercel runs `scripts/migrate.mjs` and applies `migrations/` to that environment's database. A Preview build skips this unless `ALLOW_PREVIEW_MIGRATIONS=on` and its database is not production's (see H1 step 3 below).
 
 ## Vercel
 
@@ -56,15 +58,18 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 **How the database is connected.** Vercel's Neon integration (Vercel-Managed) owns `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `PG*`, and `POSTGRES_*`.
 
 - You cannot edit or remove them under Environment Variables.
-- Until step 1 below is done, they apply to Production, Preview, and Development.
-- Their settings are in Vercel → **Storage** → the Neon database.
+- They are set for Production, Preview, and Development. Since step 1, each new preview deployment gets its own branch's values, injected at deploy time, in place of production's.
+- Their settings are in Vercel → **Storage** → `chapter-book-db`.
 
 **Never reset the database password in the Neon Console.** Vercel's copy would not update, and the live site would lose its database until the integration is reconnected. If a reset is ever needed, do it through the integration (Vercel → Storage), or ask Vercel support.
 
-**Until step 3:**
+**Where this stands (2026-10-03):** steps 1, 2, 4, 5, and the branch clean-up in step 6 are done. **Step 3 waits for the migration guard fix to be merged.** Until then `ALLOW_PREVIEW_MIGRATIONS` stays `off`.
 
 - Preview builds skip migrations (`scripts/migrate.mjs`).
-- A running preview deployment still reads and writes the **production** database. Do not edit content on a preview.
+- A running preview deployment reads and writes its own Neon branch, a copy of production. The copy holds real records, which is why step 4 matters.
+- A preview **build** still connects to **production**. On 2026-10-03 a preview redeploy with `ALLOW_PREVIEW_MIGRATIONS=on` ran `scripts/migrate.mjs` against production: Neon's operations log shows production's compute starting in the same second, while the preview branch stayed idle. Nothing was applied (`[migrate] up to date.`).
+- Vercel redacts the host in build logs (`[migrate] target: [REDACTED]`), so the log cannot show which database a build used.
+- A preview built **before** 2026-10-03 still reads and writes the **production** database. Do not edit content on one; redeploy it first.
 
 **"Needs Attention" on the database variables.** Vercel marks the integration's password-bearing variables `readable-secret`: anyone with access to the project can read them back.
 
@@ -74,28 +79,41 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 
 Do not paste a password, connection string, or secret into git, GitHub, Slack, or chat.
 
-1. **Turn on Preview Branching.**
-   - In Vercel, open **Storage** and click the Neon database. Open **Projects**, then the `chapter-book` connection's settings, then **Advanced Options → Deployments Configuration**.
-   - Turn on **Preview** and **Resource must be active before deployment**. Save.
-   - If the connection cannot be edited there, stop. The alternative is removing and reconnecting the project, which briefly removes the production variables and needs a careful plan.
+1. **Turn on Preview Branching.** *Done 2026-10-03.*
+   - In Vercel, open **Storage** and click `chapter-book-db`. Open the **Projects** tab.
+   - On the `chapter-book` row, click **⋯**. Two choices appear:
+     - **Update Project Connection**: click this one.
+     - **Remove Project Connection**: never click this one. It takes the database variables away from the live site.
+   - The **Update Project Connection** dialog has three parts. There is no "Advanced Options" button.
+     - **Environments**: leave **Production**, **Preview**, and **Development** all ticked. Unticking Production removes the live site's database.
+     - **Require Active Resource Before Deploy**: turn the **Required** switch on. A new option appears, **Create database branch for deployment**, with checkboxes for **Preview** and **Production**.
+       - Tick **Preview**.
+       - **Never tick Production.** The live site must keep using Neon's `main` branch, where the chapter's records are. A branch per production deploy would point the live site at a fresh copy, and entries made after the copy would be left behind.
+     - **Custom Environment Variable Prefix**: leave it empty. A prefix renames the variables (for example `X_DATABASE_URL`), and the book reads `DATABASE_URL`.
+   - Click **Save**.
 
    From then on, each preview deployment gets its own Neon branch, `preview/<git-branch>`, a fresh copy of production. Its connection is injected at deploy time and does not appear under Environment Variables.
-2. **Check it.** Redeploy a preview: Deployments → a preview → **⋯** → **Redeploy**.
-   - A branch named `preview/<git-branch>` appears in the Neon Console.
-   - The build log still says `[migrate] preview build: skipping migrations`; that is expected until step 3.
-3. **Allow preview migrations, only after step 2 shows the branch.**
-   - Settings → **Environment Variables** → add `ALLOW_PREVIEW_MIGRATIONS` with the value `on`, for **Preview** only.
-   - Redeploy a preview. Its build log shows `[migrate] target: <host> · VERCEL_ENV=preview`, and that host must differ from the one in the latest **Production** build log.
-   - If Preview Branching is not on, this flag would let previews migrate production.
-4. **Protect previews.**
+2. **Check it.** *Done 2026-10-03.* Redeploy a preview: Deployments → a preview → **⋯** → **Redeploy**.
+   - A branch named `preview/<git-branch>` appears in the Neon Console, under Branches, made by Vercel. The 2026-10-03 check made `preview/h1-preview-migrations`.
+   - The branch has its own compute, so its host (`ep-…-pooler…neon.tech`) differs from production's.
+   - The build log says `[migrate] preview build: skipping migrations`; that is expected.
+3. **Allow preview migrations, only once the guard fix is merged.**
+   - The guard (`migrateSkipReason` in `scripts/migration-plan.mjs`) lets a preview build migrate only when `ALLOW_PREVIEW_MIGRATIONS` is exactly `on` **and** its database is a Neon endpoint other than `PRODUCTION_DB_ENDPOINT`. If anything is missing or unclear, it skips.
+   - **Find production's endpoint id.** The latest **Production** build log prints `[migrate] target: ep-… · VERCEL_ENV=production`; the `ep-…` part is the id. It is also in the Neon Console under Branches → `main` → Computes. It is not a password, but keep it out of git like every host detail.
+   - Settings → **Environment Variables** → add `PRODUCTION_DB_ENDPOINT` with that id, for **Preview** only.
+   - Then edit `ALLOW_PREVIEW_MIGRATIONS`, still **Preview** only, and change `off` to exactly `on`: lowercase, no quotes or spaces.
+   - Push a branch or redeploy a preview, and search its build log for `migrate`:
+     - `[migrate] target: ep-… · VERCEL_ENV=preview` with an id **different** from production's, then `up to date` or `applied …`: the build migrated its own copy.
+     - `[migrate] WARNING preview build: skipping migrations. This build's DATABASE_URL is production's …`: the guard held, and the build had production's settings, as on 2026-10-03. Previews then cannot migrate their copy at build time; choose another way before the first package that adds a migration.
+4. **Protect previews.** *Done 2026-10-03.*
    - Settings → **Deployment Protection** → turn **Vercel Authentication** on, with scope **Standard Protection**. Never choose **All Deployments**: it would lock the public site.
-   - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.
-5. **Check access** in a private browser window:
+   - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Leave the secret box empty so Vercel generates one: 32 letters and digits. Never use an example value from a document or chat, since anyone can read those. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.
+5. **Check access** in a private browser window. *Done 2026-10-03.*
    - The preview URL asks for a Vercel login.
    - `https://chapter-book-beryl.vercel.app/p/ai-conference` and `https://scs-wisconsin-usa.org` load without it.
    - Check those two addresses, not a raw `*.vercel.app` deployment URL: Standard Protection can lock generated deployment URLs while the production domain stays public.
 6. **Clean up.**
-   - The manual Neon branch named `preview`, made on 2026-10-02, is no longer needed. Delete it in the Neon Console when convenient.
+   - The manual Neon branch named `preview`, made on 2026-10-02, was deleted on 2026-10-03. Neon now has `main` (production) and the `preview/…` branches Vercel makes.
    - Branches the integration creates are deleted when their Vercel deployments expire (6 months by default). Delete old ones in Neon to save space.
 
 ## Cloudflare (later)
