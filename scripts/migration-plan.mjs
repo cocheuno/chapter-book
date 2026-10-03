@@ -44,3 +44,27 @@ export function pendingMigrations(paths, applied) {
     .sort((a, b) => a.name.localeCompare(b.name))
     .filter(({ name }) => !done.has(name));
 }
+
+/**
+ * Whether `scripts/migrate.mjs` may open DATABASE_URL.
+ * A preview build is refused unless ALLOW_PREVIEW_MIGRATIONS is exactly "on",
+ * so a preview that still shares production's URL cannot migrate it.
+ * @param {{ vercelEnv?: string, allowPreviewMigrations?: string, databaseUrl?: string }} input
+ * @returns {boolean}
+ */
+export function shouldMigrate(input) {
+  if (!input.databaseUrl) return false;
+  if (input.vercelEnv === "preview" && input.allowPreviewMigrations !== "on") return false;
+  return true;
+}
+
+/**
+ * Build log line: hostname and VERCEL_ENV only.
+ * @param {{ databaseUrl: string, vercelEnv?: string }} input
+ * @returns {string}
+ */
+export function migrateTargetLine(input) {
+  const host = new URL(input.databaseUrl).hostname;
+  const env = input.vercelEnv ? input.vercelEnv : "unset";
+  return `[migrate] target: ${host} · VERCEL_ENV=${env}`;
+}

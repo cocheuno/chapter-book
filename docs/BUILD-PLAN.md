@@ -122,7 +122,7 @@ Code changes must not change the chapter's current data, or what the public webs
 
 | ID | Task | Needed by |
 | --- | --- | --- |
-| H1 | Vercel Preview gets its own `DATABASE_URL`: a **Neon branch copied from production**, refreshed before each package. It is never production itself (review S9). Pull requests then run their migrations and pages against real content without touching it. Turn on Vercel Deployment Protection for previews, since the copy holds real records | Before WP-00 is used |
+| H1 | Previews get their own database: turn on the Neon integration's **Preview Branching** (Vercel → Storage), so each preview deployment gets a fresh Neon branch copied from production, never production itself (review S9). Then set `ALLOW_PREVIEW_MIGRATIONS=on` for Preview, and turn on Deployment Protection, since the copies hold real records. Follow `docs/HOSTING.md`, "Preview database and secrets (H1)". Until then, preview builds skip migrations | Before WP-00 is used |
 | H2 | Vercel Production: set `FOUNDER_EMAIL` (the current admin's address), `GROK_CHROME=off`, `PUBLIC_ORIGIN` | WP-02, WP-03, WP-12 |
 | H3 | Cloudflare: a chapter hostname for the book (review W2). Then update `BETTER_AUTH_URL` and the embed `<script src>` on GoDaddy | Before flyers |
 | H4 | A short address on the main domain, for example `scs-wisconsin-usa.org/ai`, redirecting to the conference page. Use it on all print | Before flyers |
@@ -207,7 +207,7 @@ Code changes must not change the chapter's current data, or what the public webs
    - `drop` does not apply to `drop index` of an index the same migration created.
    - Existing migrations are not checked.
 2. **Content snapshot.**
-   - Add `scripts/content-snapshot.mjs <base-url> <out.json>`. It uses Playwright, with `executablePath` from `CHROMIUM_PATH` if set, because public pages render in the browser until WP-12. It saves:
+   - Add `scripts/content-snapshot.mjs <base-url> <out.json>`. It uses Playwright, with `executablePath` from `CHROMIUM_PATH` if set, because public pages render in the browser until WP-12. When `VERCEL_AUTOMATION_BYPASS_SECRET` is set, send that value as the header `x-vercel-protection-bypass` on every request (the preview sits behind Vercel Authentication; see `docs/HOSTING.md`). It saves:
      - the `/api/public-site` JSON
      - the visible text of `/site`, of every `/p/<slug>` in the feed, and of each speaker page
      - a full-page screenshot of each, next to the JSON
@@ -226,9 +226,9 @@ Code changes must not change the chapter's current data, or what the public webs
    - "Checksum compare (paste, or 'unchanged')"
    - "Rule 1: this PR changes no existing content (yes/no; if no, list items and get approval)"
 
-**How each later package uses it:** the chapter refreshes the Neon preview branch (H1). The pull request's Vercel preview then runs the package's migrations on that copy. Before and after:
+**How each later package uses it:** each preview deployment gets a fresh Neon branch copied from production (H1, Preview Branching). The pull request's Vercel preview runs the package's migrations on that copy. Before and after:
 
-- `content-checksum` against the branch
+- `content-checksum`: read-only against production (before), then against the preview's branch after its migrations ran (after)
 - `content-snapshot` against production and against the preview
 
 Both diffs go in the pull request.
