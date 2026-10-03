@@ -16,6 +16,7 @@ Built for a Society of Catholic Scientists chapter that found commercial CRMs to
 - **[Payments](docs/PAYMENTS.md)** — public registration and Stripe, in phases (proposed)
 - **[Mail](docs/MAIL.md)** — an outbox now, a real mailbox later (proposed)
 - **[Build plan](docs/BUILD-PLAN.md)** — step-by-step work packages for Grok Build
+- **[Content guard](docs/CONTENT-GUARD.md)** — migration check, public-page snapshot, and data checksum for Rule 1
 
 This repository is meant to be **public**. Real members, passwords, and host secrets are **not** in git. They live in the chapter’s database and in the host’s environment. Read [docs/PRIVACY.md](docs/PRIVACY.md) before you add a file.
 

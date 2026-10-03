@@ -12,6 +12,10 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const SCRIPT_TESTS = [
   "scripts/browser-smoke-verdict.test.mjs",
+  "scripts/content-checksum.test.mjs",
+  "scripts/content-diff.test.mjs",
+  "scripts/content-snapshot.test.mjs",
+  "scripts/migration-guard.test.mjs",
   "scripts/migration-plan.test.mjs",
   "scripts/privacy-check.test.mjs",
 ];
