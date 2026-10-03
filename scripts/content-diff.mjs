@@ -88,6 +88,9 @@ function pageLines(before, after) {
   const right = pageView(after);
   const lines = [];
   if (left.status !== right.status) lines.push(`status: ${left.status} -> ${right.status}`);
+  if ((left.finalPath ?? "") !== (right.finalPath ?? "")) {
+    lines.push(`ends at: ${left.finalPath || "(not recorded)"} -> ${right.finalPath || "(not recorded)"}`);
+  }
   if (left.text !== right.text) lines.push(...changedLines(String(left.text ?? ""), String(right.text ?? "")));
   if (left.screenshotSha256 !== right.screenshotSha256) lines.push("screenshot differs");
   return lines;

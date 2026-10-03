@@ -41,7 +41,7 @@ Pages:
 3. `/p/<slug>` for every slug in that feed
 4. every link on those `/p/<slug>` pages whose path starts with `/p/<slug>/speakers/`
 
-Each page waits for the network to go idle, then records the HTTP status, `document.body.innerText`, and the screenshot.
+Each page waits for the network to go idle, then records the HTTP status, `document.body.innerText`, and the screenshot. A renamed page's old address replaces itself with the new one in the browser; the snapshot waits for that too and records where the page ended up (`finalPath`). The diff reports `ends at: … -> …` when that changes.
 
 When `VERCEL_AUTOMATION_BYPASS_SECRET` is set, a request receives `x-vercel-protection-bypass` and `x-vercel-set-bypass-cookie: true` only when its origin is the site being snapshotted. Other origins, including `fonts.googleapis.com` and `fonts.gstatic.com`, are continued unchanged and never receive the secret. The value is not printed and is not written into the snapshot.
 
