@@ -10,7 +10,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { isMigrationFile, migrationName, pendingMigrations } from "./migration-plan.mjs";
+import {
+  isMigrationFile,
+  migrateTargetLine,
+  migrationName,
+  pendingMigrations,
+  shouldMigrate,
+} from "./migration-plan.mjs";
 import { projectRoot } from "./with-app-env.mjs";
 
 const AUTH_MIGRATION = "0001_auth.sql";
@@ -56,10 +62,70 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
   assert.deepEqual(pendingMigrations(["auth", "README.md"], []), []);
 });
 
-test("the auth schema ships outside the globbed directory", () => {
+test("a top-level readdir does not descend into migrations/auth", () => {
+  // The chapter migrations live in migrations/*.sql. The auth source stays in
+  // migrations/auth/ and is not a second pending file.
   const migrationsDir = join(projectRoot(), "migrations");
-  assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), []);
+  const pending = pendingMigrations(readdirSync(migrationsDir), []);
+  assert.ok(pending.some((row) => row.name === "0002_chapter_book.sql"));
+  assert.equal(
+    pending.some((row) => row.path.includes("auth/") || row.path.includes("auth\\")),
+    false,
+  );
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
+});
+
+const sampleUrl = "postgres://db.example/book";
+
+test("shouldMigrate allows production", () => {
+  assert.equal(
+    shouldMigrate({ vercelEnv: "production", allowPreviewMigrations: undefined, databaseUrl: sampleUrl }),
+    true,
+  );
+});
+
+test("shouldMigrate skips a preview without the flag", () => {
+  assert.equal(
+    shouldMigrate({ vercelEnv: "preview", allowPreviewMigrations: undefined, databaseUrl: sampleUrl }),
+    false,
+  );
+});
+
+test("shouldMigrate allows a preview when the flag is on", () => {
+  assert.equal(
+    shouldMigrate({ vercelEnv: "preview", allowPreviewMigrations: "on", databaseUrl: sampleUrl }),
+    true,
+  );
+});
+
+test("shouldMigrate allows an unset environment", () => {
+  assert.equal(
+    shouldMigrate({ vercelEnv: undefined, allowPreviewMigrations: undefined, databaseUrl: sampleUrl }),
+    true,
+  );
+});
+
+test("shouldMigrate skips an empty database URL", () => {
+  assert.equal(
+    shouldMigrate({ vercelEnv: "production", allowPreviewMigrations: "on", databaseUrl: "" }),
+    false,
+  );
+});
+
+test("the migrate target line has the hostname only", () => {
+  const password = "not-the-real-password";
+  const databaseUrl = new URL("postgres://ep-example.neon.tech/neondb");
+  databaseUrl.username = "appuser";
+  databaseUrl.password = password;
+  databaseUrl.searchParams.set("sslmode", "require");
+  const line = migrateTargetLine({ databaseUrl: databaseUrl.href, vercelEnv: "production" });
+  assert.equal(line.includes("@"), false);
+  assert.equal(line.includes(password), false);
+  assert.equal(line, "[migrate] target: ep-example.neon.tech · VERCEL_ENV=production");
+  const unset = migrateTargetLine({ databaseUrl: databaseUrl.href, vercelEnv: undefined });
+  assert.equal(unset.includes("@"), false);
+  assert.equal(unset.includes(password), false);
+  assert.equal(unset, "[migrate] target: ep-example.neon.tech · VERCEL_ENV=unset");
 });
 
 test("this workspace's auth schema copy is byte-identical to its source", () => {

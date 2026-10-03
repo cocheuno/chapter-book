@@ -9,22 +9,41 @@
  * The read is non-recursive, so the opt-in auth schema under migrations/auth/
  * is not applied to an app that never asked for sign-in.
  *
- * No DATABASE_URL (local / preview builds) -> skip; the PGLite fallback applies
- * the same files at startup instead (see src/lib/db.ts).
+ * No DATABASE_URL -> skip; the PGLite fallback applies the same files at
+ * startup instead (see src/lib/db.ts). A Vercel preview also skips, even when
+ * DATABASE_URL is set, unless ALLOW_PREVIEW_MIGRATIONS=on. Local builds
+ * (VERCEL_ENV unset) still migrate when DATABASE_URL is set.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
-import { pendingMigrations } from "./migration-plan.mjs";
+import { migrateTargetLine, pendingMigrations, shouldMigrate } from "./migration-plan.mjs";
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  console.log(
-    "[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).",
-  );
+const vercelEnv = process.env.VERCEL_ENV;
+const allowPreviewMigrations = process.env.ALLOW_PREVIEW_MIGRATIONS;
+
+if (
+  !shouldMigrate({
+    vercelEnv,
+    allowPreviewMigrations,
+    databaseUrl,
+  })
+) {
+  if (vercelEnv === "preview" && allowPreviewMigrations !== "on") {
+    console.log(
+      "[migrate] preview build: skipping migrations. Set ALLOW_PREVIEW_MIGRATIONS=on for Preview once Preview has its own database (docs/HOSTING.md).",
+    );
+  } else {
+    console.log(
+      "[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).",
+    );
+  }
   process.exit(0);
 }
+
+console.log(migrateTargetLine({ databaseUrl, vercelEnv }));
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 

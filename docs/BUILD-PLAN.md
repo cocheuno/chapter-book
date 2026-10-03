@@ -122,7 +122,7 @@ Code changes must not change the chapter's current data, or what the public webs
 
 | ID | Task | Needed by |
 | --- | --- | --- |
-| H1 | Vercel Preview gets its own `DATABASE_URL`: a **Neon branch copied from production**, refreshed before each package. It is never production itself (review S9). Pull requests then run their migrations and pages against real content without touching it. Turn on Vercel Deployment Protection for previews, since the copy holds real records | Before WP-00 is used |
+| H1 | Vercel Preview gets its own `DATABASE_URL`: a **Neon branch copied from production**, refreshed before each package. It is never production itself (review S9). Follow `docs/HOSTING.md`, "Preview database and secrets (H1)". Until that is done, preview builds skip migrations. Pull requests then run their migrations and pages against the copy without touching production. Turn on Vercel Deployment Protection for previews, since the copy holds real records | Before WP-00 is used |
 | H2 | Vercel Production: set `FOUNDER_EMAIL` (the current admin's address), `GROK_CHROME=off`, `PUBLIC_ORIGIN` | WP-02, WP-03, WP-12 |
 | H3 | Cloudflare: a chapter hostname for the book (review W2). Then update `BETTER_AUTH_URL` and the embed `<script src>` on GoDaddy | Before flyers |
 | H4 | A short address on the main domain, for example `scs-wisconsin-usa.org/ai`, redirecting to the conference page. Use it on all print | Before flyers |
@@ -207,7 +207,7 @@ Code changes must not change the chapter's current data, or what the public webs
    - `drop` does not apply to `drop index` of an index the same migration created.
    - Existing migrations are not checked.
 2. **Content snapshot.**
-   - Add `scripts/content-snapshot.mjs <base-url> <out.json>`. It uses Playwright, with `executablePath` from `CHROMIUM_PATH` if set, because public pages render in the browser until WP-12. It saves:
+   - Add `scripts/content-snapshot.mjs <base-url> <out.json>`. It uses Playwright, with `executablePath` from `CHROMIUM_PATH` if set, because public pages render in the browser until WP-12. When `VERCEL_AUTOMATION_BYPASS_SECRET` is set, send that value as the header `x-vercel-protection-bypass` on every request (the preview sits behind Vercel Authentication; see `docs/HOSTING.md`). It saves:
      - the `/api/public-site` JSON
      - the visible text of `/site`, of every `/p/<slug>` in the feed, and of each speaker page
      - a full-page screenshot of each, next to the JSON
