@@ -61,10 +61,12 @@ The first person to sign in on the **empty** hosted book is founder **admin**. A
 
 **Never reset the database password in the Neon Console.** Vercel's copy would not update, and the live site would lose its database until the integration is reconnected. If a reset is ever needed, do it through the integration (Vercel → Storage), or ask Vercel support.
 
-**Where this stands (2026-10-03):** steps 1, 2, and the branch clean-up in step 6 are done. Steps 3–5 are not.
+**Where this stands (2026-10-03):** steps 1, 2, 4, 5, and the branch clean-up in step 6 are done. **Step 3 is on hold. Do not set `ALLOW_PREVIEW_MIGRATIONS`.**
 
-- Preview builds skip migrations (`scripts/migrate.mjs`) until step 3.
-- A preview deployment built since step 1 reads and writes its own Neon branch, a copy of production. The copy holds real records, which is why step 4 matters.
+- Preview builds skip migrations (`scripts/migrate.mjs`).
+- A running preview deployment reads and writes its own Neon branch, a copy of production. The copy holds real records, which is why step 4 matters.
+- A preview **build** still connects to **production**. On 2026-10-03 a preview redeploy with `ALLOW_PREVIEW_MIGRATIONS=on` ran `scripts/migrate.mjs` against production: Neon's operations log shows production's compute starting in the same second, while the preview branch stayed idle. Nothing was applied (`[migrate] up to date.`).
+- Vercel redacts the host in build logs (`[migrate] target: [REDACTED]`), so the log cannot show which database a build used.
 - A preview built **before** 2026-10-03 still reads and writes the **production** database. Do not edit content on one; redeploy it first.
 
 **"Needs Attention" on the database variables.** Vercel marks the integration's password-bearing variables `readable-secret`: anyone with access to the project can read them back.
@@ -91,16 +93,15 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    From then on, each preview deployment gets its own Neon branch, `preview/<git-branch>`, a fresh copy of production. Its connection is injected at deploy time and does not appear under Environment Variables.
 2. **Check it.** *Done 2026-10-03.* Redeploy a preview: Deployments → a preview → **⋯** → **Redeploy**.
    - A branch named `preview/<git-branch>` appears in the Neon Console, under Branches, made by Vercel. The 2026-10-03 check made `preview/h1-preview-migrations`.
-   - The branch has its own compute, so its host (`ep-…-pooler…neon.tech`) differs from production's. Step 3 relies on this.
-   - The build log still says `[migrate] preview build: skipping migrations`; that is expected until step 3.
-3. **Allow preview migrations, only after step 2 shows the branch.**
-   - Settings → **Environment Variables** → add `ALLOW_PREVIEW_MIGRATIONS` with the value `on`, for **Preview** only.
-   - Redeploy a preview. Its build log shows `[migrate] target: <host> · VERCEL_ENV=preview`, and that host must differ from the one in the latest **Production** build log.
-   - If Preview Branching is not on, this flag would let previews migrate production.
-4. **Protect previews.**
+   - The branch has its own compute, so its host (`ep-…-pooler…neon.tech`) differs from production's.
+   - The build log says `[migrate] preview build: skipping migrations`; that is expected.
+3. **Allow preview migrations. On hold: do not do this step.** The preview branch is injected into the running deployment, not into its build, so this flag lets preview builds migrate production (see "Where this stands" above).
+   - It needs a code change first: `scripts/migrate.mjs` must refuse a preview build whose database is production, and print the Neon endpoint id (which Vercel does not redact) instead of the host.
+   - Until then, `ALLOW_PREVIEW_MIGRATIONS` must not exist. Check Settings → **Environment Variables**; if it is there, delete it.
+4. **Protect previews.** *Done 2026-10-03.*
    - Settings → **Deployment Protection** → turn **Vercel Authentication** on, with scope **Standard Protection**. Never choose **All Deployments**: it would lock the public site.
    - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Leave the secret box empty so Vercel generates one: 32 letters and digits. Never use an example value from a document or chat, since anyone can read those. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.
-5. **Check access** in a private browser window:
+5. **Check access** in a private browser window. *Done 2026-10-03.*
    - The preview URL asks for a Vercel login.
    - `https://chapter-book-beryl.vercel.app/p/ai-conference` and `https://scs-wisconsin-usa.org` load without it.
    - Check those two addresses, not a raw `*.vercel.app` deployment URL: Standard Protection can lock generated deployment URLs while the production domain stays public.
