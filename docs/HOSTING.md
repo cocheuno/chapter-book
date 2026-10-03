@@ -99,7 +99,7 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - If Preview Branching is not on, this flag would let previews migrate production.
 4. **Protect previews.**
    - Settings → **Deployment Protection** → turn **Vercel Authentication** on, with scope **Standard Protection**. Never choose **All Deployments**: it would lock the public site.
-   - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.
+   - Then create a **Protection Bypass for Automation** secret and store it in a password manager. Leave the secret box empty so Vercel generates one: 32 letters and digits. Never use an example value from a document or chat, since anyone can read those. Vercel exposes it to deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`. The WP-00 content snapshot sends it as the header `x-vercel-protection-bypass`. Do not commit it.
 5. **Check access** in a private browser window:
    - The preview URL asks for a Vercel login.
    - `https://chapter-book-beryl.vercel.app/p/ai-conference` and `https://scs-wisconsin-usa.org` load without it.
