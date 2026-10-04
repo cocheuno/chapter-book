@@ -43,7 +43,7 @@
     if (item.location) html += "<p class=\"scs-loc\">" + escapeHtml(item.location) + "</p>";
     if (item.audience) html += "<p class=\"scs-aud\">" + escapeHtml(item.audience) + "</p>";
     var rich = safeSection(item.summaryHtml);
-    if (rich) html += rich;
+    if (rich) html += '<div class="scs-rich" style="contain:paint">' + rich + "</div>";
     else if (item.summary) html += "<p>" + escapeHtml(item.summary) + "</p>";
     var details = item.href && String(item.href).indexOf("/p/") === 0
       ? origin + item.href

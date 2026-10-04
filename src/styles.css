@@ -57,6 +57,9 @@
   color: var(--color-bronze);
 }
 
+.announcement-html {
+  contain: paint;
+}
 .announcement-html :where(p, ul, ol, blockquote, figure, table, h1, h2, h3, h4) + * {
   margin-top: 0.75rem;
 }

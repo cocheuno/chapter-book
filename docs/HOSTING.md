@@ -29,6 +29,12 @@ The database variables come from Vercel's Neon integration; the others are typed
 
 Do not paste these into GitHub, Slack, or chat.
 
+## Security headers
+
+Every response sends `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy: camera=(), microphone=(), geolocation=()`. A header that is already present is left as it is, including the CORS headers on `/api/public-site`.
+
+When `BETTER_AUTH_URL` is set and not blank (Vercel Production and Preview), the response also sends `Strict-Transport-Security: max-age=31536000`, `X-Frame-Options: DENY`, and `Content-Security-Policy-Report-Only` with `default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-src https://challenges.cloudflare.com; form-action 'self' https://checkout.stripe.com; base-uri 'self'; frame-ancestors 'none'`. Grok's workspace preview leaves `BETTER_AUTH_URL` unset and shows the app in an iframe, so those three stay off there. The content security policy is report-only until TanStack Start supports nonces.
+
 Generate a secret locally (do not commit the output):
 
 ```
