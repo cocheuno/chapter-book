@@ -7,12 +7,14 @@
 1. Give Grok Build **one work package at a time, in order.** One package = one branch = one pull request.
 2. Use the prompt template below with the package number.
 3. A package marked **Needs D#** waits for that decision, and one marked **Needs H#** waits for a human task. Both are listed below, with the defaults.
-4. Review each pull request against the package's **Done when** list before merging.
-5. **Do WP-00 first.** It adds the tools that prove each later package leaves the chapter's content alone.
+4. Wait for both checks on the pull request to turn green: **Vercel** (the preview built) and **CI / test, typecheck, lint** (WP-08).
+5. Run the Content guard Action for the pull request (`docs/CONTENT-GUARD.md`, "In GitHub"). The normal result is `no differences`.
+6. Review the pull request against the package's **Done when** list, then merge.
+7. After merging, delete the pull request's Neon preview copy (`docs/HOSTING.md`, H1 step 6). Neon's free plan holds 10 branches, and a full project makes every new preview fail.
 
 **Prompt template** (replace `WP-XX`):
 
-> Read docs/BUILD-PLAN.md: the "House rules" section and work package WP-XX, plus any review, PAYMENTS.md, or MAIL.md sections it names. Implement only WP-XX, on a new branch. Follow the steps, meet every "Done when" item, and add the listed tests. Run `npm test`, `npm run typecheck`, and `npm run lint`, and fix anything they report. Obey "Rule 1: existing content never changes": no migration or code may alter, delete, hide, reorder, or rewrite existing data, and the public pages must look the same. Open a pull request titled "WP-XX: <package title>", and include the content snapshot diff from WP-00 in its description. If a step does not match the code as it is now, or seems to need changing existing content, stop and explain instead of guessing.
+> Read docs/BUILD-PLAN.md: the "House rules" section and work package WP-XX, plus any review, PAYMENTS.md, or MAIL.md sections it names. Implement only WP-XX, on a new branch. Follow the steps, meet every "Done when" item, and add the listed tests. Install with `npm ci`; do not run `npm install`, which rewrites `package-lock.json`. Run `npm test`, `npm run typecheck`, and `npm run lint`: all three must pass, because the pull request's CI check runs the same commands. Obey "Rule 1: existing content never changes": no migration or code may alter, delete, hide, reorder, or rewrite existing data, and the public pages must look the same. Open a pull request titled "WP-XX: <package title>". In its description, leave a heading "Content snapshot diff" with the text "Pending: Content guard Action run by the maintainer." If a step does not match the code as it is now, or seems to need changing existing content, stop and explain instead of guessing.
 
 ## Rule 1: existing content never changes
 
@@ -27,11 +29,11 @@ Code changes must not change the chapter's current data, or what the public webs
 - **Code never rewrites stored content,** whether on load, on read, or on deploy: no re-seeding, normalizing, auto-fixing, auto-archiving, or auto-hiding.
 - **New behavior is opt-in for existing items.** A new flag or setting defaults to what the site does today. Editors turn it on item by item. New items may start with the new default.
 - **The public sees the same thing.** Every published page, the GoDaddy embed, and the JSON feed stay the same, with one exception: a package whose stated purpose is to fix how content displays. That pull request lists every affected item with before and after, and the chapter approves it before merging.
-- **Prove it on every package.** Using WP-00's tools on a copy of production data (H1):
-  - run the content snapshot and the data checksum before and after
-  - put the diff in the pull request
+- **Prove it on every package.** Using WP-00's tools:
+  - the Content guard Action compares production's public pages with the pull request's preview, which runs on a copy of production data (H1)
+  - the reviewer compares production's data checksum before and after the merge
 
-  An empty diff is the normal result.
+  `no differences` and `unchanged` are the normal results.
 - **If a package seems to need changing existing content, stop and ask.** Do not work around this rule.
 
 ## House rules (every package)
@@ -123,10 +125,10 @@ Code changes must not change the chapter's current data, or what the public webs
 | ID | Task | Needed by |
 | --- | --- | --- |
 | H1 | Previews get their own database: turn on the Neon integration's **Preview Branching** (Vercel → Storage → `chapter-book-db` → Projects → **⋯** → **Update Project Connection** → **Create database branch for deployment**: Preview only, never Production; done 2026-10-03), so each preview deployment gets a fresh Neon branch copied from production, never production itself (review S9). Turn on Deployment Protection, since the copies hold real records. Set `PRODUCTION_DB_ENDPOINT` and `ALLOW_PREVIEW_MIGRATIONS=on` for Preview, so preview builds migrate their copy and refuse production. **Done 2026-10-03.** A preview of `main` gets no copy and uses production. Follow `docs/HOSTING.md`, "Preview database and secrets (H1)" | Before WP-00 is used |
-| H2 | Vercel Production: set `FOUNDER_EMAIL` (the current admin's address), `GROK_CHROME=off`, `PUBLIC_ORIGIN` | WP-02, WP-03, WP-12 |
+| H2 | Vercel Production: set `FOUNDER_EMAIL` (the current admin's address), `GROK_CHROME=off`, `PUBLIC_ORIGIN`. `FOUNDER_EMAIL` and `GROK_CHROME` were done for WP-02 and WP-03; `PUBLIC_ORIGIN` is still to set | WP-02, WP-03, WP-12 |
 | H3 | Cloudflare: a chapter hostname for the book (review W2). Then update `BETTER_AUTH_URL` and the embed `<script src>` on GoDaddy | Before flyers |
 | H4 | A short address on the main domain, for example `scs-wisconsin-usa.org/ai`, redirecting to the conference page. Use it on all print | Before flyers |
-| H5 | After WP-01 ships: open Chapter → Operators → "Accounts without access", remove any you don't recognize, and re-issue pending invites | After WP-01 |
+| H5 | After WP-01 ships: open Chapter → Operators → "Accounts without access", remove any you don't recognize, and re-issue pending invites. **Done 2026-10-04** | After WP-01 |
 | H6 | Vercel plan: Pro, or Vercel's written OK, before live payments (PAYMENTS.md, Before live money #4) | WP-25 |
 | H7 | Stripe account: nonprofit details, EIN, bank, two owners with two-factor, statement descriptor, receipts on, branding, cards and wallets only (PAYMENTS.md #5–9) | WP-21 (test), WP-25 (live) |
 | H8 | Stripe webhook endpoint and secret; test keys on Preview, live keys on Production | WP-21, WP-25 |
@@ -142,16 +144,16 @@ Code changes must not change the chapter's current data, or what the public webs
 
 | WP | Title | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
-| **Phase 0: security and foundations (October)** | | | | |
-| 00 | Content guard: migration check, content snapshot, data checksum | — | Ready (H1) | Rule 1 |
-| 01 | Invites need the token | — | In review (PR 10); no data changes | S1 |
-| 02 | Founder path only for `FOUNDER_EMAIL`; one chapter | 01 | Ready (H2) | S6 |
-| 03 | No Grok script or share-tag stripping in production | — | Ready (H2) | S12, W1 |
-| 04 | Broker sign-in off in production | — | Ready | S3 |
-| 05 | Security headers and safer editor HTML | 03 | Ready | S4, S5 |
-| 06 | Public reads only read; honest errors; caching | — | Ready | S2, S7, S8 |
-| 07 | Chapter scoping and safe CSV | — | Ready | S10, S11 |
-| 08 | Lockfile, lint, CI | — | Ready | W5 |
+| **Phase 0: security and foundations (October), done 2026-10-04** | | | | |
+| 00 | Content guard: migration check, content snapshot, data checksum | — | Done 2026-10-03 (PR 16; Action PR 17; fixes PR 18, 20) | Rule 1 |
+| 01 | Invites need the token | — | Done 2026-09-30 (PR 10) | S1 |
+| 02 | Founder path only for `FOUNDER_EMAIL`; one chapter | 01 | Done 2026-10-04 (PR 19) | S6 |
+| 03 | No Grok script or share-tag stripping in production | — | Done 2026-10-04 (PR 21) | S12, W1 |
+| 04 | Broker sign-in off in production | — | Done 2026-10-04 (PR 22) | S3 |
+| 05 | Security headers and safer editor HTML | 03 | Done 2026-10-04 (PR 23) | S4, S5 |
+| 06 | Public reads only read; honest errors; caching | — | Done 2026-10-04 (PR 24) | S2, S7, S8 |
+| 07 | Chapter scoping and safe CSV | — | Done 2026-10-04 (PR 25) | S10, S11 |
+| 08 | Lockfile, lint, CI | — | Done 2026-10-04 (PR 26) | W5 |
 | **Phase 0b: website and CRM basics (Oct–Nov)** | | | | |
 | 09 | `<section>` HTML on every public field | 05 | Ready (D2 default) | §7 |
 | 10 | Website quick fixes | 09 | Ready | §9 |
