@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { announcementPlainText, announcementRichHtml, publicRichHtml, publicSummaryFields } from "./announcement-html.ts";
+import {
+  announcementPlainText,
+  announcementRichHtml,
+  publicRichHtml,
+  publicSummaryFields,
+} from "./announcement-html.ts";
 
 describe("announcement HTML", () => {
   it("leaves plain text as text", () => {
@@ -32,10 +37,7 @@ describe("announcement HTML", () => {
     const html = announcementRichHtml(
       `<section><script>alert(1)</script><p onclick="alert(1)">Hi</p><a href="javascript:alert(1)">x</a><img src="javascript:alert(1)" alt="no"><iframe src="https://evil.example"></iframe></section>`,
     );
-    assert.equal(
-      html,
-      `<section><p>Hi</p>x</section>`,
-    );
+    assert.equal(html, `<section><p>Hi</p>x</section>`);
     assert.doesNotMatch(html ?? "", /script|onclick|javascript|iframe|img/i);
   });
 
@@ -49,8 +51,62 @@ describe("announcement HTML", () => {
   });
 
   it("drops style that can load a url", () => {
-    const html = announcementRichHtml(`<section><p style="background: url(https://evil.example/x)">Hi</p></section>`);
+    const html = announcementRichHtml(
+      `<section><p style="background: url(https://evil.example/x)">Hi</p></section>`,
+    );
     assert.equal(html, "<section><p>Hi</p></section>");
+  });
+
+  it("keeps allowed style properties", () => {
+    const html = announcementRichHtml(
+      `<section><p style="text-align: center; color: #7a6238; margin-top: 1rem; padding: 0; width: 100%; border-radius: 4px">Hi</p></section>`,
+    );
+    assert.match(
+      html ?? "",
+      /style="text-align: center; color: #7a6238; margin-top: 1rem; padding: 0; width: 100%; border-radius: 4px"/,
+    );
+  });
+
+  it("drops position, z-index, opacity, and transform", () => {
+    const html = announcementRichHtml(
+      `<section><p style="position:fixed; z-index: 9; opacity: 0; transform: rotate(1deg)">Hi</p></section>`,
+    );
+    assert.equal(html, "<section><p>Hi</p></section>");
+  });
+
+  it("keeps only the allowed part of a mixed style", () => {
+    const html = announcementRichHtml(
+      `<section><p style="color: red; position: fixed; z-index: 99">Hi</p></section>`,
+    );
+    assert.match(html ?? "", /style="color: red"/);
+    assert.doesNotMatch(html ?? "", /position|z-index/);
+  });
+
+  it("drops url() inside an allowed property", () => {
+    const html = announcementRichHtml(
+      `<section><p style="color: red; background-color: url(https://evil.example/x)">Hi</p></section>`,
+    );
+    assert.match(html ?? "", /style="color: red"/);
+    assert.doesNotMatch(html ?? "", /url|background-color/);
+  });
+
+  it("drops negative margins and keeps ordinary ones", () => {
+    const top = announcementRichHtml(`<section><p style="margin-top: -40px">Hi</p></section>`);
+    assert.equal(top, "<section><p>Hi</p></section>");
+
+    const shifted = announcementRichHtml(`<section><p style="margin: 0 -9999px">Hi</p></section>`);
+    assert.equal(shifted, "<section><p>Hi</p></section>");
+
+    const kept = announcementRichHtml(
+      `<section><p style="margin: 0 auto; margin-top: 12px">Hi</p></section>`,
+    );
+    assert.match(kept ?? "", /style="margin: 0 auto; margin-top: 12px"/);
+
+    const mixed = announcementRichHtml(
+      `<section><p style="color: red; margin-top: -40px">Hi</p></section>`,
+    );
+    assert.match(mixed ?? "", /style="color: red"/);
+    assert.doesNotMatch(mixed ?? "", /margin/);
   });
 
   it("renders a pasted chapter announcement section", () => {

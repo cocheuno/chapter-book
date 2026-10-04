@@ -168,10 +168,61 @@ function safeUrl(value: string, kind: "href" | "src"): string | null {
   }
 }
 
+const STYLE_PROPS = new Set([
+  "text-align",
+  "color",
+  "background-color",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "text-decoration",
+  "line-height",
+  "margin",
+  "margin-top",
+  "margin-right",
+  "margin-bottom",
+  "margin-left",
+  "padding",
+  "padding-top",
+  "padding-right",
+  "padding-bottom",
+  "padding-left",
+  "width",
+  "max-width",
+  "height",
+  "border",
+  "border-radius",
+  "list-style-type",
+  "vertical-align",
+]);
+
+const MARGIN_PROPS = new Set([
+  "margin",
+  "margin-top",
+  "margin-right",
+  "margin-bottom",
+  "margin-left",
+]);
+
+/** A negative margin can pull editor copy over the rest of the page. */
+function hasNegativeMargin(cssValue: string): boolean {
+  return cssValue.split(/\s+/).some((part) => part.startsWith("-"));
+}
+
 function safeStyle(value: string): string | null {
   const v = value.replace(/\/\*[\s\S]*?\*\//g, "").trim();
-  if (!v || v.length > 800 || STYLE_BAD.test(v)) return null;
-  return v;
+  if (!v || v.length > 800) return null;
+  const kept: string[] = [];
+  for (const decl of v.split(";")) {
+    const colon = decl.indexOf(":");
+    if (colon <= 0) continue;
+    const prop = decl.slice(0, colon).trim().toLowerCase();
+    const cssValue = decl.slice(colon + 1).trim();
+    if (!prop || !cssValue || !STYLE_PROPS.has(prop) || STYLE_BAD.test(cssValue)) continue;
+    if (MARGIN_PROPS.has(prop) && hasNegativeMargin(cssValue)) continue;
+    kept.push(`${prop}: ${cssValue}`);
+  }
+  return kept.length > 0 ? kept.join("; ") : null;
 }
 
 function token(value: string, pattern: RegExp, max: number): string | null {
