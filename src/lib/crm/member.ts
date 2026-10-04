@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
-import { env } from "@/lib/env.server";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { nid } from "./ids";
 import { founderAllowed } from "./operator-rules";
@@ -98,8 +97,8 @@ export async function loadMember(userId: string): Promise<MemberContext> {
   `;
   if (
     !founderAllowed(account[0]?.email ?? "", {
-      founderEmail: env("FOUNDER_EMAIL"),
-      databaseUrl: env("DATABASE_URL"),
+      founderEmail: serverEnv("FOUNDER_EMAIL"),
+      databaseUrl: serverEnv("DATABASE_URL"),
     })
   ) {
     throw new NotOperatorError();
@@ -107,6 +106,14 @@ export async function loadMember(userId: string): Promise<MemberContext> {
 
   await bootstrapChapter(userId);
   return loadMember(userId);
+}
+
+/**
+ * Read a host variable. Not env.server: a client route imports this module,
+ * and import protection refuses *.server files there. founderAllowed trims.
+ */
+function serverEnv(key: string): string | undefined {
+  return typeof process !== "undefined" ? process.env[key] : undefined;
 }
 
 function isUniqueViolation(err: unknown): boolean {
