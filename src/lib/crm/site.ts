@@ -9,7 +9,7 @@ import { publicSummaryFields } from "./announcement-html";
 import { type SpeakerRecord } from "./conference-page";
 import { canonicalDetailPaths, eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
-import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, ensureSiteContent, type SiteKind } from "./site-seed";
+import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, type SiteKind } from "./site-seed";
 
 function isUniqueViolation(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -114,7 +114,6 @@ export const listSite = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const m = await loadMember(context.userId);
     const sql = await getSql();
-    await ensureSiteContent(sql, m.chapterId);
     await backfillSlugs(sql, m.chapterId);
     await backfillConference(sql, m.chapterId);
     const settings = await readSettings(sql, m.chapterId);
@@ -126,28 +125,21 @@ export const listSite = createServerFn({ method: "POST" })
 /** Public chapter page. No sign-in — do not attach authMiddleware. */
 export async function loadPublishedSite() {
   const empty = { settings: emptySettings, items: [] as SiteItemRow[] };
-  try {
-    const sql = await getSql();
-    const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
-    if (!chapters[0]) return empty;
-    const chapterId = chapters[0].id;
-    await ensureSiteContent(sql, chapterId);
-    await backfillSlugs(sql, chapterId);
-    await backfillConference(sql, chapterId);
-    const settings = await readSettings(sql, chapterId);
-    const items = await readItems(sql, chapterId, true);
-    const gatherings = await listGatherings(sql, chapterId);
-    const paths = canonicalDetailPaths(items);
-    return {
-      settings,
-      items: withEventPages(items, gatherings).map((item) => ({
-        ...item,
-        detailsHref: paths.get(item.id) ?? (item.slug ? `/p/${item.slug}` : null),
-      })),
-    };
-  } catch {
-    return empty;
-  }
+  const sql = await getSql();
+  const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
+  if (!chapters[0]) return empty;
+  const chapterId = chapters[0].id;
+  const settings = await readSettings(sql, chapterId);
+  const items = await readItems(sql, chapterId, true);
+  const gatherings = await listGatherings(sql, chapterId);
+  const paths = canonicalDetailPaths(items);
+  return {
+    settings,
+    items: withEventPages(items, gatherings).map((item) => ({
+      ...item,
+      detailsHref: paths.get(item.id) ?? (item.slug ? `/p/${item.slug}` : null),
+    })),
+  };
 }
 
 export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[] }) {
@@ -449,89 +441,82 @@ export const getPublicPage = createServerFn({ method: "POST" })
   .validator((slug: string) => slug.trim())
   .handler(async ({ data: slug }) => {
     if (!slug) return null;
-    try {
-      const sql = await getSql();
-      const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
-      if (!chapters[0]) return null;
-      await ensureSiteContent(sql, chapters[0].id);
-      await backfillSlugs(sql, chapters[0].id);
-      await backfillConference(sql, chapters[0].id);
-      const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
-        select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
-               i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
-               s.public_title, s.contact_email
-        from site_items i
-        left join site_settings s on s.chapter_id = i.chapter_id
-        where i.chapter_id = ${chapters[0].id} and i.slug = ${slug} and i.published
-      `;
-      const page = rows[0];
-      if (!page) return null;
-      const chapterId = chapters[0].id;
-      const siblings = await sql<{
-        id: string;
-        kind: string;
-        title: string;
-        slug: string | null;
-        summary: string | null;
-        body: string | null;
-      }>`
-        select id, kind, title, slug, summary, body from site_items
-        where chapter_id = ${chapterId} and published and kind in ('event', 'announcement')
-      `;
-      const canonicalPath = canonicalDetailPaths(siblings).get(page.id);
-      const canonicalSlug = canonicalPath?.startsWith("/p/") ? canonicalPath.slice(3) : null;
-      if (canonicalSlug && canonicalSlug !== page.slug) {
-        return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[] };
-      }
-      const gatherings = await listGatherings(sql, chapterId);
-      const shelf = await sql<{ id: string; slug: string | null; title: string; published: boolean }>`
-        select id, slug, title, published from site_items where chapter_id = ${chapterId}
-      `;
-      const eventPage = eventPageLink(
-        shelf,
-        gatherings.find((gathering) => gathering.id === page.gathering_id)?.public_item_id ?? null,
-      );
-      if (page.layout !== "conference") {
-        return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[] };
-      }
-      const program = await sql<SiteItemRow>`
-        select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
-        from site_items
-        where chapter_id = ${chapterId} and conference_id = ${page.id} and published
-        order by kind, sort_order, title
-      `;
-      const people = await sql<{
-        id: string;
-        name: string;
-        role: string | null;
-        body: string | null;
-        image_id: string | null;
-      }>`
-        select sp.id, sp.name, sp.role, sp.body, sp.image_id
-        from event_speakers sp
-        join events e on e.id = sp.event_id
-        where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
-        order by sp.sort_order, sp.name
-      `;
-      const links = await sql<{ speaker_id: string | null; site_item_id: string | null }>`
-        select s.speaker_id, s.site_item_id
-        from event_sessions s
-        join events e on e.id = s.event_id
-        where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
-      `;
-      const speakerLineup: SpeakerRecord[] = people.map((person) => ({
-        name: person.name,
-        role: person.role,
-        body: person.body,
-        imageId: person.image_id,
-        talkIds: links
-          .filter((link) => link.speaker_id === person.id && link.site_item_id)
-          .map((link) => link.site_item_id as string),
-      }));
-      return { ...page, canonicalSlug: null, program, eventPage, speakerLineup };
-    } catch {
-      return null;
+    const sql = await getSql();
+    const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
+    if (!chapters[0]) return null;
+    const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
+      select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
+             i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
+             s.public_title, s.contact_email
+      from site_items i
+      left join site_settings s on s.chapter_id = i.chapter_id
+      where i.chapter_id = ${chapters[0].id} and i.slug = ${slug} and i.published
+    `;
+    const page = rows[0];
+    if (!page) return null;
+    const chapterId = chapters[0].id;
+    const siblings = await sql<{
+      id: string;
+      kind: string;
+      title: string;
+      slug: string | null;
+      summary: string | null;
+      body: string | null;
+    }>`
+      select id, kind, title, slug, summary, body from site_items
+      where chapter_id = ${chapterId} and published and kind in ('event', 'announcement')
+    `;
+    const canonicalPath = canonicalDetailPaths(siblings).get(page.id);
+    const canonicalSlug = canonicalPath?.startsWith("/p/") ? canonicalPath.slice(3) : null;
+    if (canonicalSlug && canonicalSlug !== page.slug) {
+      return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[] };
     }
+    const gatherings = await listGatherings(sql, chapterId);
+    const shelf = await sql<{ id: string; slug: string | null; title: string; published: boolean }>`
+      select id, slug, title, published from site_items where chapter_id = ${chapterId}
+    `;
+    const eventPage = eventPageLink(
+      shelf,
+      gatherings.find((gathering) => gathering.id === page.gathering_id)?.public_item_id ?? null,
+    );
+    if (page.layout !== "conference") {
+      return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[] };
+    }
+    const program = await sql<SiteItemRow>`
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
+      from site_items
+      where chapter_id = ${chapterId} and conference_id = ${page.id} and published
+      order by kind, sort_order, title
+    `;
+    const people = await sql<{
+      id: string;
+      name: string;
+      role: string | null;
+      body: string | null;
+      image_id: string | null;
+    }>`
+      select sp.id, sp.name, sp.role, sp.body, sp.image_id
+      from event_speakers sp
+      join events e on e.id = sp.event_id
+      where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
+      order by sp.sort_order, sp.name
+    `;
+    const links = await sql<{ speaker_id: string | null; site_item_id: string | null }>`
+      select s.speaker_id, s.site_item_id
+      from event_sessions s
+      join events e on e.id = s.event_id
+      where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
+    `;
+    const speakerLineup: SpeakerRecord[] = people.map((person) => ({
+      name: person.name,
+      role: person.role,
+      body: person.body,
+      imageId: person.image_id,
+      talkIds: links
+        .filter((link) => link.speaker_id === person.id && link.site_item_id)
+        .map((link) => link.site_item_id as string),
+    }));
+    return { ...page, canonicalSlug: null, program, eventPage, speakerLineup };
   });
 
 export const removeSiteItem = createServerFn({ method: "POST" })

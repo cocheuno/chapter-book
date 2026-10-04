@@ -10,11 +10,22 @@ export const Route = createFileRoute("/p/$slug/")({ component: PublicPage });
 function PublicPage() {
   const { slug } = Route.useParams();
   const [page, setPage] = useState<Awaited<ReturnType<typeof getPublicPage>> | undefined>(undefined);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    getPublicPage({ data: slug }).then(setPage);
+    setFailed(false);
+    getPublicPage({ data: slug })
+      .then(setPage)
+      .catch(() => setFailed(true));
   }, [slug]);
 
+  if (failed) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
+        <p>This page is not available right now. Please try again shortly.</p>
+      </main>
+    );
+  }
   if (page === undefined) {
     return (
       <main className="grid min-h-dvh place-items-center bg-paper text-muted">Opening the page…</main>
