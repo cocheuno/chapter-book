@@ -23,6 +23,7 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `VITE_AUTH_ENABLED` | `true` |
 | `ALLOW_PREVIEW_MIGRATIONS` | **Preview** only. `off` until H1 step 3; then exactly `on` |
 | `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
+| `FOUNDER_EMAIL` | **Production** only. The address of the chapter's admin account. Only that address can open an empty hosted book. |
 
 Do not paste these into GitHub, Slack, or chat.
 

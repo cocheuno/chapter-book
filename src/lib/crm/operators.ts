@@ -32,7 +32,7 @@ export const getLoginState = createServerFn({ method: "GET" }).handler(async () 
     const n = await sql<{ n: number }>`select count(*)::int as n from chapters`;
     return { founder: (n[0]?.n ?? 0) === 0 };
   } catch {
-    return { founder: true };
+    return { founder: false };
   }
 });
 

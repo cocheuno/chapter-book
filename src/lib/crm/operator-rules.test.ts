@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   disableBlockedReason,
+  founderAllowed,
   hashInviteToken,
   isOperatorRole,
   normalizeOperatorEmail,
@@ -61,6 +62,49 @@ describe("last admin", () => {
   });
 });
 
+describe("founderAllowed", () => {
+  it("matches an address ignoring case and surrounding spaces", () => {
+    assert.equal(
+      founderAllowed("  Founder@Chapter.EXAMPLE ", {
+        founderEmail: " founder@chapter.example ",
+        databaseUrl: "configured",
+      }),
+      true,
+    );
+  });
+
+  it("refuses a different address", () => {
+    assert.equal(
+      founderAllowed("other@chapter.example", {
+        founderEmail: "founder@chapter.example",
+        databaseUrl: "configured",
+      }),
+      false,
+    );
+  });
+
+  it("refuses every address when the founder address is unset and a database URL is set", () => {
+    assert.equal(founderAllowed("founder@chapter.example", { databaseUrl: "configured" }), false);
+  });
+
+  it("allows any address when the founder address and the database URL are unset", () => {
+    assert.equal(founderAllowed("anyone@chapter.example", {}), true);
+    assert.equal(
+      founderAllowed("anyone@chapter.example", { founderEmail: undefined, databaseUrl: "" }),
+      true,
+    );
+    assert.equal(founderAllowed("anyone@chapter.example", { databaseUrl: "   " }), true);
+  });
+
+  it("treats a blank founder address as unset", () => {
+    assert.equal(founderAllowed("anyone@chapter.example", { founderEmail: "   " }), true);
+    assert.equal(
+      founderAllowed("anyone@chapter.example", { founderEmail: "   ", databaseUrl: "configured" }),
+      false,
+    );
+  });
+});
+
 describe("signUpAllowed", () => {
   const future = new Date(Date.now() + 86_400_000).toISOString();
   const past = new Date(Date.now() - 86_400_000).toISOString();
@@ -88,6 +132,18 @@ describe("signUpAllowed", () => {
         bookEmpty: true,
         founderAllowed: false,
         email: "other@chapter.example",
+        invite: null,
+      }),
+      false,
+    );
+  });
+
+  it("refuses an empty book when founderAllowed is false and there is no invite", () => {
+    assert.equal(
+      signUpAllowed({
+        bookEmpty: true,
+        founderAllowed: false,
+        email: "founder@chapter.example",
         invite: null,
       }),
       false,

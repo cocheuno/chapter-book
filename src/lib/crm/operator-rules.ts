@@ -17,6 +17,19 @@ export function normalizeOperatorEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * Who may open an empty book. A set founder address must match. When it is
+ * unset, only a machine with no DATABASE_URL (local PGLite, Grok preview) may.
+ */
+export function founderAllowed(
+  email: string,
+  config: { founderEmail?: string; databaseUrl?: string },
+): boolean {
+  const founderEmail = normalizeOperatorEmail(config.founderEmail ?? "");
+  if (founderEmail) return founderEmail === normalizeOperatorEmail(email);
+  return (config.databaseUrl ?? "").trim() === "";
+}
+
 export type SignUpInvite = {
   email: string;
   expiresAt: string | Date;
