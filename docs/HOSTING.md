@@ -127,9 +127,12 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - The preview URL asks for a Vercel login.
    - `https://chapter-book-beryl.vercel.app/p/ai-conference` and `https://scs-wisconsin-usa.org` load without it.
    - Check those two addresses, not a raw `*.vercel.app` deployment URL: Standard Protection can lock generated deployment URLs while the production domain stays public.
-6. **Clean up.**
-   - The manual Neon branch named `preview`, made on 2026-10-02, was deleted on 2026-10-03. Neon now has `main` (production) and the `preview/…` branches Vercel makes.
-   - Branches the integration creates are deleted when their Vercel deployments expire (6 months by default). Delete old ones in Neon to save space.
+6. **Clean up after every merge.**
+   - **Neon's free plan holds 10 branches per project,** `main` included. A preview of any branch other than `main` gets its own `preview/<git-branch>` copy, and Vercel deletes it only when that branch's deployments expire (6 months by default). So the slots fill up after about nine pull requests, and a maintenance branch takes a slot too.
+   - **When the project is full,** a new preview fails at once: the pull request's **Vercel** check says "Deployment has failed" within seconds, before any build log, while CI passes. This happened on 2026-10-04 with pull request 26. Deleting the copies of merged pull requests fixed it. Then the failed deployment was redeployed: Vercel → **Deployments** → its row → **⋯** → **Redeploy**.
+   - **The routine:** after a pull request merges and its checks are done, delete its copy. In the Neon Console (Vercel → **Storage** → `chapter-book-db` → **Open in Neon**), open **Branches**, find `preview/<that branch>`, click **⋯**, and choose **Delete**. Only ever delete `preview/…` branches. **Never delete `main`**: it is the live database.
+   - Deleting a copy does not touch production. An old preview that used it can no longer reach a database, which is fine once its pull request is merged.
+   - History: the manual Neon branch named `preview`, made on 2026-10-02, was deleted on 2026-10-03. The nine copies left by pull requests 12 and 16–25 were deleted on 2026-10-04.
 
 ## Cloudflare (later)
 
