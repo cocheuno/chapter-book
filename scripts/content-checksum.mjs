@@ -16,7 +16,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import pg from "pg";
 import { isMainModule } from "./with-app-env.mjs";
 
-/** Tables created by migrations 0002–0018. Better Auth tables are not included. */
+/**
+ * Tables created by migrations 0002–0018 and still there. 0003 folded schools
+ * into organizations and dropped it. Better Auth tables are not included.
+ */
 export const CONTENT_TABLES = [
   "affiliations",
   "chapter_members",
@@ -37,7 +40,6 @@ export const CONTENT_TABLES = [
   "person_roles",
   "persons",
   "program_pieces",
-  "schools",
   "site_images",
   "site_items",
   "site_settings",
