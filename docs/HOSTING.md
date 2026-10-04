@@ -25,6 +25,7 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
 | `FOUNDER_EMAIL` | **Production** only. The address of the chapter's admin account. Only that address can open an empty hosted book. |
 | `GROK_CHROME` | **Production and Preview:** `off`. Stops Grok's page chrome (the grok.com script and share-tag rewriting) on Vercel. Grok's own workspace preview is not affected. |
+| `BROKER_SIGNIN` | Leave unset on Vercel (Production and Preview). Grok's Google/X sign-in service then stays off wherever `BETTER_AUTH_URL` is set. Set to `on` only for a deployment that must use it. |
 
 Do not paste these into GitHub, Slack, or chat.
 
