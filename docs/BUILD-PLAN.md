@@ -439,11 +439,11 @@ Both diffs go in the pull request.
 
 **Steps:**
 
-1. **Lockfile.** Run `npm install` and commit the updated `package-lock.json`, so that `npm ci` works.
+1. **Lockfile.** The lockfile was already in sync (`npm ci` passed on main), so nothing was committed.
 2. **Lint errors.** Fix the four:
    - the empty block in `src/lib/app-data/client.server.ts` (add a comment saying why it is empty)
    - `prefer-const` in `actions.ts`
-   - the control-character regex in `announcement-html.ts` (build it from `\u0000-\u001f`, or add a single disable comment with the reason)
+   - the control-character regex in `announcement-html.ts`: a disable comment with the reason was used, because `\u` escapes still trip `no-control-regex`
    - the useless escape in `announcement-html.ts`
 3. **CI.** Add `.github/workflows/ci.yml`. It runs on pull requests and on pushes to `main`:
    - `actions/setup-node` with `node-version-file: .nvmrc` and the npm cache

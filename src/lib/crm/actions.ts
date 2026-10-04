@@ -66,7 +66,7 @@ export const getHome = createServerFn({ method: "GET" })
       limit 1
     `;
     const next = events[0] ?? null;
-    let rsvp = { attending: 0, notAnswered: 0, declined: 0 };
+    const rsvp = { attending: 0, notAnswered: 0, declined: 0 };
     let openChecklist = 0;
     if (next) {
       const counts = await sql<{ guest_status: string | null; n: number }>`

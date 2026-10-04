@@ -142,6 +142,7 @@ const CHAPTER_SITE = "https://scs-wisconsin-usa.org/";
 
 function safeUrl(value: string, kind: "href" | "src"): string | null {
   const v = value.trim();
+  // eslint-disable-next-line no-control-regex -- refuse a URL that contains a control character
   if (!v || v.length > 2000 || /[\u0000-\u001f\u007f]/.test(v) || v.startsWith("//")) return null;
   if (v.startsWith("#")) {
     if (kind === "src" || !/^#[^\s<>"']*$/.test(v)) return null;
@@ -243,7 +244,7 @@ function sanitizeAttrs(tag: string, attrs: Attr[]): Attr[] {
       const v = token(value, /^[A-Za-z0-9_:\- ]+$/, 200);
       if (v) out.push({ name: "class", value: v });
     } else if (name === "id") {
-      const v = token(value, /^[A-Za-z][\w:\-]*$/, 80);
+      const v = token(value, /^[A-Za-z][\w:-]*$/, 80);
       if (v) out.push({ name: "id", value: v });
     } else if (name === "title" || name === "alt") {
       const v = value.trim();
