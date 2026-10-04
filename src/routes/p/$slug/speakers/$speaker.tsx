@@ -8,18 +8,27 @@ export const Route = createFileRoute("/p/$slug/speakers/$speaker")({ component: 
 
 function SpeakerBioPage() {
   const { slug, speaker: speakerSlug } = Route.useParams();
-  const [view, setView] = useState<"loading" | "missing" | "ready">("loading");
+  const [view, setView] = useState<"loading" | "missing" | "ready" | "unavailable">("loading");
   const [page, setPage] = useState<Awaited<ReturnType<typeof getPublicPage>>>(null);
 
   useEffect(() => {
-    getPublicPage({ data: slug }).then((next) => {
-      setPage(next);
-      setView(next && next.layout === "conference" ? "ready" : "missing");
-    });
+    getPublicPage({ data: slug })
+      .then((next) => {
+        setPage(next);
+        setView(next && next.layout === "conference" ? "ready" : "missing");
+      })
+      .catch(() => setView("unavailable"));
   }, [slug]);
 
   if (view === "loading") {
     return <main className="grid min-h-dvh place-items-center bg-paper text-muted">Opening the page…</main>;
+  }
+  if (view === "unavailable") {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
+        <p>This page is not available right now. Please try again shortly.</p>
+      </main>
+    );
   }
   if (!page || page.layout !== "conference") {
     return (

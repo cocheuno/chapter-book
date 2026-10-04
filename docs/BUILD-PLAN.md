@@ -400,13 +400,13 @@ Both diffs go in the pull request.
 
 **Steps:**
 
-1. **Public reads stop writing.** In `site.ts`, remove the `ensureSiteContent`, `backfillSlugs`, and `backfillConference` calls from `loadPublishedSite` and `getPublicPage`. `listSite` keeps them, for operators.
+1. **Public reads stop writing.** In `site.ts`, remove the `ensureSiteContent`, `backfillSlugs`, and `backfillConference` calls from `loadPublishedSite` and `getPublicPage`. `listSite` keeps `backfillSlugs` and `backfillConference` but no longer calls `ensureSiteContent`.
 2. **Seed once.** In `member.ts`, stop calling `ensureSite` in `loadMember`. The sample shelf is seeded only in `bootstrapChapter`.
 3. **Honest errors.**
    - `loadPublishedSite` lets database errors throw.
    - `/api/public-site` answers them with **503** `{ "error": "unavailable" }` and `Cache-Control: no-store`.
    - `getPublicPage` returns `null` only for "not found" and throws on errors. The page says "This page is not available right now. Please try again shortly." WP-12 turns this into a real 503.
-4. **Cache the feed.** In `public-cors.ts`, successful feed responses get `Cache-Control: public, max-age=0, s-maxage=60, stale-while-revalidate=600`. Keep `Vary: Origin`.
+4. **Cache the feed.** In `public-cors.ts`, successful feed responses get `Cache-Control: public, max-age=0, s-maxage=60, stale-while-revalidate=600`. `Vary: Origin` is sent on every feed response.
 5. **Drop the cache-buster.** In `chapter-site.js`, remove `?t=Date.now()`.
 6. **Cache images.** `/api/site-image/$id` sends `Cache-Control: public, max-age=31536000, immutable`.
 

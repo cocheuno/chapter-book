@@ -24,7 +24,7 @@ function PublicSite() {
   useEffect(() => {
     getPublicSite()
       .then(setData)
-      .catch((e) => setErr(e instanceof Error ? e.message : "Could not load the chapter site"));
+      .catch(() => setErr("This page is not available right now. Please try again shortly."));
   }, []);
 
   const grouped = useMemo(() => {

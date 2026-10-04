@@ -50,3 +50,5 @@ Preview (not the GoDaddy homepage): `https://chapter-book-beryl.vercel.app/site`
 ## CORS
 
 The feed allows `scs-wisconsin-usa.org` (http and https, www or not). It does not expose People, Partners, or Invites.
+
+Vercel caches the feed for 60 seconds (`s-maxage=60`), so an edit reaches scs-wisconsin-usa.org within about a minute. If the database cannot be reached, the feed answers 503 and the homepage keeps its GoDaddy content.

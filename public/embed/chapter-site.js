@@ -81,7 +81,7 @@
     return t;
   }
 
-  fetch(origin + "/api/public-site?t=" + Date.now())
+  fetch(origin + "/api/public-site")
     .then(function (r) {
       if (!r.ok) throw new Error("public-site " + r.status);
       return r.json();

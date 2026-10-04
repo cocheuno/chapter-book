@@ -73,7 +73,6 @@ export async function loadMember(userId: string): Promise<MemberContext> {
     const r = existing[0];
     if (r.disabled_at) throw new OperatorDisabledError();
     await ensureLists(sql, r.chapter_id);
-    await ensureSite(sql, r.chapter_id);
     return {
       userId,
       chapterId: r.chapter_id,
