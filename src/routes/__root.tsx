@@ -17,6 +17,13 @@ export const Route = createRootRoute({
         name: "description",
         content: "A chapter book of people, partners, Gold Masses, and conferences.",
       },
+      { property: "og:title", content: APP_NAME },
+      {
+        property: "og:description",
+        content: "A chapter book of people, partners, Gold Masses, and conferences.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },

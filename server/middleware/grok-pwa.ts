@@ -24,6 +24,7 @@ import {
   renderInstallPageHtml,
   renderWebManifest,
 } from "../../scripts/grok-pwa-shared.mjs";
+import { grokChromeEnabled } from "../../src/lib/grok-chrome";
 
 interface GrokPwaEvent {
   url: URL;
@@ -103,7 +104,8 @@ export default async function grokPwaMiddleware(
     result instanceof Response &&
     result.body &&
     String(result.headers.get("content-type") ?? "").includes("text/html") &&
-    !result.headers.get("content-encoding")
+    !result.headers.get("content-encoding") &&
+    grokChromeEnabled(process.env.GROK_CHROME)
   ) {
     return injectHeadStreaming(result, requestHost(event));
   }
