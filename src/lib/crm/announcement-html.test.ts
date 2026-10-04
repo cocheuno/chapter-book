@@ -90,6 +90,25 @@ describe("announcement HTML", () => {
     assert.doesNotMatch(html ?? "", /url|background-color/);
   });
 
+  it("drops negative margins and keeps ordinary ones", () => {
+    const top = announcementRichHtml(`<section><p style="margin-top: -40px">Hi</p></section>`);
+    assert.equal(top, "<section><p>Hi</p></section>");
+
+    const shifted = announcementRichHtml(`<section><p style="margin: 0 -9999px">Hi</p></section>`);
+    assert.equal(shifted, "<section><p>Hi</p></section>");
+
+    const kept = announcementRichHtml(
+      `<section><p style="margin: 0 auto; margin-top: 12px">Hi</p></section>`,
+    );
+    assert.match(kept ?? "", /style="margin: 0 auto; margin-top: 12px"/);
+
+    const mixed = announcementRichHtml(
+      `<section><p style="color: red; margin-top: -40px">Hi</p></section>`,
+    );
+    assert.match(mixed ?? "", /style="color: red"/);
+    assert.doesNotMatch(mixed ?? "", /margin/);
+  });
+
   it("renders a pasted chapter announcement section", () => {
     const html = announcementRichHtml(`<section class="announcements" id="announcements">
       <div class="announce-card">

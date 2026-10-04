@@ -35,6 +35,8 @@ Every response sends `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict
 
 When `BETTER_AUTH_URL` is set and not blank (Vercel Production and Preview), the response also sends `Strict-Transport-Security: max-age=31536000`, `X-Frame-Options: DENY`, and `Content-Security-Policy-Report-Only` with `default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-src https://challenges.cloudflare.com; form-action 'self' https://checkout.stripe.com; base-uri 'self'; frame-ancestors 'none'`. Grok's workspace preview leaves `BETTER_AUTH_URL` unset and shows the app in an iframe, so those three stay off there. The content security policy is report-only until TanStack Start supports nonces.
 
+The style allowlist keeps editor copy inside its place. It allows only listed properties and drops any margin whose value is negative. There is no CSS containment.
+
 Generate a secret locally (do not commit the output):
 
 ```
