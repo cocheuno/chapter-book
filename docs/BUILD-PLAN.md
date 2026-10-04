@@ -424,7 +424,7 @@ Both diffs go in the pull request.
 
 **Steps:**
 
-1. **Scope by chapter.** In `listInvites`, `exportNametags`, `previewMail`, and `sendMail`, add the chapter filter to every event lookup: join `events` and check `chapter_id = ${m.chapterId}`. Search for `where e.id = ${data.eventId}` and `where p.event_id = ${eventId}`.
+1. **Scope by chapter.** `listInvites` and `exportNametags` join `events` on `e.id = p.event_id and e.chapter_id = ${m.chapterId}`. `previewMail` and `sendMail` add `e.chapter_id = ${m.chapterId}` to the event lookup and throw "Event not found" when an event id is given and that row is missing. `sendMail`'s notify-schools task lookup also filters `chapter_id`. `resolveAudience` adds `p.chapter_id = ${m.chapterId}` on the school-doors participation join and on event guests. `addInvite`, `addNamedGuest`, and `walkUpCheckIn` call `assertChapterEvent` before they write. `getHome`, `getEvent`, `updateEvent`, `cloneEvent`, `getAttendanceReport`, `closeDoor`, and `markNotifySchools` already check the chapter, or read after a lookup that throws "Event not found".
 2. **Safe CSV.** New `src/lib/crm/csv.ts` with `csvCell(value)`:
    - quote the value and double any `"`
    - put `'` in front of a value that starts with `=`, `+`, `-`, `@`, a tab, or a carriage return

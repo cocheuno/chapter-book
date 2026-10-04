@@ -10,6 +10,7 @@ import { foldName } from "./match";
 import { composePersonName, listedName, splitMiddle, splitWalkupName } from "./names";
 import { ensureEventWebPage } from "./event-page";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
+import { csvRow } from "./csv";
 
 type Row = Record<string, string | number | boolean | null>;
 
@@ -1241,6 +1242,18 @@ export const cloneEvent = createServerFn({ method: "POST" })
     return { id, warnedCelebrant: Boolean(src.celebrant_id) };
   });
 
+/** Throws "Event not found" unless the event belongs to this chapter. */
+async function assertChapterEvent(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  eventId: string,
+) {
+  const rows = await sql<{ id: string }>`
+    select id from events where id = ${eventId} and chapter_id = ${chapterId}
+  `;
+  if (!rows[0]) throw new Error("Event not found");
+}
+
 export const listInvites = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((eventId: string) => eventId)
@@ -1276,6 +1289,7 @@ export const listInvites = createServerFn({ method: "GET" })
              o.name as org_name, p.dietary_for_this_event as dietary, pe.dietary as person_dietary,
              p.guest_name, p.coming_to_mass, p.coming_to_dinner, p.coming_to_lecture
       from participations p
+      join events e on e.id = p.event_id and e.chapter_id = ${m.chapterId}
       left join persons pe on pe.id = p.person_id
       left join organizations o on o.id = p.organization_id
       where p.event_id = ${eventId} and p.party_type = 'person'
@@ -1290,6 +1304,7 @@ export const listInvites = createServerFn({ method: "GET" })
     }>`
       select p.id, p.organization_id, o.name, o.type_key, p.publicity_status
       from participations p
+      join events e on e.id = p.event_id and e.chapter_id = ${m.chapterId}
       left join organizations o on o.id = p.organization_id
       where p.event_id = ${eventId} and p.party_type = 'organization'
     `;
@@ -1352,6 +1367,7 @@ export const addInvite = createServerFn({ method: "POST" })
     const m = await ctx(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    await assertChapterEvent(sql, m.chapterId, data.eventId);
     if (data.personId) {
       const blocked = await sql<{ status: string; dietary: string | null; display_name: string }>`
         select status, dietary, display_name from persons where id = ${data.personId} and chapter_id = ${m.chapterId}
@@ -1423,6 +1439,7 @@ export const addNamedGuest = createServerFn({ method: "POST" })
     const m = await ctx(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    await assertChapterEvent(sql, m.chapterId, data.eventId);
     const name = data.guestName.trim();
     if (!name) throw new Error("Enter a name.");
     await sql`
@@ -1497,6 +1514,7 @@ export const walkUpCheckIn = createServerFn({ method: "POST" })
     const m = await ctx(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    await assertChapterEvent(sql, m.chapterId, data.eventId);
     const email = lowerEmail(data.email);
     const name = data.displayName.trim();
     const parts = splitWalkupName(name);
@@ -1692,7 +1710,7 @@ async function resolveAudience(
     const schools = eventId
       ? await sql<{ id: string; name: string; main_email: string | null; preferred_door: string | null }>`
           select o.id, o.name, o.main_email, o.preferred_door from organizations o
-          join participations p on p.organization_id = o.id and p.event_id = ${eventId} and p.party_type = 'organization'
+          join participations p on p.organization_id = o.id and p.event_id = ${eventId} and p.party_type = 'organization' and p.chapter_id = ${m.chapterId}
           where o.chapter_id = ${m.chapterId} and o.type_key in ('high_school', 'university')
         `
       : await sql<{ id: string; name: string; main_email: string | null; preferred_door: string | null }>`
@@ -1791,7 +1809,7 @@ async function resolveAudience(
     }>`
       select pe.id, pe.display_name, pe.honorific, pe.given_name, pe.family_name, pe.email, pe.email_unsubscribed, pe.status
       from participations p join persons pe on pe.id = p.person_id
-      where p.event_id = ${eventId} and p.party_type = 'person'
+      where p.event_id = ${eventId} and p.party_type = 'person' and p.chapter_id = ${m.chapterId}
     `;
     for (const p of people) pushPerson(p);
   } else if (source === "members") {
@@ -1845,9 +1863,10 @@ export const previewMail = createServerFn({ method: "POST" })
       ? await sql<{ title: string; starts_at: string | null; venue_detail: string | null; venue_name: string | null }>`
           select e.title, e.starts_at, e.venue_detail, o.name as venue_name
           from events e left join organizations o on o.id = e.venue_organization_id
-          where e.id = ${data.eventId}
+          where e.id = ${data.eventId} and e.chapter_id = ${m.chapterId}
         `
       : [];
+    if (data.eventId && !ev[0]) throw new Error("Event not found");
     const eventMeta = eventMetaFrom(ev[0]);
     const { recipients, skips } = await resolveAudience(sql, m, data.audienceSource, data.eventId);
     const sample = recipients[0];
@@ -1894,9 +1913,10 @@ export const sendMail = createServerFn({ method: "POST" })
       ? await sql<{ title: string; starts_at: string | null; venue_detail: string | null; venue_name: string | null }>`
           select e.title, e.starts_at, e.venue_detail, o.name as venue_name
           from events e left join organizations o on o.id = e.venue_organization_id
-          where e.id = ${data.eventId}
+          where e.id = ${data.eventId} and e.chapter_id = ${m.chapterId}
         `
       : [];
+    if (data.eventId && !ev[0]) throw new Error("Event not found");
     const eventMeta = eventMetaFrom(ev[0]);
     const { recipients, skips } = await resolveAudience(sql, m, data.audienceSource, data.eventId);
     if (recipients.length < 1) throw new Error("No one to send to. Check skipped partners and add a chair or front-office email.");
@@ -1952,7 +1972,7 @@ export const sendMail = createServerFn({ method: "POST" })
     let checklistPrompt = false;
     if (t[0].key === "school_faculty_invite" && data.eventId) {
       const open = await sql<{ id: string }>`
-        select id from tasks where event_id = ${data.eventId} and checklist_key = 'notify_schools' and status = 'open'
+        select id from tasks where event_id = ${data.eventId} and checklist_key = 'notify_schools' and status = 'open' and chapter_id = ${m.chapterId}
       `;
       checklistPrompt = Boolean(open[0]);
     }
@@ -2050,6 +2070,7 @@ export const exportNametags = createServerFn({ method: "GET" })
       select pe.honorific, pe.display_name, p.party_size, p.kind_key, p.guest_status,
              p.dietary_for_this_event as dietary, pe.dietary as person_dietary, o.name as org_name
       from participations p
+      join events e on e.id = p.event_id and e.chapter_id = ${m.chapterId}
       join persons pe on pe.id = p.person_id
       left join organizations o on o.id = p.organization_id
       where p.event_id = ${eventId} and p.party_type = 'person'
@@ -2060,9 +2081,16 @@ export const exportNametags = createServerFn({ method: "GET" })
     const lines = rows.map((r) => {
       const name = r.display_name;
       const dietary = r.dietary || r.person_dietary || "";
-      return [r.honorific ?? "", r.display_name, name, r.org_name ?? "", r.party_size, r.kind_key, r.guest_status ?? "", dietary]
-        .map((c) => `"${String(c).replaceAll('"', '""')}"`)
-        .join(",");
+      return csvRow([
+        r.honorific ?? "",
+        r.display_name,
+        name,
+        r.org_name ?? "",
+        r.party_size,
+        r.kind_key,
+        r.guest_status ?? "",
+        dietary,
+      ]);
     });
     return { csv: [header, ...lines].join("\n"), filename: "nametags.csv" };
   });
