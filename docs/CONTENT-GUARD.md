@@ -66,7 +66,7 @@ npm run content:checksum -- --compare artifacts/content/before.json
 
 `--compare` re-reads using the column list saved in the before-file. A column added after that file was written does not change the sum. Each table whose count or hash changed is printed, and the command exits 1. When nothing changed it prints `unchanged` and exits 0.
 
-The tables are the ones created by migrations `0002` through `0018`. Better Auth's `user`, `session`, `account`, and `verification` tables are not included. A `bytea` column is hashed with `md5` rather than copied. A null is the two characters `\N`.
+The tables are the ones created by migrations `0002` through `0018` and still there (`0003` folded `schools` into `organizations` and dropped it). Better Auth's `user`, `session`, `account`, and `verification` tables are not included. A `bytea` column is hashed with `md5` rather than copied. A null is the two characters `\N`.
 
 ## What a pull request includes
 

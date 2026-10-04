@@ -23,9 +23,10 @@ import {
 } from "./content-checksum.mjs";
 import { projectRoot } from "./with-app-env.mjs";
 
-test("content tables are the tables created by migrations 0002-0018", () => {
+test("content tables are the tables migrations 0002-0018 create and do not drop", () => {
   const dir = join(projectRoot(), "migrations");
   const found = new Set();
+  const dropped = new Set();
   for (const name of readdirSync(dir)) {
     const number = /^(\d+)_/.exec(name);
     if (!number) continue;
@@ -35,8 +36,13 @@ test("content tables are the tables created by migrations 0002-0018", () => {
     for (const match of sql.matchAll(/create\s+table\s+if\s+not\s+exists\s+([a-z_]+)/gi)) {
       found.add(match[1].toLowerCase());
     }
+    // 0003 folds schools into organizations and drops it.
+    for (const match of sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?([a-z_]+)/gi)) {
+      dropped.add(match[1].toLowerCase());
+    }
   }
-  assert.deepEqual([...found].sort(), CONTENT_TABLES);
+  assert.ok(dropped.has("schools"));
+  assert.deepEqual([...found].filter((name) => !dropped.has(name)).sort(), CONTENT_TABLES);
   for (const auth of ["user", "session", "account", "verification"]) {
     assert.equal(CONTENT_TABLES.includes(auth), false);
   }
