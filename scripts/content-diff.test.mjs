@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   IGNORED_FIELDS,
   changedLines,
+  confirmScreenshots,
   diffExitCode,
   diffSnapshots,
   formatDiff,
@@ -65,4 +66,47 @@ test("a page that ends somewhere else is reported; snapshots without final paths
 
   const older = { publicSiteRaw: "{}", pages: [page("Same")] };
   assert.equal(formatDiff(diffSnapshots(older, structuredClone(older))), "no differences");
+});
+
+test("two rounds: a screenshot that differs in only one round is a note, and the run passes", () => {
+  // Font smoothing varies between page loads: round 1 caught one page, round 2 another.
+  const shot = (path, hash) => ({ ...page("Same text"), path, screenshot: `${path}.png`, screenshotSha256: hash });
+  const before = { publicSiteRaw: "{}", pages: [shot("/p/session-3", "a"), shot("/p/session-4", "b")] };
+  const roundOne = { publicSiteRaw: "{}", pages: [shot("/p/session-3", "a2"), shot("/p/session-4", "b")] };
+  const roundTwo = { publicSiteRaw: "{}", pages: [shot("/p/session-3", "a"), shot("/p/session-4", "b2")] };
+  const text = formatDiff(
+    confirmScreenshots(diffSnapshots(before, roundOne), diffSnapshots(structuredClone(before), roundTwo)),
+  );
+  assert.equal(
+    text,
+    "no differences" +
+      "\nnote: /p/session-3: screenshot differed in one round only (rendering noise; ignored)" +
+      "\nnote: /p/session-4: screenshot differed in one round only (rendering noise; ignored)",
+  );
+  assert.equal(diffExitCode(text), 0);
+});
+
+test("two rounds: a screenshot that differs in both rounds is reported", () => {
+  const before = { publicSiteRaw: "{}", pages: [page("Same", 200, "one")] };
+  const after = { publicSiteRaw: "{}", pages: [page("Same", 200, "two")] };
+  const text = formatDiff(confirmScreenshots(diffSnapshots(before, after), diffSnapshots(before, after)));
+  assert.equal(text, "/site\nscreenshot differs");
+  assert.equal(diffExitCode(text), 1);
+});
+
+test("two rounds: a text, status, or feed change from either round is reported once", () => {
+  const before = { publicSiteRaw: '{"a":1}', pages: [page("Gold Mass")] };
+  const same = structuredClone(before);
+  const changed = { publicSiteRaw: '{"a":2}', pages: [page("Gold Mass moved", 404)] };
+  for (const [first, second] of [
+    [same, changed],
+    [changed, same],
+    [changed, changed],
+  ]) {
+    const report = confirmScreenshots(diffSnapshots(before, first), diffSnapshots(before, second));
+    const byPath = Object.fromEntries(report.pages.map((entry) => [entry.path, entry.lines]));
+    assert.deepEqual(byPath["/api/public-site"], changedLines('{"a":1}', '{"a":2}'));
+    assert.deepEqual(byPath["/site"], ["status: 200 -> 404", "- Gold Mass", "+ Gold Mass moved"]);
+    assert.equal(diffExitCode(formatDiff(report)), 1);
+  }
 });
