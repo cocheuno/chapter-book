@@ -85,6 +85,14 @@ function PublicSite() {
           ))}
         </Section>
 
+        {data.pastEvents.length > 0 ? (
+          <Section title="Past events" empty="No past events yet.">
+            {data.pastEvents.map((e) => (
+              <EventCard key={e.id} item={e} />
+            ))}
+          </Section>
+        ) : null}
+
         <Section title="Announcements" empty="No announcements posted yet.">
           {grouped.announcements.map((e) => (
             <EventCard key={e.id} item={e} />

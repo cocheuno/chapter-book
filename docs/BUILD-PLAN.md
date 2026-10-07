@@ -561,6 +561,12 @@ Corrections:
 4. **"When" text.** When `when_label` is empty **and** the item has dates, derive it from them. For example: "Thursday–Saturday, April 15–17, 2027".
 5. **Feed:** add `startsOn` and `endsOn`.
 
+Corrections:
+
+- Gathering dates use the constant `America/Chicago`, not `events.timezone`.
+- The feed adds `startsOn` and `endsOn` only when those dates are set. Undated items gain no new keys.
+- A save does not change a date it was not sent.
+
 **Done when:**
 
 - An event an editor has dated drops off "Upcoming" after its date, and dated events list in date order.

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CopyPreview } from "@/components/copy-preview";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
+import { whenLabelFor } from "@/lib/crm/dates";
 import { fileToBase64, PictureField } from "@/components/picture-field";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
@@ -42,6 +43,8 @@ const emptyItem = (kind: SiteKind) => ({
   conferenceId: "",
   imageId: "",
   gatheringId: "",
+  startsOn: "",
+  endsOn: "",
 });
 
 function WebsitePage() {
@@ -113,6 +116,8 @@ function WebsiteInner() {
       conferenceId: item.conference_id ?? "",
       imageId: item.image_id ?? "",
       gatheringId: item.gathering_id ?? "",
+      startsOn: item.starts_on ?? "",
+      endsOn: item.ends_on ?? "",
     });
     setPendingFile(null);
   }
@@ -136,6 +141,10 @@ function WebsiteInner() {
   if (err) return <p className="text-danger">{err}</p>;
   if (!data) return <p className="text-muted">Opening the website shelf…</p>;
   const canEdit = data.member.role !== "viewer";
+  const suggestedStart =
+    form.kind === "event" && form.id
+      ? ((data.gatherings ?? []).find((gathering) => gathering.public_item_id === form.id)?.starts_on ?? null)
+      : null;
 
   return (
     <div className="space-y-8">
@@ -290,8 +299,12 @@ function WebsiteInner() {
                   conferenceId: form.kind === "event" ? "" : form.conferenceId,
                   imageId,
                   gatheringId: form.kind === "announcement" ? form.gatheringId : "",
+                  ...(form.kind === "event" ? { startsOn: form.startsOn, endsOn: form.endsOn } : {}),
+                  ...(form.kind === "announcement" || form.kind === "course" ? { endsOn: form.endsOn } : {}),
                 },
               });
+              const previous = form.id ? data.items.find((item) => item.id === form.id) : undefined;
+              const datesKind = form.kind === "event" || form.kind === "announcement" || form.kind === "course";
               const row = {
                 id: saved.id,
                 kind: form.kind,
@@ -312,6 +325,8 @@ function WebsiteInner() {
                 conference_id: form.kind === "event" ? null : form.conferenceId || null,
                 image_id: imageId || null,
                 gathering_id: form.kind === "announcement" ? form.gatheringId || null : null,
+                starts_on: form.kind === "event" ? form.startsOn || null : (previous?.starts_on ?? null),
+                ends_on: datesKind ? form.endsOn || null : (previous?.ends_on ?? null),
               };
               setData((prev) =>
                 prev
@@ -409,6 +424,42 @@ function WebsiteInner() {
               />
             </Field>
           )}
+          {form.kind === "event" ? (
+            <>
+              <Field label="Starts">
+                <Input
+                  type="date"
+                  value={form.startsOn}
+                  onChange={(e) => setForm({ ...form, startsOn: e.target.value })}
+                />
+              </Field>
+              <Field label="Ends">
+                <Input type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} />
+              </Field>
+              {suggestedStart && !form.startsOn ? (
+                <p className="text-sm text-ink-soft sm:col-span-2">
+                  This gathering is on {whenLabelFor(suggestedStart) ?? suggestedStart}.{" "}
+                  <button
+                    type="button"
+                    className="text-bronze underline-offset-2 hover:underline"
+                    onClick={() => setForm({ ...form, startsOn: suggestedStart })}
+                  >
+                    Use this date
+                  </button>
+                </p>
+              ) : null}
+              <p className="text-sm text-ink-soft sm:col-span-2">
+                Leave When blank to use these dates. The event leaves Upcoming after its end date, or its start date when
+                there is no end.
+              </p>
+            </>
+          ) : null}
+          {form.kind === "announcement" || form.kind === "course" ? (
+            <Field label="Show until">
+              <Input type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} />
+              <p className="text-sm text-ink-soft">After this date the item leaves the public lists. Its page stays up.</p>
+            </Field>
+          ) : null}
           {form.kind === "event" && (
             <Field label="Where">
               <Input
