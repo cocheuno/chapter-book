@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CopyPreview } from "@/components/copy-preview";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
-import { whenLabelFor } from "@/lib/crm/dates";
+import { CHAPTER_TIME_ZONE, isPastItem, todayIn, whenLabelFor } from "@/lib/crm/dates";
 import { fileToBase64, PictureField } from "@/components/picture-field";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
@@ -141,10 +141,13 @@ function WebsiteInner() {
   if (err) return <p className="text-danger">{err}</p>;
   if (!data) return <p className="text-muted">Opening the website shelf…</p>;
   const canEdit = data.member.role !== "viewer";
-  const suggestedStart =
-    form.kind === "event" && form.id
-      ? ((data.gatherings ?? []).find((gathering) => gathering.public_item_id === form.id)?.starts_on ?? null)
-      : null;
+  const gatheringDate =
+    form.kind === "event"
+      ? (data.gatherings ?? []).find(
+          (gathering) =>
+            gathering.public_item_id === form.id && Boolean(gathering.starts_on) && gathering.starts_on !== form.startsOn,
+        )
+      : undefined;
 
   return (
     <div className="space-y-8">
@@ -299,12 +302,10 @@ function WebsiteInner() {
                   conferenceId: form.kind === "event" ? "" : form.conferenceId,
                   imageId,
                   gatheringId: form.kind === "announcement" ? form.gatheringId : "",
-                  ...(form.kind === "event" ? { startsOn: form.startsOn, endsOn: form.endsOn } : {}),
-                  ...(form.kind === "announcement" || form.kind === "course" ? { endsOn: form.endsOn } : {}),
+                  startsOn: form.kind === "event" ? form.startsOn : undefined,
+                  endsOn: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn : undefined,
                 },
               });
-              const previous = form.id ? data.items.find((item) => item.id === form.id) : undefined;
-              const datesKind = form.kind === "event" || form.kind === "announcement" || form.kind === "course";
               const row = {
                 id: saved.id,
                 kind: form.kind,
@@ -325,8 +326,8 @@ function WebsiteInner() {
                 conference_id: form.kind === "event" ? null : form.conferenceId || null,
                 image_id: imageId || null,
                 gathering_id: form.kind === "announcement" ? form.gatheringId || null : null,
-                starts_on: form.kind === "event" ? form.startsOn || null : (previous?.starts_on ?? null),
-                ends_on: datesKind ? form.endsOn || null : (previous?.ends_on ?? null),
+                starts_on: form.kind === "event" ? form.startsOn || null : null,
+                ends_on: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn || null : null,
               };
               setData((prev) =>
                 prev
@@ -426,38 +427,33 @@ function WebsiteInner() {
           )}
           {form.kind === "event" ? (
             <>
-              <Field label="Starts">
+              <Field label="Starts on">
                 <Input
                   type="date"
                   value={form.startsOn}
                   onChange={(e) => setForm({ ...form, startsOn: e.target.value })}
                 />
               </Field>
-              <Field label="Ends">
+              <Field label="Ends on">
                 <Input type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} />
+                <p className="mt-1 text-xs text-muted">Leave empty for a one-day event.</p>
               </Field>
-              {suggestedStart && !form.startsOn ? (
-                <p className="text-sm text-ink-soft sm:col-span-2">
-                  This gathering is on {whenLabelFor(suggestedStart) ?? suggestedStart}.{" "}
-                  <button
-                    type="button"
-                    className="text-bronze underline-offset-2 hover:underline"
-                    onClick={() => setForm({ ...form, startsOn: suggestedStart })}
-                  >
-                    Use this date
-                  </button>
-                </p>
+              {gatheringDate?.starts_on ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="sm:col-span-2"
+                  onClick={() => setForm({ ...form, startsOn: gatheringDate.starts_on ?? "" })}
+                >
+                  Use the gathering's date: {whenLabelFor(gatheringDate.starts_on)}
+                </Button>
               ) : null}
-              <p className="text-sm text-ink-soft sm:col-span-2">
-                Leave When blank to use these dates. The event leaves Upcoming after its end date, or its start date when
-                there is no end.
-              </p>
             </>
           ) : null}
           {form.kind === "announcement" || form.kind === "course" ? (
             <Field label="Show until">
               <Input type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} />
-              <p className="text-sm text-ink-soft">After this date the item leaves the public lists. Its page stays up.</p>
+              <p className="mt-1 text-xs text-muted">Optional. After this date it leaves the homepage by itself.</p>
             </Field>
           ) : null}
           {form.kind === "event" && (
@@ -658,6 +654,7 @@ function WebsiteInner() {
                   ) : null}
                   {item.featured ? <Badge tone="bronze">Featured</Badge> : null}
                   {!item.published ? <Badge>Draft</Badge> : null}
+                  {isPastItem(item, todayIn(CHAPTER_TIME_ZONE)) ? <Badge>Past</Badge> : null}
                 </div>
                 {item.subtitle ? <p className="text-sm text-ink-soft">{item.subtitle}</p> : null}
                 {item.when_label || item.location ? (

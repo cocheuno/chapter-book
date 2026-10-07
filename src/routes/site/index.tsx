@@ -85,14 +85,6 @@ function PublicSite() {
           ))}
         </Section>
 
-        {data.pastEvents.length > 0 ? (
-          <Section title="Past events" empty="No past events yet.">
-            {data.pastEvents.map((e) => (
-              <EventCard key={e.id} item={e} />
-            ))}
-          </Section>
-        ) : null}
-
         <Section title="Announcements" empty="No announcements posted yet.">
           {grouped.announcements.map((e) => (
             <EventCard key={e.id} item={e} />
@@ -120,6 +112,14 @@ function PublicSite() {
             </li>
           ))}
         </Section>
+
+        {data.pastEvents?.length ? (
+          <Section title="Past events" empty="">
+            {data.pastEvents.map((e) => (
+              <EventCard key={e.id} item={e} />
+            ))}
+          </Section>
+        ) : null}
       </main>
 
       <footer className="border-t border-line">
