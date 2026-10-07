@@ -1,59 +1,61 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, notFound } from "@tanstack/react-router";
 import { PublicCopy } from "@/components/public-copy";
 import { buildConferenceProgram, lineupFromSpeakers } from "@/lib/crm/conference-page";
+import { speakerHead } from "@/lib/crm/page-head";
+import { getPublicOrigin } from "@/lib/crm/public-origin";
 import { getPublicPage } from "@/lib/crm/site";
 
-export const Route = createFileRoute("/p/$slug/speakers/$speaker")({ component: SpeakerBioPage });
+export const Route = createFileRoute("/p/$slug/speakers/$speaker")({
+  loader: async ({ params }) => {
+    const [page, origin] = await Promise.all([
+      getPublicPage({ data: params.slug }),
+      getPublicOrigin(),
+    ]);
+    if (!page || page.layout !== "conference") throw notFound();
+    const derived = buildConferenceProgram(page.program);
+    const lineup = page.speakerLineup?.length
+      ? lineupFromSpeakers(page.speakerLineup, page.program)
+      : derived.speakers;
+    const speaker = lineup.find((row) => row.slug === params.speaker);
+    if (!speaker) throw notFound();
+    return { page, speaker, origin };
+  },
+  head: ({ loaderData }) =>
+    loaderData ? speakerHead(loaderData.speaker, loaderData.page, loaderData.origin) : {},
+  notFoundComponent: SpeakerMissing,
+  errorComponent: SpeakerUnavailable,
+  component: SpeakerBioPage,
+});
+
+function SpeakerMissing() {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
+      <p>That page is not published.</p>
+    </main>
+  );
+}
+
+function SpeakerUnavailable() {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
+      <p>This page is not available right now. Please try again shortly.</p>
+    </main>
+  );
+}
 
 function SpeakerBioPage() {
-  const { slug, speaker: speakerSlug } = Route.useParams();
-  const [view, setView] = useState<"loading" | "missing" | "ready" | "unavailable">("loading");
-  const [page, setPage] = useState<Awaited<ReturnType<typeof getPublicPage>>>(null);
-
-  useEffect(() => {
-    getPublicPage({ data: slug })
-      .then((next) => {
-        setPage(next);
-        setView(next && next.layout === "conference" ? "ready" : "missing");
-      })
-      .catch(() => setView("unavailable"));
-  }, [slug]);
-
-  if (view === "loading") {
-    return <main className="grid min-h-dvh place-items-center bg-paper text-muted">Opening the page…</main>;
-  }
-  if (view === "unavailable") {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
-        <p>This page is not available right now. Please try again shortly.</p>
-      </main>
-    );
-  }
-  if (!page || page.layout !== "conference") {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
-        <p>That page is not published.</p>
-      </main>
-    );
-  }
-  const derived = buildConferenceProgram(page.program);
-  const lineup = page.speakerLineup?.length ? lineupFromSpeakers(page.speakerLineup, page.program) : derived.speakers;
-  const speaker = lineup.find((row) => row.slug === speakerSlug);
-  if (!speaker) {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
-        <p>That page is not published.</p>
-      </main>
-    );
-  }
+  const { slug } = Route.useParams();
+  const { page, speaker } = Route.useLoaderData();
   const bio = speaker.bio;
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-4">
-          <a href={`/p/${slug}#speakers`} className="text-sm text-bronze underline-offset-2 hover:underline">
+          <a
+            href={`/p/${slug}#speakers`}
+            className="text-sm text-bronze underline-offset-2 hover:underline"
+          >
             Speakers
           </a>
           <a href={`/p/${slug}`} className="font-display text-lg leading-tight">
@@ -66,7 +68,10 @@ function SpeakerBioPage() {
           {speaker.headshot ? (
             <img src={speaker.headshot} alt="" className="size-full object-cover" />
           ) : (
-            <span className="grid size-full place-items-center font-display text-5xl text-bronze" aria-hidden>
+            <span
+              className="grid size-full place-items-center font-display text-5xl text-bronze"
+              aria-hidden
+            >
               {speaker.title.slice(0, 1).toUpperCase()}
             </span>
           )}
@@ -86,7 +91,10 @@ function SpeakerBioPage() {
                 {speaker.talks.map((talk) => (
                   <li key={talk.id}>
                     {talk.slug ? (
-                      <a href={`/p/${talk.slug}`} className="text-bronze underline-offset-2 hover:underline">
+                      <a
+                        href={`/p/${talk.slug}`}
+                        className="text-bronze underline-offset-2 hover:underline"
+                      >
                         {talk.title}
                       </a>
                     ) : (

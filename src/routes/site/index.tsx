@@ -1,12 +1,31 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { PublicText } from "@/components/public-copy";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
+import { siteHead } from "@/lib/crm/page-head";
+import { getPublicOrigin } from "@/lib/crm/public-origin";
 import { getPublicSite } from "@/lib/crm/site";
 import type { SiteItemRow } from "@/lib/crm/site";
 
-export const Route = createFileRoute("/site/")({ component: PublicSite });
+export const Route = createFileRoute("/site/")({
+  loader: async () => {
+    const [data, origin] = await Promise.all([getPublicSite(), getPublicOrigin()]);
+    return { data, origin };
+  },
+  head: ({ loaderData }) =>
+    loaderData ? siteHead(loaderData.data.settings, loaderData.origin) : {},
+  errorComponent: PublicSiteUnavailable,
+  component: PublicSite,
+});
+
+function PublicSiteUnavailable() {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
+      <p className="text-danger">This page is not available right now. Please try again shortly.</p>
+    </main>
+  );
+}
 
 function hrefFor(url: string | null | undefined) {
   if (!url) return null;
@@ -20,13 +39,7 @@ function pageHref(item: SiteItemRow) {
 }
 
 function PublicSite() {
-  const [data, setData] = useState<Awaited<ReturnType<typeof getPublicSite>> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    getPublicSite()
-      .then(setData)
-      .catch(() => setErr("This page is not available right now. Please try again shortly."));
-  }, []);
+  const { data } = Route.useLoaderData();
 
   const grouped = useMemo(() => {
     const items = data?.items ?? [];
@@ -39,19 +52,6 @@ function PublicSite() {
     };
   }, [data]);
 
-  if (err) {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-ink">
-        <p className="text-danger">{err}</p>
-      </main>
-    );
-  }
-  if (!data) {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-paper px-6 text-muted">Opening the chapter site…</main>
-    );
-  }
-
   const { settings } = data;
 
   return (
@@ -62,7 +62,9 @@ function PublicSite() {
             <BookOpen className="mt-1 size-6 shrink-0 text-bronze" />
             <div>
               <p className="font-display text-xl leading-tight">{settings.public_title}</p>
-              {settings.public_tagline ? <p className="mt-1 text-sm text-ink-soft">{settings.public_tagline}</p> : null}
+              {settings.public_tagline ? (
+                <p className="mt-1 text-sm text-ink-soft">{settings.public_tagline}</p>
+              ) : null}
             </div>
           </div>
           <Link to="/login" className="text-sm text-bronze underline-offset-2 hover:underline">
@@ -75,7 +77,10 @@ function PublicSite() {
         {settings.about ? (
           <section>
             <h1 className="font-display text-3xl">The chapter</h1>
-            <PublicText text={settings.about} className="mt-3 text-lg leading-relaxed text-ink-soft" />
+            <PublicText
+              text={settings.about}
+              className="mt-3 text-lg leading-relaxed text-ink-soft"
+            />
           </section>
         ) : null}
 
@@ -107,7 +112,9 @@ function PublicSite() {
           {grouped.courses.map((c) => (
             <li key={c.id} className="rounded-xl border border-line bg-surface p-5">
               <h3 className="font-display text-xl">{c.title}</h3>
-              <p className="mt-1 text-sm text-muted">{[c.audience, c.subtitle].filter(Boolean).join(" · ")}</p>
+              <p className="mt-1 text-sm text-muted">
+                {[c.audience, c.subtitle].filter(Boolean).join(" · ")}
+              </p>
               <PublicText text={c.summary} className="mt-2 leading-relaxed text-ink-soft" />
             </li>
           ))}
@@ -134,7 +141,15 @@ function PublicSite() {
   );
 }
 
-function Section({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
+function Section({
+  title,
+  empty,
+  children,
+}: {
+  title: string;
+  empty: string;
+  children: ReactNode;
+}) {
   const list = Array.isArray(children) ? children : [children];
   const items = list.filter(Boolean);
   return (
@@ -151,7 +166,8 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 
 function EventCard({ item }: { item: SiteItemRow }) {
   const url = pageHref(item);
-  const rich = publicCopyHtml(item.summary) ?? (item.summary?.trim() ? null : publicCopyHtml(item.body));
+  const rich =
+    publicCopyHtml(item.summary) ?? (item.summary?.trim() ? null : publicCopyHtml(item.body));
   return (
     <li className="rounded-xl border border-line bg-surface p-5">
       <p className="text-xs tracking-wide text-bronze uppercase">
@@ -161,12 +177,18 @@ function EventCard({ item }: { item: SiteItemRow }) {
       {item.when_label ? <p className="mt-1 text-sm text-muted">{item.when_label}</p> : null}
       {item.location ? <p className="text-sm text-ink-soft">{item.location}</p> : null}
       {rich ? (
-        <div className="announcement-html mt-3 leading-relaxed text-ink-soft" dangerouslySetInnerHTML={{ __html: rich }} />
+        <div
+          className="announcement-html mt-3 leading-relaxed text-ink-soft"
+          dangerouslySetInnerHTML={{ __html: rich }}
+        />
       ) : item.summary ? (
         <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p>
       ) : null}
       {item.eventPage && item.eventPage.href !== url ? (
-        <a href={item.eventPage.href} className="mt-3 block text-sm text-bronze underline-offset-2 hover:underline">
+        <a
+          href={item.eventPage.href}
+          className="mt-3 block text-sm text-bronze underline-offset-2 hover:underline"
+        >
           Event page: {item.eventPage.title}
         </a>
       ) : null}
@@ -176,7 +198,11 @@ function EventCard({ item }: { item: SiteItemRow }) {
           className="mt-3 inline-block text-sm text-bronze underline-offset-2 hover:underline"
           {...(url.startsWith("/") ? {} : { target: "_blank", rel: "noreferrer" })}
         >
-          {item.slug ? (item.layout === "conference" ? "Conference page" : "Event details") : "Register"}
+          {item.slug
+            ? item.layout === "conference"
+              ? "Conference page"
+              : "Event details"
+            : "Register"}
         </a>
       ) : null}
     </li>
@@ -191,7 +217,12 @@ function CopyCard({ item, linkLabel }: { item: SiteItemRow; linkLabel: string })
       {item.subtitle ? <p className="mt-1 text-sm text-muted">{item.subtitle}</p> : null}
       <PublicText text={item.summary} className="mt-2 leading-relaxed text-ink-soft" />
       {url ? (
-        <a href={url} className="mt-2 inline-block text-sm text-bronze underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
+        <a
+          href={url}
+          className="mt-2 inline-block text-sm text-bronze underline-offset-2 hover:underline"
+          target="_blank"
+          rel="noreferrer"
+        >
           {linkLabel}
         </a>
       ) : null}
