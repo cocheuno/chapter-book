@@ -6,6 +6,7 @@ import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicAboutFields, publicSummaryFields } from "./announcement-html";
+import { onPublicShelf } from "./shelf";
 import { type SpeakerRecord } from "./conference-page";
 import { canonicalDetailPaths, eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
@@ -42,6 +43,7 @@ export type SiteItemRow = {
   conference_id: string | null;
   image_id: string | null;
   gathering_id: string | null;
+  on_shelf: boolean;
   eventPage?: { href: string; title: string } | null;
   detailsHref?: string | null;
 };
@@ -68,14 +70,14 @@ async function readItems(
 ): Promise<SiteItemRow[]> {
   if (publishedOnly) {
     return sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf
       from site_items
       where chapter_id = ${chapterId} and published
       order by kind, sort_order, title
     `;
   }
   return sql<SiteItemRow>`
-    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
+    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf
     from site_items
     where chapter_id = ${chapterId}
     order by kind, sort_order, title
@@ -130,7 +132,7 @@ export async function loadPublishedSite() {
   if (!chapters[0]) return empty;
   const chapterId = chapters[0].id;
   const settings = await readSettings(sql, chapterId);
-  const items = await readItems(sql, chapterId, true);
+  const items = (await readItems(sql, chapterId, true)).filter(onPublicShelf);
   const gatherings = await listGatherings(sql, chapterId);
   const paths = canonicalDetailPaths(items);
   return {
@@ -338,6 +340,7 @@ const itemInput = z.object({
   audience: z.string().optional(),
   featured: z.boolean().optional(),
   published: z.boolean().optional(),
+  onShelf: z.boolean().optional(),
   slug: z.string().optional(),
   body: z.string().optional(),
   layout: z.enum(["page", "conference"]).optional(),
@@ -361,7 +364,6 @@ export const saveSiteItem = createServerFn({ method: "POST" })
         and id <> ${data.id ?? ""}
     `;
     if (clash[0]) throw new Error(`${clash[0].title} is already on the site shelf.`);
-    const published = data.published ?? true;
     const featured = data.featured ?? false;
     const slug = await uniqueSlug(sql, m.chapterId, title, data.slug, data.id);
     const body = data.body?.trim() || null;
@@ -399,7 +401,8 @@ export const saveSiteItem = createServerFn({ method: "POST" })
           when_label = ${data.whenLabel || null},
           audience = ${data.audience || null},
           featured = ${featured},
-          published = ${published},
+          published = coalesce(${data.published ?? null}, published),
+          on_shelf = coalesce(${data.onShelf ?? null}, on_shelf),
           slug = ${slug},
           body = ${body},
           layout = ${layout},
@@ -421,12 +424,12 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into site_items (
-          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
+          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf
         )
         values (
           ${id}, ${m.chapterId}, ${data.kind}, ${title}, ${data.subtitle || null}, ${data.summary || null},
           ${data.url || null}, ${data.location || null}, ${data.whenLabel || null}, ${data.audience || null},
-          ${featured}, ${published}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}, ${imageId}, ${gatheringId}
+          ${featured}, ${data.published ?? false}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}, ${imageId}, ${gatheringId}, ${data.onShelf ?? true}
         )
       `;
     } catch (err) {
@@ -436,26 +439,23 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     return { id, slug };
   });
 
-/** Public detail page. No sign-in. */
-export const getPublicPage = createServerFn({ method: "POST" })
-  .validator((slug: string) => slug.trim())
-  .handler(async ({ data: slug }) => {
-    if (!slug) return null;
-    const sql = await getSql();
-    const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
-    if (!chapters[0]) return null;
-    const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
-      select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
-             i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
-             s.public_title, s.contact_email
-      from site_items i
-      left join site_settings s on s.chapter_id = i.chapter_id
-      where i.chapter_id = ${chapters[0].id} and i.slug = ${slug} and i.published
-    `;
-    const page = rows[0];
-    if (!page) return null;
-    const chapterId = chapters[0].id;
-    const siblings = await sql<{
+async function readPublicPage(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  slug: string,
+  includeDrafts: boolean,
+) {
+  const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
+    select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
+           i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
+           s.public_title, s.contact_email
+    from site_items i
+    left join site_settings s on s.chapter_id = i.chapter_id
+    where i.chapter_id = ${chapterId} and i.slug = ${slug} and (i.published or ${includeDrafts})
+  `;
+  const page = rows[0];
+  if (!page) return null;
+  const siblings = await sql<{
       id: string;
       kind: string;
       title: string;
@@ -516,7 +516,28 @@ export const getPublicPage = createServerFn({ method: "POST" })
         .filter((link) => link.speaker_id === person.id && link.site_item_id)
         .map((link) => link.site_item_id as string),
     }));
-    return { ...page, canonicalSlug: null, program, eventPage, speakerLineup };
+  return { ...page, canonicalSlug: null, program, eventPage, speakerLineup };
+}
+
+/** Public detail page. No sign-in. */
+export const getPublicPage = createServerFn({ method: "POST" })
+  .validator((slug: string) => slug.trim())
+  .handler(async ({ data: slug }) => {
+    if (!slug) return null;
+    const sql = await getSql();
+    const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
+    if (!chapters[0]) return null;
+    return readPublicPage(sql, chapters[0].id, slug, false);
+  });
+
+export const getPreviewPage = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((slug: string) => slug.trim())
+  .handler(async ({ context, data: slug }) => {
+    const m = await loadMember(context.userId);
+    if (!slug) return null;
+    const sql = await getSql();
+    return readPublicPage(sql, m.chapterId, slug, true);
   });
 
 export const removeSiteItem = createServerFn({ method: "POST" })

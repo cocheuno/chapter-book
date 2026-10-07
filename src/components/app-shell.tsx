@@ -3,6 +3,7 @@ import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { BookOpen, Building2, Calendar, Globe, Home, Mail, Menu, Search, Settings2, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { DeploymentBanner } from "@/components/deployment-banner";
 import { searchAll } from "@/lib/crm/actions";
 
 const NAV = [
@@ -47,6 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
+      <DeploymentBanner />
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <button type="button" className="rounded-md p-2 md:hidden" onClick={() => setOpen((v) => !v)} aria-label="Menu">

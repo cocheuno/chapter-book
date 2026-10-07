@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConfirmRemove } from "@/components/confirm-remove";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,8 @@ const emptyItem = (kind: SiteKind) => ({
   whenLabel: "",
   audience: "",
   featured: false,
-  published: true,
+  published: false,
+  onShelf: false,
   slug: "",
   body: "",
   layout: "page" as "page" | "conference",
@@ -89,6 +91,7 @@ function WebsiteInner() {
   );
   const onConference = form.layout === "conference";
   const onProgram = Boolean(form.conferenceId);
+  const isTalk = form.kind === "article" && Boolean(form.conferenceId);
 
   function startEdit(item: SiteItem) {
     setForm({
@@ -103,6 +106,7 @@ function WebsiteInner() {
       audience: item.audience ?? "",
       featured: Boolean(item.featured),
       published: Boolean(item.published),
+      onShelf: item.on_shelf !== false,
       slug: item.slug ?? "",
       body: item.body ?? "",
       layout: item.layout === "conference" ? "conference" : "page",
@@ -279,6 +283,7 @@ function WebsiteInner() {
                   audience: form.audience,
                   featured: form.featured,
                   published: form.published,
+                  onShelf: isTalk ? form.onShelf : undefined,
                   slug: form.slug,
                   body: form.body,
                   layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
@@ -299,6 +304,7 @@ function WebsiteInner() {
                 audience: form.audience || null,
                 featured: form.featured,
                 published: form.published,
+                on_shelf: isTalk ? form.onShelf : true,
                 sort_order: 0,
                 slug: saved.slug ?? (form.slug || null),
                 body: form.body || null,
@@ -535,6 +541,17 @@ function WebsiteInner() {
             />
             Published
           </label>
+          {isTalk ? (
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-5"
+                checked={form.onShelf}
+                onChange={(e) => setForm({ ...form, onShelf: e.target.checked })}
+              />
+              Also list on the Articles shelf
+            </label>
+          ) : null}
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -580,6 +597,14 @@ function WebsiteInner() {
                       {(data.gatherings ?? []).find((gathering) => gathering.id === item.gathering_id)?.title ?? "Event"}
                     </Badge>
                   ) : null}
+                  {item.kind === "article" && item.conference_id ? (
+                    <Badge>
+                      Talk on {data.items.find((row) => row.id === item.conference_id)?.title ?? "the conference"}
+                    </Badge>
+                  ) : null}
+                  {item.kind === "article" && item.conference_id && item.on_shelf === false ? (
+                    <Badge>Conference page only</Badge>
+                  ) : null}
                   {item.featured ? <Badge tone="bronze">Featured</Badge> : null}
                   {!item.published ? <Badge>Draft</Badge> : null}
                 </div>
@@ -597,8 +622,11 @@ function WebsiteInner() {
                   <p className="mt-1 text-sm text-ink-soft">{item.summary}</p>
                 ) : null}
                 {item.slug ? (
-                  <a href={`/p/${item.slug}`} className="mt-1 inline-block text-sm text-bronze hover:underline">
-                    Open page
+                  <a
+                    href={item.published ? `/p/${item.slug}` : `/p/${item.slug}?preview=1`}
+                    className="mt-1 inline-block text-sm text-bronze hover:underline"
+                  >
+                    {item.published ? "Open page" : "Preview draft"}
                   </a>
                 ) : null}
               </div>
@@ -607,10 +635,9 @@ function WebsiteInner() {
                   <Button type="button" variant="secondary" onClick={() => startEdit(item)}>
                     Edit
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={async () => {
+                  <ConfirmRemove
+                    title={item.title}
+                    onConfirm={async () => {
                       try {
                         await removeSiteItem({ data: { id: item.id } });
                         if (form.id === item.id) {
@@ -623,9 +650,7 @@ function WebsiteInner() {
                         toast.error(ex instanceof Error ? ex.message : "Could not remove");
                       }
                     }}
-                  >
-                    Remove
-                  </Button>
+                  />
                 </div>
               )}
             </div>
