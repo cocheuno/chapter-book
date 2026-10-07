@@ -20,6 +20,7 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `DATABASE_URL` (and `DATABASE_URL_UNPOOLED`, `PG*`, `POSTGRES_*`) | **Set by the Neon integration** (Vercel → **Storage**). Not typed or edited by hand |
 | `BETTER_AUTH_SECRET` | Long random string (32+ bytes). Not the database password. |
 | `BETTER_AUTH_URL` | Public origin, currently `https://chapter-book-beryl.vercel.app` (no trailing slash) |
+| `PUBLIC_ORIGIN` | **Production and Preview:** the public address of the book, now `https://chapter-book-beryl.vercel.app` (no trailing slash). Used for canonical links and share-card images. Falls back to `BETTER_AUTH_URL`. |
 | `VITE_AUTH_ENABLED` | `true` |
 | `ALLOW_PREVIEW_MIGRATIONS` | **Preview** only. `off` until H1 step 3; then exactly `on` |
 | `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
