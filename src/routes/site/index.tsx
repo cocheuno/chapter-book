@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { publicRichHtml } from "@/lib/crm/announcement-html";
+import { PublicText } from "@/components/public-copy";
+import { publicCopyHtml } from "@/lib/crm/announcement-html";
 import { getPublicSite } from "@/lib/crm/site";
 import type { SiteItemRow } from "@/lib/crm/site";
 
@@ -74,7 +75,7 @@ function PublicSite() {
         {settings.about ? (
           <section>
             <h1 className="font-display text-3xl">The chapter</h1>
-            <p className="mt-3 text-lg leading-relaxed text-ink-soft">{settings.about}</p>
+            <PublicText text={settings.about} className="mt-3 text-lg leading-relaxed text-ink-soft" />
           </section>
         ) : null}
 
@@ -107,7 +108,7 @@ function PublicSite() {
             <li key={c.id} className="rounded-xl border border-line bg-surface p-5">
               <h3 className="font-display text-xl">{c.title}</h3>
               <p className="mt-1 text-sm text-muted">{[c.audience, c.subtitle].filter(Boolean).join(" · ")}</p>
-              {c.summary ? <p className="mt-2 leading-relaxed text-ink-soft">{c.summary}</p> : null}
+              <PublicText text={c.summary} className="mt-2 leading-relaxed text-ink-soft" />
             </li>
           ))}
         </Section>
@@ -142,7 +143,7 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 
 function EventCard({ item }: { item: SiteItemRow }) {
   const url = pageHref(item);
-  const rich = publicRichHtml(item.summary) ?? (item.summary?.trim() ? null : publicRichHtml(item.body));
+  const rich = publicCopyHtml(item.summary) ?? (item.summary?.trim() ? null : publicCopyHtml(item.body));
   return (
     <li className="rounded-xl border border-line bg-surface p-5">
       <p className="text-xs tracking-wide text-bronze uppercase">
@@ -180,7 +181,7 @@ function CopyCard({ item, linkLabel }: { item: SiteItemRow; linkLabel: string })
     <li className="border-b border-line pb-5 last:border-0">
       <h3 className="font-display text-xl">{item.title}</h3>
       {item.subtitle ? <p className="mt-1 text-sm text-muted">{item.subtitle}</p> : null}
-      {item.summary ? <p className="mt-2 leading-relaxed text-ink-soft">{item.summary}</p> : null}
+      <PublicText text={item.summary} className="mt-2 leading-relaxed text-ink-soft" />
       {url ? (
         <a href={url} className="mt-2 inline-block text-sm text-bronze underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
           {linkLabel}

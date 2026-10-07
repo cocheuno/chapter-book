@@ -482,11 +482,14 @@ Both diffs go in the pull request.
    - `chapter-site.js` renders `aboutHtml` for `data-scs="about"` when `safeSection` passes, and otherwise uses `textContent`.
 5. **Editor hints.** On each multi-line field on the Website desk and in the conference builder, add the hint "Start with `<section>` for HTML". Show the live preview the Website desk already has for summaries.
 
-**Rule 1:** this package exists to fix how content displays, so the snapshot diff will not be empty.
+**Rule 1:** Production was checked: every multi-line public value is plain text or one whole `<section>`, and the `<section>` values already display formatted. So this package changes nothing visible today, and the Content guard must report no differences.
 
-- The pull request lists every published item whose display changes, with before and after text and screenshots: raw tags that become formatting, and GoDaddy cards that now show formatting instead of plain words.
-- Nothing else may change. A value with no tags must render exactly as today.
-- The chapter approves the list before merging.
+Corrections:
+
+- Nothing visible changes. A plain value keeps today's markup, the JSON feed stays byte-identical, and the Content guard must report no differences.
+- Short copy that is one `<p>` today uses `PublicText`, which prints that same `<p>` when the value is plain.
+- Workshops, practical notes, and the courses list use `PublicText` with the class name that `<p>` already has.
+- The lineup card prints `excerptText` of the biography. `biographyText` and the speaker page stay as they are.
 
 **Done when:** `<section><h2>Hi</h2><p>Text</p></section>` in any multi-line public field renders formatted on:
 

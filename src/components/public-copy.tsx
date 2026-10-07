@@ -1,9 +1,9 @@
 import { biographyParagraphs } from "@/lib/crm/conference-page";
-import { publicRichHtml } from "@/lib/crm/announcement-html";
+import { publicCopyHtml } from "@/lib/crm/announcement-html";
 
 /** Public text. HTML is shown sanitized. Otherwise each typed line is its own paragraph. */
 export function PublicCopy({ text, className }: { text: string | null | undefined; className?: string }) {
-  const html = publicRichHtml(text);
+  const html = publicCopyHtml(text);
   if (html) {
     return <div className={`announcement-html ${className ?? ""}`} dangerouslySetInnerHTML={{ __html: html }} />;
   }
@@ -18,4 +18,12 @@ export function PublicCopy({ text, className }: { text: string | null | undefine
       ))}
     </div>
   );
+}
+
+/** Sanitized HTML when the value has tags; otherwise exactly the <p> the page printed before. */
+export function PublicText({ text, className }: { text: string | null | undefined; className: string }) {
+  const html = publicCopyHtml(text);
+  if (html) return <div className={`announcement-html ${className}`} dangerouslySetInnerHTML={{ __html: html }} />;
+  if (!text) return null;
+  return <p className={className}>{text}</p>;
 }

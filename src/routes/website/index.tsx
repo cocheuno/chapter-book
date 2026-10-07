@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CopyPreview } from "@/components/copy-preview";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { publicRichHtml } from "@/lib/crm/announcement-html";
+import { publicCopyHtml } from "@/lib/crm/announcement-html";
 import { fileToBase64, PictureField } from "@/components/picture-field";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
@@ -224,6 +225,8 @@ function WebsiteInner() {
               onChange={(e) => setSettings({ ...settings, about: e.target.value })}
               disabled={!canEdit}
             />
+            <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+            <CopyPreview value={settings.about} />
           </Field>
         </div>
         {canEdit && (
@@ -486,6 +489,8 @@ function WebsiteInner() {
                 onChange={(e) => setForm({ ...form, summary: e.target.value })}
                 className={form.kind === "announcement" ? "min-h-32" : undefined}
               />
+              <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+              <CopyPreview value={form.summary} />
             </Field>
           </div>
           <div className="sm:col-span-2">
@@ -510,6 +515,8 @@ function WebsiteInner() {
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
                 className="min-h-48"
               />
+              <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+              <CopyPreview value={form.body} />
             </Field>
           </div>
           <Field label="Page address">
@@ -557,7 +564,7 @@ function WebsiteInner() {
 
       <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
         {rows.map((item) => {
-          const rich = publicRichHtml(item.summary) ?? (item.summary?.trim() ? null : publicRichHtml(item.body));
+          const rich = publicCopyHtml(item.summary) ?? (item.summary?.trim() ? null : publicCopyHtml(item.body));
           return (
           <li key={item.id} className="px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">

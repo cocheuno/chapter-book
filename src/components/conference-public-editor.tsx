@@ -1,3 +1,4 @@
+import { CopyPreview } from "@/components/copy-preview";
 import { fileToBase64, PictureField } from "@/components/picture-field";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -191,6 +192,8 @@ function CopyForm({ eventId, page, onSaved }: { eventId: string; page: Desk["pag
       <div className="sm:col-span-2">
         <Field label="Summary">
           <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} />
+          <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+          <CopyPreview value={summary} />
         </Field>
       </div>
       <Field label="Register link">
@@ -200,6 +203,8 @@ function CopyForm({ eventId, page, onSaved }: { eventId: string; page: Desk["pag
         <Field label="Introduction">
           <p className="text-sm text-ink-soft">Press Enter for a new paragraph, or use HTML (p, headings, lists, links).</p>
           <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-32" />
+          <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+          <CopyPreview value={body} />
         </Field>
       </div>
       <Button type="submit">Save web page</Button>
@@ -335,6 +340,8 @@ function SpeakerCard({
             <Field label="Biography">
               <p className="text-sm text-ink-soft">Press Enter for a new paragraph, or use HTML (p, headings, lists, links).</p>
               <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-40" />
+              <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+              <CopyPreview value={body} />
             </Field>
           </div>
           <div className="flex flex-wrap gap-2 sm:col-span-2">
@@ -442,6 +449,8 @@ function SessionCard({
           <div className="sm:col-span-2">
             <Field label="Short description">
               <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} />
+              <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
+              <CopyPreview value={summary} />
             </Field>
           </div>
           <label className="flex min-h-11 items-center gap-2 text-sm">
