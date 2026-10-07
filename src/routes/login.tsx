@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { authClient, authEnabled } from "@/lib/auth/client";
 import { BookOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { DeploymentBanner } from "@/components/deployment-banner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/field";
 import { acceptInvite, getLoginState, peekInvite } from "@/lib/crm/operators";
@@ -94,7 +95,9 @@ function Login() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-paper px-6 py-10 text-ink">
+    <>
+      <DeploymentBanner />
+      <main className="grid min-h-dvh place-items-center bg-paper px-6 py-10 text-ink">
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-2">
           <BookOpen className="size-8 text-bronze" />
@@ -166,6 +169,7 @@ function Login() {
           <p className="text-sm text-muted">Sign-in is disabled.</p>
         )}
       </div>
-    </main>
+      </main>
+    </>
   );
 }

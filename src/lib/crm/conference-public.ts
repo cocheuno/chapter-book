@@ -426,10 +426,10 @@ async function writeTalk(
     await sql`
       insert into site_items (
         id, chapter_id, kind, title, subtitle, summary, url, when_label, audience, featured, published,
-        sort_order, slug, body, layout, conference_id, image_id
+        sort_order, slug, body, layout, conference_id, image_id, on_shelf
       ) values (
         ${talkId}, ${chapterId}, ${"article"}, ${title}, ${speaker}, ${summary}, ${articleUrl}, ${whenLabel},
-        ${track}, ${featured}, ${true}, ${10}, ${slug}, ${body}, ${"page"}, ${conferenceId}, ${imageId}
+        ${track}, ${featured}, ${true}, ${10}, ${slug}, ${body}, ${"page"}, ${conferenceId}, ${imageId}, ${false}
       )
     `;
   }

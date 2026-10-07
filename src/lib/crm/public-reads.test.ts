@@ -48,4 +48,14 @@ describe("public reads", () => {
     const source = readFileSync(join(root, "public/embed/chapter-site.js"), "utf8");
     assert.equal(source.includes("?t="), false);
   });
+
+  it("readPublicPage only reads, and preview requires a sign-in", () => {
+    const source = readFileSync(join(root, "src/lib/crm/site.ts"), "utf8");
+    const reader = section(source, "async function readPublicPage", "export const getPublicPage");
+    for (const pattern of writes) {
+      assert.equal(pattern.test(reader), false, String(pattern));
+    }
+    const preview = section(source, "export const getPreviewPage", "export const removeSiteItem");
+    assert.equal(preview.includes("authMiddleware"), true);
+  });
 });

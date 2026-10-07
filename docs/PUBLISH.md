@@ -30,7 +30,7 @@ You can keep existing GoDaddy chrome (header, colors, footer **For Members**). R
 1. Sign in to Chapter Book → **Website**.
 2. Save **Masthead**.
 3. Add or edit Events / Announcements / Articles / Documents / Courses.
-4. Leave **Published** checked. Uncheck to pull an item off the public site.
+4. New items start as drafts. Tick **Published** when the item is ready; untick it to take an item off the public site. A draft's **Preview draft** link shows it to signed-in operators only.
 5. Within about a minute, refresh scs-wisconsin-usa.org.
 
 JSON feed (for debugging): `https://chapter-book-beryl.vercel.app/api/public-site`

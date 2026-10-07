@@ -524,6 +524,19 @@ No literal `<section` or `&lt;section` appears anywhere public.
    - `/p/$slug?preview=1` uses it for signed-in operators and shows a banner: "Preview: not published."
    - The Website desk's link for a draft opens the preview.
 4. **Confirm before removing.** Remove asks first: "Remove <title> from the site? Its page stops working." Use the Radix alert dialog already in the dependencies.
+5. **Which database am I on?** A banner on the desks (`AppShell`) and on `/login` only. It never appears on `/site`, `/p/…`, or `/api/public-site`.
+   - `VERCEL_ENV=production`: no banner.
+   - No `DATABASE_URL`: test copy on this computer.
+   - A preview whose Neon endpoint differs from `PRODUCTION_DB_ENDPOINT`: preview copy, thrown away.
+   - A preview whose endpoint is the live one: this preview uses the live database.
+   - A preview whose endpoint cannot be identified, or any other environment that has a database URL: treat it as the live one.
+
+Corrections:
+
+- New talks set `on_shelf` to false on insert only. An update leaves the existing shelf setting. The checkbox is on the Website desk only.
+- Defaults apply to new items. A save keeps `published` and `on_shelf` when those values were not sent. New items start as drafts.
+- Remove uses a Radix alert dialog with its parts styled directly, without `asChild`.
+- The database banner is only on the desks and `/login`.
 
 **Done when:**
 
