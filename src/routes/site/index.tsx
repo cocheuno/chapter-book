@@ -112,6 +112,14 @@ function PublicSite() {
             </li>
           ))}
         </Section>
+
+        {data.pastEvents?.length ? (
+          <Section title="Past events" empty="">
+            {data.pastEvents.map((e) => (
+              <EventCard key={e.id} item={e} />
+            ))}
+          </Section>
+        ) : null}
       </main>
 
       <footer className="border-t border-line">

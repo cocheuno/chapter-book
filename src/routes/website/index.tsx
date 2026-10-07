@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CopyPreview } from "@/components/copy-preview";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
+import { CHAPTER_TIME_ZONE, isPastItem, todayIn, whenLabelFor } from "@/lib/crm/dates";
 import { fileToBase64, PictureField } from "@/components/picture-field";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
@@ -42,6 +43,8 @@ const emptyItem = (kind: SiteKind) => ({
   conferenceId: "",
   imageId: "",
   gatheringId: "",
+  startsOn: "",
+  endsOn: "",
 });
 
 function WebsitePage() {
@@ -113,6 +116,8 @@ function WebsiteInner() {
       conferenceId: item.conference_id ?? "",
       imageId: item.image_id ?? "",
       gatheringId: item.gathering_id ?? "",
+      startsOn: item.starts_on ?? "",
+      endsOn: item.ends_on ?? "",
     });
     setPendingFile(null);
   }
@@ -136,6 +141,13 @@ function WebsiteInner() {
   if (err) return <p className="text-danger">{err}</p>;
   if (!data) return <p className="text-muted">Opening the website shelf…</p>;
   const canEdit = data.member.role !== "viewer";
+  const gatheringDate =
+    form.kind === "event"
+      ? (data.gatherings ?? []).find(
+          (gathering) =>
+            gathering.public_item_id === form.id && Boolean(gathering.starts_on) && gathering.starts_on !== form.startsOn,
+        )
+      : undefined;
 
   return (
     <div className="space-y-8">
@@ -290,6 +302,8 @@ function WebsiteInner() {
                   conferenceId: form.kind === "event" ? "" : form.conferenceId,
                   imageId,
                   gatheringId: form.kind === "announcement" ? form.gatheringId : "",
+                  startsOn: form.kind === "event" ? form.startsOn : undefined,
+                  endsOn: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn : undefined,
                 },
               });
               const row = {
@@ -312,6 +326,8 @@ function WebsiteInner() {
                 conference_id: form.kind === "event" ? null : form.conferenceId || null,
                 image_id: imageId || null,
                 gathering_id: form.kind === "announcement" ? form.gatheringId || null : null,
+                starts_on: form.kind === "event" ? form.startsOn || null : null,
+                ends_on: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn || null : null,
               };
               setData((prev) =>
                 prev
@@ -409,6 +425,37 @@ function WebsiteInner() {
               />
             </Field>
           )}
+          {form.kind === "event" ? (
+            <>
+              <Field label="Starts on">
+                <Input
+                  type="date"
+                  value={form.startsOn}
+                  onChange={(e) => setForm({ ...form, startsOn: e.target.value })}
+                />
+              </Field>
+              <Field label="Ends on">
+                <Input type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} />
+                <p className="mt-1 text-xs text-muted">Leave empty for a one-day event.</p>
+              </Field>
+              {gatheringDate?.starts_on ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="sm:col-span-2"
+                  onClick={() => setForm({ ...form, startsOn: gatheringDate.starts_on ?? "" })}
+                >
+                  Use the gathering's date: {whenLabelFor(gatheringDate.starts_on)}
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+          {form.kind === "announcement" || form.kind === "course" ? (
+            <Field label="Show until">
+              <Input type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} />
+              <p className="mt-1 text-xs text-muted">Optional. After this date it leaves the homepage by itself.</p>
+            </Field>
+          ) : null}
           {form.kind === "event" && (
             <Field label="Where">
               <Input
@@ -607,6 +654,7 @@ function WebsiteInner() {
                   ) : null}
                   {item.featured ? <Badge tone="bronze">Featured</Badge> : null}
                   {!item.published ? <Badge>Draft</Badge> : null}
+                  {isPastItem(item, todayIn(CHAPTER_TIME_ZONE)) ? <Badge>Past</Badge> : null}
                 </div>
                 {item.subtitle ? <p className="text-sm text-ink-soft">{item.subtitle}</p> : null}
                 {item.when_label || item.location ? (

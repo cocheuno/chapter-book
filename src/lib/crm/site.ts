@@ -6,6 +6,7 @@ import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicAboutFields, publicSummaryFields } from "./announcement-html";
+import { CHAPTER_TIME_ZONE, isPastItem, orderEvents, todayIn, withWhenText } from "./dates";
 import { onPublicShelf } from "./shelf";
 import { type SpeakerRecord } from "./conference-page";
 import { canonicalDetailPaths, eventPageLink } from "./event-link";
@@ -44,6 +45,8 @@ export type SiteItemRow = {
   image_id: string | null;
   gathering_id: string | null;
   on_shelf: boolean;
+  starts_on: string | null;
+  ends_on: string | null;
   eventPage?: { href: string; title: string } | null;
   detailsHref?: string | null;
 };
@@ -70,14 +73,14 @@ async function readItems(
 ): Promise<SiteItemRow[]> {
   if (publishedOnly) {
     return sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on
       from site_items
       where chapter_id = ${chapterId} and published
       order by kind, sort_order, title
     `;
   }
   return sql<SiteItemRow>`
-    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf
+    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on
     from site_items
     where chapter_id = ${chapterId}
     order by kind, sort_order, title
@@ -85,8 +88,10 @@ async function readItems(
 }
 
 async function listGatherings(sql: Awaited<ReturnType<typeof getSql>>, chapterId: string) {
-  return sql<{ id: string; title: string; public_item_id: string | null }>`
-    select id, title, public_item_id from events
+  return sql<{ id: string; title: string; public_item_id: string | null; starts_on: string | null }>`
+    select id, title, public_item_id,
+      to_char(starts_at at time zone ${CHAPTER_TIME_ZONE}, 'YYYY-MM-DD') as starts_on
+    from events
     where chapter_id = ${chapterId} and status <> 'cancelled'
     order by starts_at desc nulls last, title
   `;
@@ -126,21 +131,27 @@ export const listSite = createServerFn({ method: "POST" })
 
 /** Public chapter page. No sign-in — do not attach authMiddleware. */
 export async function loadPublishedSite() {
-  const empty = { settings: emptySettings, items: [] as SiteItemRow[] };
+  const empty = { settings: emptySettings, items: [] as SiteItemRow[], pastEvents: [] as SiteItemRow[] };
   const sql = await getSql();
   const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
   if (!chapters[0]) return empty;
   const chapterId = chapters[0].id;
   const settings = await readSettings(sql, chapterId);
-  const items = (await readItems(sql, chapterId, true)).filter(onPublicShelf);
+  const today = todayIn(CHAPTER_TIME_ZONE);
+  const shelf = orderEvents((await readItems(sql, chapterId, true)).filter(onPublicShelf)).map(withWhenText);
   const gatherings = await listGatherings(sql, chapterId);
-  const paths = canonicalDetailPaths(items);
-  return {
-    settings,
-    items: withEventPages(items, gatherings).map((item) => ({
+  const paths = canonicalDetailPaths(shelf);
+  const upcoming = shelf.filter((item) => !isPastItem(item, today));
+  const pastEvents = shelf.filter((item) => item.kind === "event" && isPastItem(item, today));
+  const decorate = (items: SiteItemRow[]) =>
+    withEventPages(items, gatherings).map((item) => ({
       ...item,
       detailsHref: paths.get(item.id) ?? (item.slug ? `/p/${item.slug}` : null),
-    })),
+    }));
+  return {
+    settings,
+    items: decorate(upcoming),
+    pastEvents: decorate(pastEvents),
   };
 }
 
@@ -162,6 +173,8 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
       url: i.url,
       location: i.location,
       whenLabel: i.when_label,
+      ...(i.starts_on ? { startsOn: i.starts_on } : {}),
+      ...(i.ends_on ? { endsOn: i.ends_on } : {}),
       audience: i.audience,
       featured: i.featured,
       slug: i.slug,
@@ -347,7 +360,17 @@ const itemInput = z.object({
   conferenceId: z.string().optional(),
   imageId: z.string().optional(),
   gatheringId: z.string().optional(),
+  startsOn: z.string().optional(),
+  endsOn: z.string().optional(),
 });
+
+/** undefined is not sent, "" clears the date, and YYYY-MM-DD is kept. */
+function sentDate(value: string | undefined): { sent: boolean; date: string | null } {
+  if (value === undefined) return { sent: false, date: null };
+  if (value === "") return { sent: true, date: null };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return { sent: true, date: value };
+  throw new Error("Enter dates as YYYY-MM-DD.");
+}
 
 export const saveSiteItem = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -389,6 +412,11 @@ export const saveSiteItem = createServerFn({ method: "POST" })
       `;
       if (parent[0]) conferenceId = parent[0].id;
     }
+    const starts = sentDate(data.startsOn);
+    const ends = sentDate(data.endsOn);
+    if (starts.sent && ends.sent && starts.date && ends.date && ends.date < starts.date) {
+      throw new Error("The end date is before the start date.");
+    }
     if (data.id) {
       await sql`
         update site_items set
@@ -408,7 +436,9 @@ export const saveSiteItem = createServerFn({ method: "POST" })
           layout = ${layout},
           conference_id = ${conferenceId},
           image_id = ${imageId},
-          gathering_id = ${gatheringId}
+          gathering_id = ${gatheringId},
+          starts_on = case when ${starts.sent} then ${starts.date}::date else starts_on end,
+          ends_on = case when ${ends.sent} then ${ends.date}::date else ends_on end
         where id = ${data.id} and chapter_id = ${m.chapterId}
       `;
       if (previousImageId && previousImageId !== imageId) {
@@ -424,12 +454,13 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into site_items (
-          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf
+          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on
         )
         values (
           ${id}, ${m.chapterId}, ${data.kind}, ${title}, ${data.subtitle || null}, ${data.summary || null},
           ${data.url || null}, ${data.location || null}, ${data.whenLabel || null}, ${data.audience || null},
-          ${featured}, ${data.published ?? false}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}, ${imageId}, ${gatheringId}, ${data.onShelf ?? true}
+          ${featured}, ${data.published ?? false}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}, ${imageId}, ${gatheringId}, ${data.onShelf ?? true},
+          ${starts.sent ? starts.date : null}::date, ${ends.sent ? ends.date : null}::date
         )
       `;
     } catch (err) {
@@ -448,13 +479,15 @@ async function readPublicPage(
   const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
     select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
            i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
+           i.starts_on, i.ends_on,
            s.public_title, s.contact_email
     from site_items i
     left join site_settings s on s.chapter_id = i.chapter_id
     where i.chapter_id = ${chapterId} and i.slug = ${slug} and (i.published or ${includeDrafts})
   `;
-  const page = rows[0];
-  if (!page) return null;
+  const found = rows[0];
+  if (!found) return null;
+  const page = withWhenText(found);
   const siblings = await sql<{
       id: string;
       kind: string;
