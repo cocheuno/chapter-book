@@ -3,6 +3,9 @@
  * Compare two content snapshots. Exit 0 and print "no differences" when the
  * visible text, status, feed, and screenshot hashes match.
  *
+ * Given a second round (before-2, after-2), a screenshot must differ in both
+ * rounds to count; one that differs in only one round is printed as a note.
+ *
  * Anything left out of that comparison is named in IGNORED_FIELDS. The list is
  * empty unless a value is not content (a timestamp, for example).
  */
@@ -92,7 +95,7 @@ function pageLines(before, after) {
     lines.push(`ends at: ${left.finalPath || "(not recorded)"} -> ${right.finalPath || "(not recorded)"}`);
   }
   if (left.text !== right.text) lines.push(...changedLines(String(left.text ?? ""), String(right.text ?? "")));
-  if (left.screenshotSha256 !== right.screenshotSha256) lines.push("screenshot differs");
+  if (left.screenshotSha256 !== right.screenshotSha256) lines.push(SCREENSHOT_DIFFERS);
   return lines;
 }
 
@@ -123,15 +126,58 @@ export function diffSnapshots(before, after) {
   return { pages, ignored: [...IGNORED_FIELDS] };
 }
 
+export const SCREENSHOT_DIFFERS = "screenshot differs";
+
 /**
- * @param {{ pages: Array<{ path: string, lines: string[] }>, ignored: string[] }} report
+ * Combine two rounds of snapshots. Font smoothing varies a little from one page
+ * load to the next, so a screenshot that differs in only one round is rendering
+ * noise: it becomes a note. A screenshot that differs in both rounds, and every
+ * other difference from either round, is reported.
+ * @param {{ pages: Array<{ path: string, lines: string[] }>, ignored: string[] }} first
+ * @param {{ pages: Array<{ path: string, lines: string[] }>, ignored: string[] }} second
+ * @returns {{ pages: Array<{ path: string, lines: string[] }>, ignored: string[], notes: string[] }}
+ */
+export function confirmScreenshots(first, second) {
+  const shots = (report) =>
+    new Set(report.pages.filter((page) => page.lines.includes(SCREENSHOT_DIFFERS)).map((page) => page.path));
+  const firstShots = shots(first);
+  const secondShots = shots(second);
+  /** @type {Map<string, string[]>} */
+  const byPath = new Map();
+  for (const report of [first, second]) {
+    for (const page of report.pages) {
+      const lines = byPath.get(page.path) ?? [];
+      for (const line of page.lines) {
+        if (line !== SCREENSHOT_DIFFERS && !lines.includes(line)) lines.push(line);
+      }
+      byPath.set(page.path, lines);
+    }
+  }
+  /** @type {string[]} */
+  const notes = [];
+  for (const path of [...new Set([...firstShots, ...secondShots])].sort()) {
+    if (firstShots.has(path) && secondShots.has(path)) {
+      byPath.get(path)?.push(SCREENSHOT_DIFFERS);
+    } else {
+      notes.push(`${path}: screenshot differed in one round only (rendering noise; ignored)`);
+    }
+  }
+  const pages = [...byPath]
+    .filter(([, lines]) => lines.length > 0)
+    .map(([path, lines]) => ({ path, lines }));
+  return { pages, ignored: [...new Set([...first.ignored, ...second.ignored])], notes };
+}
+
+/**
+ * @param {{ pages: Array<{ path: string, lines: string[] }>, ignored: string[], notes?: string[] }} report
  * @returns {string}
  */
 export function formatDiff(report) {
   const ignored = report.ignored.length ? `\nignored: ${report.ignored.join(", ")}` : "";
-  if (report.pages.length === 0) return `no differences${ignored}`;
+  const notes = (report.notes ?? []).map((note) => `\nnote: ${note}`).join("");
+  if (report.pages.length === 0) return `no differences${ignored}${notes}`;
   const body = report.pages.map((page) => [page.path, ...page.lines].join("\n")).join("\n\n");
-  return `${body}${ignored}`;
+  return `${body}${ignored}${notes}`;
 }
 
 /**
@@ -147,12 +193,19 @@ function readJson(path) {
 }
 
 if (isMainModule(import.meta.url)) {
-  const [beforePath, afterPath] = process.argv.slice(2);
-  if (!beforePath || !afterPath) {
-    console.error("usage: node scripts/content-diff.mjs <before.json> <after.json>");
+  const args = process.argv.slice(2);
+  if (args.length !== 2 && args.length !== 4) {
+    console.error(
+      "usage: node scripts/content-diff.mjs <before.json> <after.json> [<before-2.json> <after-2.json>]",
+    );
     process.exit(2);
   }
-  const text = formatDiff(diffSnapshots(readJson(beforePath), readJson(afterPath)));
+  const [beforePath, afterPath, beforePath2, afterPath2] = args;
+  const first = diffSnapshots(readJson(beforePath), readJson(afterPath));
+  const report = beforePath2
+    ? confirmScreenshots(first, diffSnapshots(readJson(beforePath2), readJson(afterPath2)))
+    : first;
+  const text = formatDiff(report);
   console.log(text);
   process.exit(diffExitCode(text));
 }

@@ -13,6 +13,8 @@ The usual way to check a pull request is the **Content guard** Action (`.github/
 3. Click **Run workflow**. Leave **Branch** on **main**, type the pull request number in **pr**, and click the green **Run workflow** button.
 4. When the run turns green, open it and read the summary. `no differences` is the normal result. A run that finds differences fails, and its summary lists each page that changed.
 
+The Action snapshots each site twice. Font smoothing varies a little from one page load to the next, so a page's screenshot can differ by a few shaded pixels along letter edges even when nothing changed (seen on pull request 30: a different page in each run, identical text). A screenshot counts only when the same page differs in both rounds. One that differs in one round only is listed as a `note:` and does not fail the run. Text, status, feed, and final-address differences from either round always fail it.
+
 The Action runs only from `main`, so the scripts that receive the bypass secret are the reviewed ones. It needs the repository secret `VERCEL_AUTOMATION_BYPASS_SECRET`, a copy of Vercel's Protection Bypass for Automation secret. Snapshots and screenshots are kept with the run for 7 days.
 
 The commands below are the same tools, run by hand.
@@ -65,6 +67,14 @@ npm run content:diff -- artifacts/content/before/snapshot.json artifacts/content
 ```
 
 When the two files match, the command prints `no differences` and exits 0. Otherwise it prints each differing page with the changed lines and exits 1.
+
+With a second round, pass four files:
+
+```
+npm run content:diff -- before/snapshot.json after/snapshot.json before-2/snapshot.json after-2/snapshot.json
+```
+
+A screenshot then has to differ in both rounds to be reported. One that differs in one round only is printed as a `note:` line after `no differences` (or after the differences), and does not change the exit code.
 
 A field that is not content, such as a timestamp, has to be named in `IGNORED_FIELDS` in `scripts/content-diff.mjs`. The list is empty today. A named field is printed as `ignored:` so the skip is visible.
 

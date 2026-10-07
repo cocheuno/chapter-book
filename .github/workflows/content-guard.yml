@@ -115,13 +115,28 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/content-snapshot.mjs "$AFTER_URL" artifacts/content/after
 
+      # Font smoothing varies a little between page loads, so a lone screenshot
+      # difference can be noise. A second round confirms it (content-diff.mjs).
+      - name: Snapshot production again (round 2)
+        env:
+          BEFORE_URL: ${{ inputs.production_url }}
+        run: node scripts/content-snapshot.mjs "$BEFORE_URL" artifacts/content/before-2
+
+      - name: Snapshot the preview again (round 2)
+        env:
+          AFTER_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/content-snapshot.mjs "$AFTER_URL" artifacts/content/after-2
+
       - name: Diff
         id: diff
         run: |
           set +e
           node scripts/content-diff.mjs \
             artifacts/content/before/snapshot.json \
-            artifacts/content/after/snapshot.json > artifacts/content/diff.txt
+            artifacts/content/after/snapshot.json \
+            artifacts/content/before-2/snapshot.json \
+            artifacts/content/after-2/snapshot.json > artifacts/content/diff.txt
           code=$?
           cat artifacts/content/diff.txt
           echo "code=$code" >> "$GITHUB_OUTPUT"
