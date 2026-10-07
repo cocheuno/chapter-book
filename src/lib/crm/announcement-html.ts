@@ -475,6 +475,27 @@ export function announcementPlainText(sanitizedHtml: string): string {
     .trim();
 }
 
+/** Public copy: one sanitized <section>, or null for plain text. */
+export function publicCopyHtml(raw: string | null | undefined): string | null {
+  const section = announcementRichHtml(raw);
+  if (section) return section;
+  const bare = publicRichHtml(raw);
+  return bare ? `<section>${bare}</section>` : null;
+}
+
+/** Words for a clamped excerpt. HTML becomes its visible words; plain text is returned unchanged. */
+export function excerptText(raw: string | null | undefined): string | null {
+  const html = publicCopyHtml(raw);
+  if (html) return announcementPlainText(html);
+  return raw ?? null;
+}
+
+/** Masthead "about" for the feed. aboutHtml is present only when the value has HTML. */
+export function publicAboutFields(about: string | null): { about: string | null; aboutHtml?: string } {
+  const aboutHtml = publicCopyHtml(about);
+  return aboutHtml ? { about: announcementPlainText(aboutHtml), aboutHtml } : { about };
+}
+
 /**
  * HTML for an announcement card.
  * A section in the summary wins. If the summary is empty, a section in the page body is the card.
@@ -495,7 +516,7 @@ export function publicSummaryFields(
   summary: string | null,
   body: string | null = null,
 ): PublicSummary {
-  const summaryHtml = publicRichHtml(summary) ?? (summary?.trim() ? null : publicRichHtml(body));
+  const summaryHtml = publicCopyHtml(summary) ?? (summary?.trim() ? null : publicCopyHtml(body));
   return {
     summary: summaryHtml ? announcementPlainText(summaryHtml) : summary,
     summaryHtml,

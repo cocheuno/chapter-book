@@ -6,8 +6,8 @@ import {
   type SpeakerRecord,
 } from "@/lib/crm/conference-page";
 import { siteImageSrc } from "@/lib/crm/site-image";
-import { PublicCopy } from "@/components/public-copy";
-import { announcementCardHtml } from "@/lib/crm/announcement-html";
+import { PublicCopy, PublicText } from "@/components/public-copy";
+import { excerptText } from "@/lib/crm/announcement-html";
 
 export type ConferencePageData = ConferenceItem & {
   location: string | null;
@@ -76,7 +76,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           {page.subtitle ? (
             <p className="mt-6 max-w-3xl font-display text-2xl leading-snug text-paper-2 sm:text-3xl">{page.subtitle}</p>
           ) : null}
-          {page.summary ? <p className="mt-5 max-w-2xl text-lg leading-relaxed text-paper/80">{page.summary}</p> : null}
+          <PublicText text={page.summary} className="mt-5 max-w-2xl text-lg leading-relaxed text-paper/80" />
           <dl className="mt-8 flex max-w-2xl flex-col gap-2 text-sm text-paper/80 sm:flex-row sm:flex-wrap sm:gap-x-8">
             {page.when_label ? (
               <div>
@@ -109,22 +109,12 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
       {program.notices.length > 0 ? (
         <section className="border-b border-line bg-paper-2">
           <ul className="mx-auto max-w-5xl space-y-3 px-4 py-5">
-            {program.notices.map((notice) => {
-              const rich = announcementCardHtml(notice.summary, null);
-              return (
-                <li key={notice.id}>
-                  <p className="font-medium">{notice.title}</p>
-                  {rich ? (
-                    <div
-                      className="announcement-html mt-1 text-sm text-ink-soft"
-                      dangerouslySetInnerHTML={{ __html: rich }}
-                    />
-                  ) : notice.summary ? (
-                    <p className="mt-1 text-sm text-ink-soft">{notice.summary}</p>
-                  ) : null}
-                </li>
-              );
-            })}
+            {program.notices.map((notice) => (
+              <li key={notice.id}>
+                <p className="font-medium">{notice.title}</p>
+                <PublicText text={notice.summary} className="mt-1 text-sm text-ink-soft" />
+              </li>
+            ))}
           </ul>
         </section>
       ) : null}
@@ -196,7 +186,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
                       {speaker.line ? (
                         <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-ink-soft">{speaker.line}</p>
                       ) : speaker.bio ? (
-                        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-ink-soft">{speaker.bio}</p>
+                        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-ink-soft">{excerptText(speaker.bio)}</p>
                       ) : null}
                     </div>
                   </>
@@ -234,7 +224,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
                     <h3 className="mt-1 font-display text-xl">{workshop.title}</h3>
                     {workshop.subtitle ? <p className="mt-1 text-sm text-ink-soft">{workshop.subtitle}</p> : null}
                     {workshop.when_label ? <p className="mt-1 text-sm text-muted">{workshop.when_label}</p> : null}
-                    {workshop.summary ? <p className="mt-3 leading-relaxed text-ink-soft">{workshop.summary}</p> : null}
+                    <PublicText text={workshop.summary} className="mt-3 leading-relaxed text-ink-soft" />
                     {href ? (
                       <p className="mt-3">
                         <TextLink href={href}>{workshop.slug ? "Workshop details" : "Related link"}</TextLink>
@@ -257,7 +247,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
                   <li key={note.id} className="px-5 py-4">
                     <h3 className="font-display text-xl">{note.title}</h3>
                     {note.subtitle ? <p className="mt-1 text-sm text-muted">{note.subtitle}</p> : null}
-                    {note.summary ? <p className="mt-2 text-ink-soft">{note.summary}</p> : null}
+                    <PublicText text={note.summary} className="mt-2 text-ink-soft" />
                     {href ? (
                       <p className="mt-2">
                         <TextLink href={href}>{note.slug ? "Read the note" : "Open"}</TextLink>

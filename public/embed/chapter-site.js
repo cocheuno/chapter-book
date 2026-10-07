@@ -90,7 +90,10 @@
       var s = (data && data.settings) || {};
       text(document.querySelector("[data-scs=\"title\"]"), s.publicTitle);
       text(document.querySelector("[data-scs=\"tagline\"]"), s.publicTagline);
-      text(document.querySelector("[data-scs=\"about\"]"), s.about);
+      var aboutEl = document.querySelector("[data-scs=\"about\"]");
+      var aboutRich = safeSection(s.aboutHtml);
+      if (aboutEl && aboutRich) aboutEl.innerHTML = aboutRich;
+      else text(aboutEl, s.about);
       var items = (data && data.items) || [];
       ["announcement", "event", "article", "document", "course"].forEach(function (kind) {
         var host = document.querySelector("[data-scs-list=\"" + kind + "\"]");

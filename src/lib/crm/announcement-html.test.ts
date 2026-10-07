@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   announcementPlainText,
   announcementRichHtml,
+  excerptText,
+  publicAboutFields,
+  publicCopyHtml,
   publicRichHtml,
   publicSummaryFields,
 } from "./announcement-html.ts";
@@ -140,5 +143,46 @@ describe("announcement HTML", () => {
     const announcement = publicSummaryFields("announcement", raw);
     assert.equal(announcement.summaryHtml, "<section><p>Hi</p></section>");
     assert.equal(announcementPlainText(announcement.summaryHtml ?? ""), "Hi");
+  });
+
+  it("wraps public copy in one section and leaves plain text alone", () => {
+    const section = "<section><h2>Hi</h2><p>Text</p></section>";
+    const html = publicCopyHtml(section);
+    assert.ok(html);
+    assert.match(html, /<h2>Hi<\/h2>/);
+    assert.ok(html.startsWith("<section"));
+    assert.equal(html, publicRichHtml(section));
+
+    assert.equal(publicCopyHtml("<p>Hi</p>"), "<section><p>Hi</p></section>");
+    assert.equal(publicCopyHtml("Plain words\nSecond line"), null);
+    assert.equal(publicCopyHtml(null), null);
+
+    const hostile = publicCopyHtml(
+      '<section><script>alert(1)</script><p onclick="x()">Hi</p><img src="x" onerror="y()"></section>',
+    );
+    assert.ok(hostile);
+    assert.equal(hostile.includes("script"), false);
+    assert.equal(hostile.includes("onclick"), false);
+    assert.equal(hostile.includes("onerror"), false);
+  });
+
+  it("turns HTML into excerpt words and keeps plain text", () => {
+    const words = excerptText("<section><h2>Hi</h2><p>Text</p></section>");
+    assert.equal(words, "Hi Text");
+    assert.equal(words?.includes("<"), false);
+    assert.equal(excerptText("Line one\nLine two"), "Line one\nLine two");
+  });
+
+  it("adds aboutHtml only when the masthead has HTML", () => {
+    assert.deepEqual(publicAboutFields("Plain about"), { about: "Plain about" });
+    const rich = publicAboutFields("<section><p>A</p></section>");
+    assert.ok(rich.aboutHtml?.startsWith("<section"));
+    assert.equal(rich.about, "A");
+  });
+
+  it("sends article summaries as one section", () => {
+    const article = publicSummaryFields("article", "<p>Hi</p>");
+    assert.equal(article.summaryHtml, "<section><p>Hi</p></section>");
+    assert.equal(article.summary, "Hi");
   });
 });

@@ -5,7 +5,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
-import { publicSummaryFields } from "./announcement-html";
+import { publicAboutFields, publicSummaryFields } from "./announcement-html";
 import { type SpeakerRecord } from "./conference-page";
 import { canonicalDetailPaths, eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
@@ -148,7 +148,7 @@ export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[
     settings: {
       publicTitle: data.settings.public_title,
       publicTagline: data.settings.public_tagline,
-      about: data.settings.about,
+      ...publicAboutFields(data.settings.about),
       contactEmail: data.settings.contact_email,
     },
     items: data.items.map((i) => ({
