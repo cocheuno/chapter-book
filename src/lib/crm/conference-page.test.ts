@@ -5,6 +5,7 @@ import {
   buildConferenceProgram,
   lineupFromSpeakers,
   pieceHref,
+  programDays,
   speakerCardText,
   type ConferenceItem,
 } from "./conference-page.ts";
@@ -183,5 +184,125 @@ describe("conference program", () => {
     assert.equal(pieceHref({ slug: "opening", url: "https://example.edu" }), "/p/opening");
     assert.equal(pieceHref({ slug: null, url: "example.edu/rsvp" }), "https://example.edu/rsvp");
     assert.equal(pieceHref({ slug: null, url: null }), null);
+  });
+});
+
+describe("programDays", () => {
+  const zone = "America/Chicago";
+
+  it("is null when there are no talks", () => {
+    assert.equal(programDays([], {}, zone), null);
+    assert.equal(
+      programDays(
+        [
+          item({ id: "w", kind: "course", title: "Workshop" }),
+          item({ id: "n", kind: "document", title: "Note" }),
+          item({ id: "a", kind: "announcement", title: "Notice" }),
+        ],
+        {},
+        zone,
+      ),
+      null,
+    );
+  });
+
+  it("is null when one of three talks has no time", () => {
+    const talks = [
+      item({ id: "a", kind: "article", title: "One" }),
+      item({ id: "b", kind: "article", title: "Two" }),
+      item({ id: "c", kind: "article", title: "Three" }),
+    ];
+    assert.equal(
+      programDays(
+        talks,
+        {
+          a: "2027-04-15T14:30:00Z",
+          c: "2027-04-17T15:00:00Z",
+        },
+        zone,
+      ),
+      null,
+    );
+  });
+
+  it("groups Chicago times into Thursday, Friday, and Saturday", () => {
+    const days = programDays(
+      [
+        item({ id: "open", kind: "article", title: "Opening", featured: true, audience: "Anthropology" }),
+        item({ id: "late", kind: "article", title: "Late session", audience: "How it works" }),
+        item({ id: "noon", kind: "article", title: "Midday", audience: "Parish" }),
+        item({ id: "sat", kind: "article", title: "Saturday talk" }),
+        item({ id: "workshop", kind: "course", title: "A workshop" }),
+        item({ id: "note", kind: "document", title: "A note" }),
+        item({ id: "news", kind: "announcement", title: "A notice" }),
+      ],
+      {
+        open: "2027-04-15T14:30:00Z",
+        late: "2027-04-16T04:30:00Z",
+        noon: "2027-04-16T17:00:00Z",
+        sat: "2027-04-17T15:00:00Z",
+        workshop: "2027-04-15T14:30:00Z",
+      },
+      zone,
+    );
+    assert.ok(days);
+    assert.deepEqual(
+      days.map((day) => ({
+        key: day.key,
+        name: day.name,
+        heading: day.heading,
+        anchor: day.anchor,
+        talks: day.talks.map((row) => ({ id: row.talk.id, time: row.time, featured: row.talk.featured })),
+      })),
+      [
+        {
+          key: "2027-04-15",
+          name: "Thursday",
+          heading: "Thursday, April 15",
+          anchor: "day-2027-04-15",
+          talks: [
+            { id: "open", time: "9:30 a.m.", featured: true },
+            { id: "late", time: "11:30 p.m.", featured: false },
+          ],
+        },
+        {
+          key: "2027-04-16",
+          name: "Friday",
+          heading: "Friday, April 16",
+          anchor: "day-2027-04-16",
+          talks: [{ id: "noon", time: "12:00 p.m.", featured: false }],
+        },
+        {
+          key: "2027-04-17",
+          name: "Saturday",
+          heading: "Saturday, April 17",
+          anchor: "day-2027-04-17",
+          talks: [{ id: "sat", time: "10:00 a.m.", featured: false }],
+        },
+      ],
+    );
+    const ids = days.flatMap((day) => day.talks.map((row) => row.talk.id));
+    assert.equal(ids.includes("workshop"), false);
+    assert.equal(ids.includes("note"), false);
+    assert.equal(ids.includes("news"), false);
+    assert.equal(ids.includes("open"), true);
+  });
+
+  it("orders two talks on one day by time when they are given in reverse", () => {
+    const days = programDays(
+      [
+        item({ id: "later", kind: "article", title: "Later" }),
+        item({ id: "earlier", kind: "article", title: "Earlier" }),
+      ],
+      {
+        later: "2027-04-16T17:00:00Z",
+        earlier: "2027-04-16T15:00:00Z",
+      },
+      zone,
+    );
+    assert.deepEqual(
+      days?.[0]?.talks.map((row) => row.talk.id),
+      ["earlier", "later"],
+    );
   });
 });

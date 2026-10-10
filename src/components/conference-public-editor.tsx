@@ -14,6 +14,7 @@ import {
   saveConferenceSpeaker,
   saveConferenceVenue,
 } from "@/lib/crm/conference-public";
+import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import { uploadSiteImage } from "@/lib/crm/site";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -129,7 +130,7 @@ export function ConferencePublicEditor({ eventId }: { eventId: string }) {
 
       <section className="rounded-xl border border-line bg-surface p-4">
         <h2 className="font-display text-xl">Sessions</h2>
-        <p className="mt-1 text-sm text-ink-soft">The program. Choose a speaker from the list above for each session.</p>
+        <p className="mt-1 text-sm text-ink-soft">The program. Choose a speaker from the list above for each session. Give every session a start time to show the program by day.</p>
         <form
           className="mt-3 flex flex-col gap-2 sm:flex-row"
           onSubmit={async (ev) => {
@@ -155,6 +156,7 @@ export function ConferencePublicEditor({ eventId }: { eventId: string }) {
               eventId={eventId}
               session={session}
               speakers={desk.speakers}
+              timeZone={desk.timeZone}
               onChanged={() => load()}
             />
           ))}
@@ -202,6 +204,7 @@ function CopyForm({ eventId, page, onSaved }: { eventId: string; page: Desk["pag
       <div className="sm:col-span-2">
         <Field label="Introduction">
           <p className="text-sm text-ink-soft">Press Enter for a new paragraph, or use HTML (p, headings, lists, links).</p>
+          <p className="text-xs text-muted">Suggested sections: Venue · Parking · Accessible entrance · Hotel block · For schools · Reading.</p>
           <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-32" />
           <p className="mt-1 text-xs text-muted">Start with <code>{"<section>"}</code> for HTML.</p>
           <CopyPreview value={body} />
@@ -371,15 +374,18 @@ function SessionCard({
   eventId,
   session,
   speakers,
+  timeZone,
   onChanged,
 }: {
   eventId: string;
   session: Desk["sessions"][number];
   speakers: Desk["speakers"];
+  timeZone: string;
   onChanged: () => void;
 }) {
   const [title, setTitle] = useState(session.title);
   const [whenLabel, setWhenLabel] = useState(session.when_label ?? "");
+  const [startsLocal, setStartsLocal] = useState(session.starts_at ? toDatetimeLocal(session.starts_at, timeZone) : "");
   const [track, setTrack] = useState(session.track ?? "");
   const [room, setRoom] = useState(session.room ?? "");
   const [summary, setSummary] = useState(session.summary ?? "");
@@ -412,6 +418,7 @@ function SessionCard({
                   articleUrl,
                   featured,
                   speakerId,
+                  startsAt: startsLocal ? fromDatetimeLocal(startsLocal, timeZone) : "",
                 },
               });
               toast.success("Session saved");
@@ -436,6 +443,10 @@ function SessionCard({
           </Field>
           <Field label="When">
             <Input value={whenLabel} onChange={(e) => setWhenLabel(e.target.value)} placeholder="9:30 a.m." />
+          </Field>
+          <Field label="Starts">
+            <Input type="datetime-local" value={startsLocal} onChange={(e) => setStartsLocal(e.target.value)} />
+            <p className="mt-1 text-xs text-muted">Day and time. When every session has one, the public program is grouped by day.</p>
           </Field>
           <Field label="Track">
             <Input value={track} onChange={(e) => setTrack(e.target.value)} placeholder="How it works" />

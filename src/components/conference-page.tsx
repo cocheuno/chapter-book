@@ -2,9 +2,11 @@ import {
   buildConferenceProgram,
   lineupFromSpeakers,
   pieceHref,
+  programDays,
   type ConferenceItem,
   type SpeakerRecord,
 } from "@/lib/crm/conference-page";
+import { CHAPTER_TIME_ZONE } from "@/lib/crm/dates";
 import { siteImageSrc } from "@/lib/crm/site-image";
 import { PublicCopy, PublicText } from "@/components/public-copy";
 import { excerptText } from "@/lib/crm/announcement-html";
@@ -16,7 +18,14 @@ export type ConferencePageData = ConferenceItem & {
   contact_email: string | null;
   program: ConferenceItem[];
   speakerLineup?: SpeakerRecord[];
+  calendar_href?: string | null;
+  sessionStarts?: Record<string, string>;
+  programTimeZone?: string | null;
 };
+
+function clean(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
 
 function initial(name: string) {
   const ch = name.trim().charAt(0).toUpperCase();
@@ -51,6 +60,13 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
   const register = pieceHref({ url: page.url });
   const venuePhoto = siteImageSrc(page.image_id);
   const hasProgram = program.keynotes.length + program.tracks.length + program.workshops.length > 0;
+  const days = programDays(page.program, page.sessionStarts ?? {}, page.programTimeZone || CHAPTER_TIME_ZONE);
+  const topics = days
+    ? [
+        ...days.map((day) => ({ name: day.name, anchor: day.anchor })),
+        ...program.topics.filter((topic) => topic.anchor === "workshops"),
+      ]
+    : program.topics;
   const chapter = page.public_title || "Society of Catholic Scientists";
 
   return (
@@ -82,6 +98,13 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
               <div>
                 <dt className="text-xs tracking-wide text-paper-2 uppercase">When</dt>
                 <dd className="mt-1">{page.when_label}</dd>
+                {page.calendar_href ? (
+                  <dd className="mt-1">
+                    <a href={page.calendar_href} className="text-paper underline underline-offset-2">
+                      Add to calendar
+                    </a>
+                  </dd>
+                ) : null}
               </div>
             ) : null}
             {page.location ? (
@@ -119,10 +142,10 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
         </section>
       ) : null}
 
-      {program.topics.length > 0 ? (
+      {topics.length > 0 ? (
         <nav aria-label="Topics" className="border-b border-line">
           <ul className="mx-auto flex max-w-5xl flex-wrap gap-2 px-4 py-4">
-            {program.topics.map((topic) => (
+            {topics.map((topic) => (
               <li key={topic.name}>
                 <a
                   href={`#${topic.anchor}`}
@@ -139,26 +162,46 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
       <main className="mx-auto max-w-5xl space-y-16 px-4 py-12 sm:py-16">
         <section id="program">
           <h2 className="font-display text-3xl">Program</h2>
-          {program.keynotes.length > 0 ? (
-            <div id="keynotes" className="mt-8 scroll-mt-20">
-              <h3 className="font-display text-2xl">Keynotes</h3>
-              <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-                {program.keynotes.map((talk) => (
-                  <TalkCard key={talk.id} talk={talk} kicker="Keynote" />
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {program.tracks.map((track) => (
-            <div key={track.anchor} id={track.anchor} className="mt-10 scroll-mt-20">
-              <h3 className="font-display text-2xl">{track.name}</h3>
-              <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-                {track.talks.map((talk) => (
-                  <TalkCard key={talk.id} talk={talk} />
-                ))}
-              </ul>
-            </div>
-          ))}
+          {days ? (
+            days.map((day) => (
+              <div key={day.anchor} id={day.anchor} className="mt-10 scroll-mt-20">
+                <h3 className="font-display text-2xl">{day.heading}</h3>
+                <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {day.talks.map(({ talk, time }) => (
+                    <TalkCard
+                      key={talk.id}
+                      talk={talk}
+                      kicker={[time, talk.featured ? "Keynote" : clean(talk.audience)].filter(Boolean).join(" · ")}
+                      showWhen={false}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))
+          ) : (
+            <>
+              {program.keynotes.length > 0 ? (
+                <div id="keynotes" className="mt-8 scroll-mt-20">
+                  <h3 className="font-display text-2xl">Keynotes</h3>
+                  <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                    {program.keynotes.map((talk) => (
+                      <TalkCard key={talk.id} talk={talk} kicker="Keynote" />
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {program.tracks.map((track) => (
+                <div key={track.anchor} id={track.anchor} className="mt-10 scroll-mt-20">
+                  <h3 className="font-display text-2xl">{track.name}</h3>
+                  <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                    {track.talks.map((talk) => (
+                      <TalkCard key={talk.id} talk={talk} />
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </>
+          )}
           {!hasProgram ? (
             <p className="mt-4 text-lg text-ink-soft">The program will appear here as talks and workshops are published.</p>
           ) : null}
@@ -319,13 +362,21 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
   );
 }
 
-function TalkCard({ talk, kicker }: { talk: ConferenceItem; kicker?: string }) {
+function TalkCard({
+  talk,
+  kicker,
+  showWhen = true,
+}: {
+  talk: ConferenceItem;
+  kicker?: string;
+  showWhen?: boolean;
+}) {
   const href = pieceHref(talk);
   return (
     <li className="flex flex-col rounded-xl border border-line bg-surface p-5">
       <p className="text-xs tracking-wide text-bronze uppercase">{kicker || talk.when_label || "Talk"}</p>
       <h4 className="mt-1 font-display text-xl">{talk.title}</h4>
-      {kicker && talk.when_label ? <p className="mt-1 text-sm text-muted">{talk.when_label}</p> : null}
+      {showWhen && kicker && talk.when_label ? <p className="mt-1 text-sm text-muted">{talk.when_label}</p> : null}
       {talk.subtitle ? <p className="mt-2 text-sm text-ink-soft">{talk.subtitle}</p> : null}
       {talk.summary ? <PublicCopy text={talk.summary} className="mt-3 leading-relaxed text-ink-soft" /> : null}
       {href ? (

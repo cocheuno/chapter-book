@@ -3,6 +3,7 @@
  * Speaker lines are text on those items. This module never reads People.
  */
 
+import { todayIn } from "./dates.ts";
 import { slugify } from "./ids.ts";
 import { siteImageSrc } from "./site-image.ts";
 
@@ -222,4 +223,79 @@ export function buildConferenceProgram(items: ConferenceItem[]): ConferenceProgr
   }
 
   return { notices, keynotes, tracks, speakers, workshops, notes, topics };
+}
+
+export type ConferenceDay = {
+  key: string;
+  name: string;
+  heading: string;
+  anchor: string;
+  talks: { talk: ConferenceItem; time: string }[];
+};
+
+function weekdayName(when: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(when);
+}
+
+function dayHeading(when: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(when);
+}
+
+/** "9:30 AM" becomes "9:30 a.m." The narrow space some engines put before AM is included. */
+function clockTime(when: Date, timeZone: string): string {
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(when);
+  return formatted.replace(/[\s\u202f]*AM$/, " a.m.").replace(/[\s\u202f]*PM$/, " p.m.");
+}
+
+/**
+ * Talks grouped by calendar day in the event's time zone.
+ * Null when there are no talks, or when any talk has no start time, so the page stays as it is.
+ */
+export function programDays(
+  items: ConferenceItem[],
+  startsAt: Record<string, string>,
+  timeZone: string,
+): ConferenceDay[] | null {
+  const talks = items.filter((item) => item.kind === "article");
+  if (talks.length === 0) return null;
+  if (talks.some((talk) => !startsAt[talk.id])) return null;
+
+  const ordered = talks
+    .map((talk, index) => ({
+      talk,
+      index,
+      instant: new Date(startsAt[talk.id]!).getTime(),
+    }))
+    .sort((a, b) => a.instant - b.instant || a.index - b.index);
+
+  const days: ConferenceDay[] = [];
+  const byKey = new Map<string, ConferenceDay>();
+  for (const entry of ordered) {
+    const when = new Date(startsAt[entry.talk.id]!);
+    const key = todayIn(timeZone, when);
+    let day = byKey.get(key);
+    if (!day) {
+      day = {
+        key,
+        name: weekdayName(when, timeZone),
+        heading: dayHeading(when, timeZone),
+        anchor: `day-${key}`,
+        talks: [],
+      };
+      byKey.set(key, day);
+      days.push(day);
+    }
+    day.talks.push({ talk: entry.talk, time: clockTime(when, timeZone) });
+  }
+  days.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return days;
 }
