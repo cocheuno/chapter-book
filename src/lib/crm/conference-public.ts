@@ -10,6 +10,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { chooseConferenceItem } from "./conference-page";
+import { CHAPTER_TIME_ZONE } from "./dates";
 import { siteImageSrc } from "./site-image";
 
 type ShelfItem = {
@@ -146,8 +147,10 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
       image_id: string | null;
       featured: boolean;
       speaker_id: string | null;
+      starts_at: string | null;
     }>`
-      select id, title, room, when_label, track, public_speaker, summary, body, article_url, image_id, featured, speaker_id
+      select id, title, room, when_label, track, public_speaker, summary, body, article_url, image_id, featured, speaker_id,
+        to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as starts_at
       from event_sessions where event_id = ${eventId}
       order by sort_order, title
     `;
@@ -162,7 +165,11 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
       from event_speakers where event_id = ${eventId}
       order by sort_order, name
     `;
-    return { page, sessions, speakers };
+    const zones = await sql<{ timezone: string | null }>`
+      select timezone from events where id = ${eventId} and chapter_id = ${m.chapterId}
+    `;
+    const timeZone = zones[0]?.timezone?.trim() || CHAPTER_TIME_ZONE;
+    return { page, sessions, speakers, timeZone };
   });
 
 async function backfillSpeakers(sql: Sql, eventId: string) {
@@ -374,6 +381,7 @@ const sessionShape = z.object({
   imageId: z.string().optional(),
   featured: z.boolean().optional(),
   speakerId: z.string().optional(),
+  startsAt: z.string().optional(),
 });
 
 async function writeTalk(
@@ -485,6 +493,16 @@ export const saveConferenceSession = createServerFn({ method: "POST" })
       { ...data, speaker: speakerName ?? undefined, body: speakerBody ?? undefined, speakerId: speakerId ?? undefined },
       imageId,
     );
+    if (data.startsAt !== undefined) {
+      const value = data.startsAt.trim();
+      if (value && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/.test(value)) {
+        throw new Error("That start time is not valid.");
+      }
+      await sql`
+        update event_sessions set starts_at = ${value || null}::timestamptz
+        where id = ${data.sessionId} and event_id = ${data.eventId}
+      `;
+    }
     await sql`
       update event_sessions set speaker_id = ${speakerId}
       where id = ${data.sessionId} and event_id = ${data.eventId}

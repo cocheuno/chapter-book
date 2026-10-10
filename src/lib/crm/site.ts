@@ -488,6 +488,10 @@ async function readPublicPage(
   const found = rows[0];
   if (!found) return null;
   const page = withWhenText(found);
+  const noTimes: { sessionStarts: Record<string, string>; programTimeZone: string | null } = {
+    sessionStarts: {},
+    programTimeZone: null,
+  };
   const siblings = await sql<{
       id: string;
       kind: string;
@@ -502,7 +506,7 @@ async function readPublicPage(
     const canonicalPath = canonicalDetailPaths(siblings).get(page.id);
     const canonicalSlug = canonicalPath?.startsWith("/p/") ? canonicalPath.slice(3) : null;
     if (canonicalSlug && canonicalSlug !== page.slug) {
-      return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[] };
+      return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[], ...noTimes };
     }
     const gatherings = await listGatherings(sql, chapterId);
     const shelf = await sql<{ id: string; slug: string | null; title: string; published: boolean }>`
@@ -513,7 +517,7 @@ async function readPublicPage(
       gatherings.find((gathering) => gathering.id === page.gathering_id)?.public_item_id ?? null,
     );
     if (page.layout !== "conference") {
-      return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[] };
+      return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[], ...noTimes };
     }
     const program = await sql<SiteItemRow>`
       select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
@@ -534,12 +538,26 @@ async function readPublicPage(
       where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
       order by sp.sort_order, sp.name
     `;
-    const links = await sql<{ speaker_id: string | null; site_item_id: string | null }>`
-      select s.speaker_id, s.site_item_id
+    const links = await sql<{
+      speaker_id: string | null;
+      site_item_id: string | null;
+      starts_at: string | null;
+      timezone: string | null;
+    }>`
+      select s.speaker_id, s.site_item_id,
+        to_char(s.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as starts_at,
+        e.timezone
       from event_sessions s
       join events e on e.id = s.event_id
       where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
     `;
+    const sessionStarts: Record<string, string> = {};
+    for (const link of links) {
+      if (!link.site_item_id || !link.starts_at) continue;
+      const previous = sessionStarts[link.site_item_id];
+      if (!previous || link.starts_at < previous) sessionStarts[link.site_item_id] = link.starts_at;
+    }
+    const programTimeZone = links[0]?.timezone ?? null;
     const speakerLineup: SpeakerRecord[] = people.map((person) => ({
       name: person.name,
       role: person.role,
@@ -549,7 +567,48 @@ async function readPublicPage(
         .filter((link) => link.speaker_id === person.id && link.site_item_id)
         .map((link) => link.site_item_id as string),
     }));
-  return { ...page, canonicalSlug: null, program, eventPage, speakerLineup };
+  return { ...page, canonicalSlug: null, program, eventPage, speakerLineup, sessionStarts, programTimeZone };
+}
+
+/** Dated published event for the calendar file. No sign-in. Reads only. */
+export async function readCalendarEvent(slug: string) {
+  const sql = await getSql();
+  const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
+  if (!chapters[0]) return null;
+  const chapterId = chapters[0].id;
+  const rows = await sql<{
+    id: string;
+    title: string;
+    summary: string | null;
+    location: string | null;
+    slug: string;
+    starts_on: string;
+    ends_on: string | null;
+    gathering_id: string | null;
+  }>`
+    select id, title, summary, location, slug, starts_on, ends_on, gathering_id
+    from site_items
+    where chapter_id = ${chapterId} and slug = ${slug} and published and kind = ${"event"} and starts_on is not null
+  `;
+  const item = rows[0];
+  if (!item) return null;
+  let timed: { startsAt: string; endsAt: string | null } | null = null;
+  if (item.ends_on == null || item.ends_on === item.starts_on) {
+    const times = await sql<{ starts_at: string; ends_at: string | null }>`
+      select to_char(e.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as starts_at,
+             to_char(e.ends_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ends_at
+      from events e
+      where e.chapter_id = ${chapterId}
+        and (e.id = ${item.gathering_id ?? ""} or e.public_item_id = ${item.id})
+        and e.starts_at is not null
+        and to_char(e.starts_at at time zone ${CHAPTER_TIME_ZONE}, 'YYYY-MM-DD') = ${item.starts_on}
+      order by (e.id = ${item.gathering_id ?? ""}) desc
+      limit 1
+    `;
+    const row = times[0];
+    if (row) timed = { startsAt: row.starts_at, endsAt: row.ends_at };
+  }
+  return { item, timed };
 }
 
 /** Public detail page. No sign-in. */

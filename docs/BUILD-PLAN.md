@@ -616,11 +616,18 @@ Corrections:
 2. **Calendar file.** Add a `/p/<slug>/calendar.ics` server route built from `starts_on` / `ends_on`, the location, and the page address. Link it as "Add to calendar".
 3. **Content, not code.** Venue, parking, accessible entrance, hotel block, "For schools", and "Reading" are typed as `<section>` copy by editors. Add those headings to the editor hint as a suggested outline.
 
+**Corrections:**
+
+- Session start times are entered on each session in the conference builder and stored on `event_sessions.starts_at`. Nothing is backfilled.
+- The public program groups by day only when every talk has a start time. Otherwise the program, the topics, and the rest of the page stay as they are.
+- "Add to calendar" is a plain link to `/p/<slug>/calendar.ics`, and only for a published event that has a date. With no dated pages, the link is not shown.
+- The introduction field lists the suggested sections: Venue, Parking, Accessible entrance, Hotel block, For schools, and Reading.
+
 **Done when:**
 
 - Once every talk has a time, the program groups by Thursday, Friday, and Saturday.
 - The `.ics` file opens in Google and Apple calendars.
-- The snapshot diff on production data shows only the new "Add to calendar" link.
+- The snapshot diff on production data shows no differences (no page is dated and no session has a time yet).
 
 **Tests:** grouping by day in `America/Chicago`; `.ics` output (escaped text, all-day versus timed).
 

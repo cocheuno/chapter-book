@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-route
 import { BookOpen } from "lucide-react";
 import { ConferencePage } from "@/components/conference-page";
 import { PublicCopy } from "@/components/public-copy";
+import { calendarHref } from "@/lib/crm/calendar-file";
 import { pageHead } from "@/lib/crm/page-head";
 import { getPublicOrigin } from "@/lib/crm/public-origin";
 import { getPreviewPage, getPublicPage } from "@/lib/crm/site";
@@ -45,6 +46,7 @@ function PublicPageUnavailable() {
 
 function PublicPage() {
   const { page } = Route.useLoaderData();
+  const calendar = calendarHref(page);
 
   const previewBanner =
     page.published === false ? (
@@ -76,6 +78,9 @@ function PublicPage() {
             contact_email: page.contact_email,
             program: page.program,
             speakerLineup: page.speakerLineup,
+            calendar_href: calendar,
+            sessionStarts: page.sessionStarts,
+            programTimeZone: page.programTimeZone,
           }}
         />
       </>
@@ -109,6 +114,13 @@ function PublicPage() {
           <h1 className="font-display text-4xl">{page.title}</h1>
           {page.subtitle ? <p className="text-lg text-ink-soft">{page.subtitle}</p> : null}
           {page.when_label ? <p className="text-sm text-muted">{page.when_label}</p> : null}
+          {calendar ? (
+            <p>
+              <a href={calendar} className="text-sm text-bronze underline-offset-2 hover:underline">
+                Add to calendar
+              </a>
+            </p>
+          ) : null}
           {page.location ? <p className="text-sm text-ink-soft">{page.location}</p> : null}
           {page.audience ? <p className="text-sm text-muted">{page.audience}</p> : null}
           {page.eventPage ? (

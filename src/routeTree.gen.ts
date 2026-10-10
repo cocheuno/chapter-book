@@ -34,6 +34,7 @@ import { Route as EventsEventIdCheckInRouteImport } from './routes/events/$event
 import { Route as EventsEventIdInvitesRouteImport } from './routes/events/$eventId/invites'
 import { Route as EventsEventIdReportRouteImport } from './routes/events/$eventId/report'
 import { Route as PSlugIndexRouteImport } from './routes/p/$slug/index'
+import { Route as PSlugCalendarDoticsRouteImport } from './routes/p/$slug/calendar[.]ics'
 import { Route as PSlugSpeakersSpeakerRouteImport } from './routes/p/$slug/speakers/$speaker'
 
 const IndexRoute = IndexRouteImport.update({
@@ -161,6 +162,11 @@ const PSlugIndexRoute = PSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => PSlugRoute,
 } as any)
+const PSlugCalendarDoticsRoute = PSlugCalendarDoticsRouteImport.update({
+  id: '/calendar.ics',
+  path: '/calendar.ics',
+  getParentRoute: () => PSlugRoute,
+} as any)
 const PSlugSpeakersSpeakerRoute = PSlugSpeakersSpeakerRouteImport.update({
   id: '/speakers/$speaker',
   path: '/speakers/$speaker',
@@ -191,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
+  '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
   '/p/$slug/': typeof PSlugIndexRoute
   '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
+  '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
   '/events/$eventId': typeof EventsEventIdIndexRoute
   '/p/$slug': typeof PSlugIndexRoute
   '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
+  '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
   '/p/$slug/': typeof PSlugIndexRoute
   '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
@@ -277,6 +286,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
+    | '/p/$slug/calendar.ics'
     | '/events/$eventId/'
     | '/p/$slug/'
     | '/p/$slug/speakers/$speaker'
@@ -304,6 +314,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
+    | '/p/$slug/calendar.ics'
     | '/events/$eventId'
     | '/p/$slug'
     | '/p/$slug/speakers/$speaker'
@@ -332,6 +343,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/report'
+    | '/p/$slug/calendar.ics'
     | '/events/$eventId/'
     | '/p/$slug/'
     | '/p/$slug/speakers/$speaker'
@@ -541,6 +553,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PSlugIndexRouteImport
       parentRoute: typeof PSlugRoute
     }
+    '/p/$slug/calendar.ics': {
+      id: '/p/$slug/calendar.ics'
+      path: '/calendar.ics'
+      fullPath: '/p/$slug/calendar.ics'
+      preLoaderRoute: typeof PSlugCalendarDoticsRouteImport
+      parentRoute: typeof PSlugRoute
+    }
     '/p/$slug/speakers/$speaker': {
       id: '/p/$slug/speakers/$speaker'
       path: '/speakers/$speaker'
@@ -552,11 +571,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface PSlugRouteChildren {
+  PSlugCalendarDoticsRoute: typeof PSlugCalendarDoticsRoute
   PSlugIndexRoute: typeof PSlugIndexRoute
   PSlugSpeakersSpeakerRoute: typeof PSlugSpeakersSpeakerRoute
 }
 
 const PSlugRouteChildren: PSlugRouteChildren = {
+  PSlugCalendarDoticsRoute: PSlugCalendarDoticsRoute,
   PSlugIndexRoute: PSlugIndexRoute,
   PSlugSpeakersSpeakerRoute: PSlugSpeakersSpeakerRoute,
 }
