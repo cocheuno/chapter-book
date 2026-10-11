@@ -4,10 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ConferencePublicEditor } from "@/components/conference-public-editor";
-import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
+import { checklistPlan, missingChecklistItems } from "@/lib/crm/checklist";
+import { ADMISSIONS, hatLabel, OCCASIONS } from "@/lib/crm/constants";
 import { getEventWebPage, setEventWebPage } from "@/lib/crm/event-page";
 import { formatWhen, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
+  addMissingChecklistItems,
   addProgramPiece,
   cloneEvent,
   closeDoor,
@@ -15,6 +17,7 @@ import {
   getEvent,
   listClergy,
   listParishes,
+  setTaskDueOn,
   setTaskStatus,
   updateEvent,
 } from "@/lib/crm/actions";
@@ -54,6 +57,14 @@ function EventInner() {
   const attending = data.counts.filter((c) => c.guest_status === "attending" || c.guest_status === "attended").reduce((a, c) => a + c.n, 0);
   const declined = data.counts.find((c) => c.guest_status === "declined")?.n ?? 0;
   const waiting = data.counts.filter((c) => c.guest_status === "no_response" || c.guest_status === "invited").reduce((a, c) => a + c.n, 0);
+  const plan = data.checklistStart ? checklistPlan(e.type_key ?? "", data.checklistStart) : [];
+  const missing = data.checklistStart
+    ? missingChecklistItems(
+        e.type_key ?? "",
+        data.checklistStart,
+        data.tasks.map((task) => task.checklist_key),
+      )
+    : [];
 
   return (
     <div className="space-y-8">
@@ -225,23 +236,62 @@ function EventInner() {
         <div className="rounded-xl border border-line bg-surface p-4">
           <h2 className="font-display text-xl">Checklist</h2>
           <ul className="mt-3 space-y-2">
-            {data.tasks.map((t) => (
-              <li key={t.id} className="flex min-h-11 items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-2 size-5 shrink-0"
-                  checked={t.status === "done"}
-                  onChange={() =>
-                    setTaskStatus({ data: { id: t.id, status: t.status === "done" ? "open" : "done" } }).then(load)
-                  }
-                />
-                <span className={t.status === "done" ? "text-muted line-through" : ""}>
-                  {t.title}
-                  {t.due_on && <span className="block text-xs text-muted tabular-nums">{t.due_on}</span>}
-                </span>
-              </li>
-            ))}
+            {data.tasks.map((t) => {
+              const planned = t.checklist_key ? plan.find((item) => item.key === t.checklist_key) : undefined;
+              const offerDate = Boolean(planned && t.status !== "done" && planned.dueOn !== t.due_on);
+              return (
+                <li key={t.id} className="flex min-h-11 items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-2 size-5 shrink-0"
+                    checked={t.status === "done"}
+                    onChange={() =>
+                      setTaskStatus({ data: { id: t.id, status: t.status === "done" ? "open" : "done" } }).then(load)
+                    }
+                  />
+                  <span className={t.status === "done" ? "text-muted line-through" : ""}>
+                    {t.title}
+                    {(t.due_on || t.hat) && (
+                      <span className="block text-xs text-muted tabular-nums">
+                        {t.due_on}
+                        {t.hat ? ` · ${hatLabel(t.hat)}` : ""}
+                      </span>
+                    )}
+                    {offerDate && planned && (
+                      <span className="block text-xs text-bronze">
+                        Checklist date: {planned.dueOn}{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2"
+                          onClick={() => setTaskDueOn({ data: { id: t.id, dueOn: planned.dueOn } }).then(load)}
+                        >
+                          Use this date
+                        </button>
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
+          {missing.length > 0 && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-3"
+              onClick={async () => {
+                try {
+                  const { added } = await addMissingChecklistItems({ data: { eventId } });
+                  toast.success(`Added ${added} items`);
+                  load();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not add checklist items");
+                }
+              }}
+            >
+              Add missing checklist items ({missing.length})
+            </Button>
+          )}
         </div>
       </section>
 
