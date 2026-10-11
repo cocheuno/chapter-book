@@ -4,6 +4,7 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, lowerEmail, partySizeInRange } from "./ids";
 import { CONFERENCE_CHECKLIST, GOLD_MASS_CHECKLIST, OCCASIONS, isSingularOffice, roleLabel } from "./constants";
+import { missingChecklistItems } from "./checklist";
 import { formatWhen, schoolYearStartIso } from "./format";
 import { composedHonorific, LIST_KEYS, type ListKey } from "./lists";
 import { foldName } from "./match";
@@ -955,7 +956,21 @@ export const getEvent = createServerFn({ method: "GET" })
       join events e on e.id = case when l.event_id_a = ${id} then l.event_id_b else l.event_id_a end
       where l.event_id_a = ${id} or l.event_id_b = ${id}
     `;
-    return { event: rows[0], slots, pieces, sessions, tasks, counts, companion: companion[0] ?? null };
+    const start = await sql<{ d: string | null }>`
+      select to_char(starts_at at time zone timezone, 'YYYY-MM-DD') as d
+      from events
+      where id = ${id} and chapter_id = ${m.chapterId}
+    `;
+    return {
+      event: rows[0],
+      slots,
+      pieces,
+      sessions,
+      tasks,
+      counts,
+      companion: companion[0] ?? null,
+      checklistStart: start[0]?.d ?? null,
+    };
   });
 
 export const createEvent = createServerFn({ method: "POST" })
@@ -1143,6 +1158,55 @@ export const setTaskStatus = createServerFn({ method: "POST" })
     assertEditor(m.role);
     const sql = await getSql();
     await sql`update tasks set status = ${data.status} where id = ${data.id} and chapter_id = ${m.chapterId}`;
+    return { ok: true };
+  });
+
+export const addMissingChecklistItems = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string() }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    const rows = await sql<{ type_key: string; d: string | null }>`
+      select type_key, to_char(starts_at at time zone timezone, 'YYYY-MM-DD') as d
+      from events
+      where id = ${data.eventId} and chapter_id = ${m.chapterId}
+    `;
+    if (!rows[0]) throw new Error("Event not found");
+    if (!rows[0].d) throw new Error("Set the event's date first.");
+    const existing = await sql<{ checklist_key: string | null }>`
+      select checklist_key from tasks where event_id = ${data.eventId}
+    `;
+    const missing = missingChecklistItems(
+      rows[0].type_key,
+      rows[0].d,
+      existing.map((task) => task.checklist_key),
+    );
+    for (const item of missing) {
+      await sql`
+        insert into tasks (id, chapter_id, title, due_on, status, event_id, checklist_key, hat)
+        values (
+          ${nid()}, ${m.chapterId}, ${item.title},
+          ${item.dueOn},
+          ${"open"}, ${data.eventId}, ${item.key}, ${item.hat}
+        )
+      `;
+    }
+    return { added: missing.length };
+  });
+
+export const setTaskDueOn = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ id: z.string(), dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    await sql`
+      update tasks set due_on = ${data.dueOn}
+      where id = ${data.id} and chapter_id = ${m.chapterId}
+    `;
     return { ok: true };
   });
 

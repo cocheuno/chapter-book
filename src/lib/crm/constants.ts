@@ -196,18 +196,147 @@ export const GOLD_MASS_CHECKLIST: {
   { key: "close_event", title: "Mark gathering complete", offsetDays: 14, hat: "events_lead", skippable: false },
 ];
 
-export const CONFERENCE_CHECKLIST = [
-  { key: "venue", title: "Confirm venue", offsetDays: -120, hat: "events_lead", skippable: false },
-  { key: "theme", title: "Lock theme and title", offsetDays: -90, hat: "president", skippable: false },
-  { key: "speakers", title: "Confirm speakers and sessions", offsetDays: -60, hat: "events_lead", skippable: false },
-  { key: "reg_open", title: "Open registration / send invites", offsetDays: -45, hat: "secretary", skippable: false },
-  { key: "notify_schools", title: "Notify Catholic high schools", offsetDays: -40, hat: "events_lead", skippable: false },
-  { key: "materials", title: "Nametags and packets", offsetDays: -7, hat: "secretary", skippable: true },
-  { key: "day_of", title: "Check-in and hospitality", offsetDays: 0, hat: "volunteer", skippable: false },
-  { key: "thank_speakers", title: "Thank speakers", offsetDays: 3, hat: "president", skippable: false },
-  { key: "writeup", title: "File a short write-up", offsetDays: 7, hat: "events_lead", skippable: false },
-  { key: "close_event", title: "Mark complete", offsetDays: 14, hat: "events_lead", skippable: false },
+export const CONFERENCE_CHECKLIST: {
+  key: string;
+  title: string;
+  offsetDays: number;
+  hat: string;
+  skippable: boolean;
+}[] = [
+  {
+    key: "invite_bishop",
+    title: "Invite the local bishop; ask the chancery about Mass at the venue",
+    offsetDays: -180,
+    hat: "president",
+    skippable: false,
+  },
+  {
+    key: "venue_contract",
+    title: "Venue contract and certificate of insurance",
+    offsetDays: -180,
+    hat: "events_lead",
+    skippable: false,
+  },
+  {
+    key: "celebrant",
+    title: "Celebrant confirmed; Mass permission on file",
+    offsetDays: -150,
+    hat: "president",
+    skippable: false,
+  },
+  {
+    key: "payments",
+    title: "Stripe account verified; ticket types, prices, refund policy decided",
+    offsetDays: -120,
+    hat: "treasurer",
+    skippable: false,
+  },
+  {
+    key: "speakers",
+    title: "Speakers confirmed, with agreements (recording, photos, honorarium, travel)",
+    offsetDays: -120,
+    hat: "events_lead",
+    skippable: false,
+  },
+  {
+    key: "notify_schools",
+    title: "Notify Catholic high schools, before Christmas break, so field trips can be approved",
+    offsetDays: -120,
+    hat: "events_lead",
+    skippable: false,
+  },
+  {
+    key: "reg_open",
+    title: "Open registration (early bird)",
+    offsetDays: -95,
+    hat: "secretary",
+    skippable: false,
+  },
+  { key: "hotel_block", title: "Hotel room block", offsetDays: -90, hat: "events_lead", skippable: true },
+  {
+    key: "early_bird_ends",
+    title: "Early bird ends; letters of suitability requested; volunteer safe-environment clearances checked",
+    offsetDays: -45,
+    hat: "secretary",
+    skippable: false,
+  },
+  {
+    key: "bulletins",
+    title: "Bulletin notices (before Holy Week)",
+    offsetDays: -40,
+    hat: "secretary",
+    skippable: false,
+  },
+  {
+    key: "rosters_due",
+    title: "School rosters and guardian consents due (before Holy Week and Easter break)",
+    offsetDays: -28,
+    hat: "events_lead",
+    skippable: false,
+  },
+  {
+    key: "catering",
+    title: "Catering counts and dietary list to caterer",
+    offsetDays: -10,
+    hat: "events_lead",
+    skippable: false,
+  },
+  {
+    key: "reg_close",
+    title: "Registration closes; refund deadline",
+    offsetDays: -7,
+    hat: "treasurer",
+    skippable: false,
+  },
+  {
+    key: "materials",
+    title: "Nametags, packets, door list with consent flags",
+    offsetDays: -3,
+    hat: "secretary",
+    skippable: true,
+  },
+  {
+    key: "day_of",
+    title: "Check-in and hospitality; first aid; chaperone list at the door",
+    offsetDays: 0,
+    hat: "volunteer",
+    skippable: false,
+  },
+  {
+    key: "thank_speakers",
+    title: "Thank the bishop, celebrant, speakers, venue",
+    offsetDays: 3,
+    hat: "president",
+    skippable: false,
+  },
+  {
+    key: "reconcile",
+    title: "Refunds closed; Stripe payouts reconciled; report to treasurer",
+    offsetDays: 14,
+    hat: "treasurer",
+    skippable: false,
+  },
+  {
+    key: "minors_notes",
+    title: "Delete minors' medical and emergency notes; write-up; mark complete",
+    offsetDays: 30,
+    hat: "secretary",
+    skippable: false,
+  },
 ];
+
+export const HATS = [
+  { key: "president", label: "President" },
+  { key: "secretary", label: "Secretary" },
+  { key: "treasurer", label: "Treasurer" },
+  { key: "events_lead", label: "Events lead" },
+  { key: "volunteer", label: "Volunteer" },
+] as const;
+
+export function hatLabel(key: string | null | undefined): string {
+  if (key == null) return "";
+  return HATS.find((hat) => hat.key === key)?.label ?? key.replaceAll("_", " ");
+}
 
 export function roleLabel(key: string): string {
   return (

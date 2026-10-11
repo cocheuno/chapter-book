@@ -3,6 +3,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getHome } from "@/lib/crm/actions";
+import { hatLabel } from "@/lib/crm/constants";
 import { formatWhen } from "@/lib/crm/format";
 import { useEffect, useState } from "react";
 
@@ -77,7 +78,10 @@ function HomeInner() {
             {data.tasks.map((t) => (
               <li key={t.id} className="flex min-h-11 items-center justify-between gap-3 px-4 py-2">
                 <span>{t.title}</span>
-                <span className="text-sm text-muted tabular-nums">{t.due_on ?? ""}</span>
+                <span className="text-sm text-muted tabular-nums">
+                  {t.due_on ?? ""}
+                  {t.hat ? ` · ${hatLabel(t.hat)}` : ""}
+                </span>
               </li>
             ))}
           </ul>

@@ -667,6 +667,12 @@ Corrections:
 2. **Treasurer hat.** Add `treasurer` wherever hats are listed; search for `hat`.
 3. **Refresh an existing event, only when an editor asks.** On the event desk, add "Add missing checklist items". It adds items whose keys are missing and never touches existing tasks. Nothing changes for existing events until an editor presses it; the new list applies automatically only to events created afterwards.
 
+**Corrections** (the implementation prompt wins):
+
+- Hats are `HATS`: president, secretary, treasurer, events lead, and volunteer. `hatLabel` returns the label, or the key with underscores as spaces, or "" for null.
+- `setTaskDueOn` sets one task's `due_on` to a `YYYY-MM-DD` date. A checklist row that is not done can offer "Use this date" when the plan date differs. That is the only date edit.
+- Existing tasks stay as they are until an editor presses "Add missing checklist items" or "Use this date".
+
 **Done when:** for an event starting 2027-04-16, the due dates match the review's table.
 
 **Tests:** offsets to dates.
