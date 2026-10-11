@@ -5,17 +5,19 @@ import { useEffect, useState } from "react";
 import { DeploymentBanner } from "@/components/deployment-banner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/field";
+import { newPasswordError, resetErrorMessage } from "@/lib/crm/operator-rules";
 import { acceptInvite, getLoginState, peekInvite } from "@/lib/crm/operators";
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (s: Record<string, unknown>): { invite?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { invite?: string; reset?: string } => ({
     invite: typeof s.invite === "string" ? s.invite : undefined,
+    reset: typeof s.reset === "string" ? s.reset : undefined,
   }),
   component: Login,
 });
 
 function Login() {
-  const { invite: inviteToken } = Route.useSearch();
+  const { invite: inviteToken, reset } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -25,6 +27,9 @@ function Login() {
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordAgain, setNewPasswordAgain] = useState("");
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   const opening = Boolean(invite) || founder;
 
@@ -58,6 +63,31 @@ function Login() {
       alive = false;
     };
   }, [inviteToken]);
+
+  async function onReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reset) return;
+    const msg = newPasswordError(newPassword, newPasswordAgain);
+    if (msg) {
+      setErr(msg);
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      const r = await authClient.resetPassword({ newPassword, token: reset });
+      if (r.error) {
+        setErr(resetErrorMessage(r.error));
+        return;
+      }
+      window.history.replaceState(null, "", "/login");
+      setPasswordChanged(true);
+      setNewPassword("");
+      setNewPasswordAgain("");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -110,6 +140,41 @@ function Login() {
           <p className="text-muted">Opening the door…</p>
         ) : authEnabled ? (
           <>
+            {reset && !passwordChanged ? (
+              <form onSubmit={onReset} className="space-y-3">
+                <h2 className="font-display text-xl">Choose a new password</h2>
+                <div>
+                  <Label htmlFor="new-password">New password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-password-again">New password again</Label>
+                  <Input
+                    id="new-password-again"
+                    type="password"
+                    minLength={8}
+                    value={newPasswordAgain}
+                    onChange={(e) => setNewPasswordAgain(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+                {err && <p className="text-sm text-danger">{err}</p>}
+                <Button type="submit" className="w-full" disabled={busy}>
+                  Set new password
+                </Button>
+              </form>
+            ) : (
+              <>
+            {passwordChanged && (
+              <p className="text-sm text-ink-soft">Your password is changed. Sign in with it.</p>
+            )}
             {inviteNote && <p className="text-sm text-danger">{inviteNote}</p>}
             {invite && (
               <p className="text-sm text-ink-soft">
@@ -164,6 +229,8 @@ function Login() {
                 Public chapter site
               </a>
             </p>
+              </>
+            )}
           </>
         ) : (
           <p className="text-sm text-muted">Sign-in is disabled.</p>

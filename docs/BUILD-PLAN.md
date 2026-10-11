@@ -696,6 +696,12 @@ Corrections:
 3. **Operators desk.** "Reset link" (admin only) triggers the reset for that operator and shows the stored link to copy, the same way invites work today.
 4. **Login page.** Handle the reset link: new password twice, then sign in.
 
+**Corrections** (the implementation prompt wins):
+
+- `server.ts` only gains the reset callbacks and `disabledPaths: ["/request-password-reset"]`. The callback stores the token and does not use Better Auth's link, because that host is Production on Preview too. The browser builds `/login?reset=...` from the current origin.
+- The table keeps a hash of the token, not the link. The plain token stays in memory only until the admin's request returns it.
+- A book with one admin who is locked out still needs a database reset by the maintainer.
+
 **Done when:** an admin can hand a locked-out operator a link that sets a new password and ends their old sessions. After WP-50, the same callback sends the link by email.
 
 ### WP-17 Person statuses and dated affiliations
