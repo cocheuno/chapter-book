@@ -102,7 +102,7 @@ function ComposeInner() {
           <ul className="max-h-40 overflow-auto text-sm">
             {preview.recipients.map((r) => (
               <li key={r.address + r.name}>
-                {r.name} · {r.address}
+                {r.name} · {r.address} · {r.salutation}
                 {r.kind !== "person" ? " · front office" : ""}
               </li>
             ))}

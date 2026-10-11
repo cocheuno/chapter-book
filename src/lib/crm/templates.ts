@@ -14,7 +14,7 @@ export const MAIL_TEMPLATE_SEEDS: MailTemplateSeed[] = [
     audienceHint: "event_guests",
     eventTypeKey: "gold_mass",
     subject: "Gold Mass for scientists — {{event_date}} at {{venue_name}}",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 The {{chapter_name}} invites you to a Gold Mass for scientists and science educators.
 
@@ -36,7 +36,7 @@ With gratitude,
     audienceHint: "event_guests",
     eventTypeKey: "gold_mass",
     subject: "Reminder: Gold Mass on {{event_date}}",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 A brief reminder of our Gold Mass:
 
@@ -54,7 +54,7 @@ A brief reminder of our Gold Mass:
     audienceHint: "parish_secretaries",
     eventTypeKey: "gold_mass",
     subject: "Bulletin notice: Gold Mass for scientists, {{event_date}}",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 Would you be willing to place the following notice in the bulletin at {{org_or_school_name}}?
 
@@ -76,7 +76,7 @@ The Society of Catholic Scientists invites scientists, science teachers, student
     audienceHint: "school_doors",
     eventTypeKey: "gold_mass",
     subject: "Gold Mass for scientists — please tell your faculty and advanced students",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 I am writing to you as {{role_at_institution}} at {{org_or_school_name}}.
 
@@ -101,7 +101,7 @@ Thank you for the work you do with your students.
     audienceHint: "school_doors",
     eventTypeKey: "gold_mass",
     subject: "May we reserve seats for {{org_or_school_name}} at the Gold Mass?",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 Thank you for being willing to let {{org_or_school_name}} know about our Gold Mass on {{event_date}}.
 
@@ -115,7 +115,7 @@ If you expect to bring students or faculty, a rough number helps us with seating
     audienceHint: "manual",
     eventTypeKey: "gold_mass",
     subject: "Thank you for celebrating our Gold Mass",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 Thank you for celebrating the Gold Mass for the {{chapter_name}} on {{event_date}} at {{venue_name}}.
 
@@ -131,7 +131,7 @@ With gratitude,
     audienceHint: "parish_secretaries",
     eventTypeKey: "gold_mass",
     subject: "Thank you for hosting the Gold Mass at {{org_or_school_name}}",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 Thank you for welcoming the {{chapter_name}} to {{org_or_school_name}} for our Gold Mass on {{event_date}}.
 
@@ -144,7 +144,7 @@ Thank you for welcoming the {{chapter_name}} to {{org_or_school_name}} for our G
     audienceHint: "school_doors",
     eventTypeKey: "gold_mass",
     subject: "Thank you — {{org_or_school_name}} at the Gold Mass",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 Thank you for helping {{org_or_school_name}} take part in our Gold Mass on {{event_date}}.
 
@@ -156,7 +156,7 @@ Thank you for helping {{org_or_school_name}} take part in our Gold Mass on {{eve
     audienceHint: "event_guests",
     eventTypeKey: "conference",
     subject: "{{event_title}} — {{event_date}}",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 The {{chapter_name}} invites you to our regional conference on science and the Catholic faith.
 
@@ -175,10 +175,18 @@ The {{chapter_name}} invites you to our regional conference on science and the C
     audienceHint: "any",
     eventTypeKey: null,
     subject: "",
-    body: `Dear {{honorific}} {{family_name}},
+    body: `{{salutation}},
 
 
 
 {{chapter_name}}`,
   },
 ];
+
+export function toSalutationGreeting(body: string): string {
+  return body.replaceAll("Dear {{honorific}} {{family_name}}", "{{salutation}}");
+}
+
+export function toHonorificGreeting(body: string): string {
+  return body.replaceAll("{{salutation}}", "Dear {{honorific}} {{family_name}}");
+}

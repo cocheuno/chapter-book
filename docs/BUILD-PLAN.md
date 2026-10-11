@@ -652,6 +652,14 @@ Corrections:
    - **Existing templates are not changed.** On the Mail desk, each template offers a button: "Use the salutation field", which an editor may press. Nothing changes until they do.
 6. **Person form:** a post-nominals field, and a salutation preview with an override box.
 
+**Corrections** (the implementation prompt wins):
+
+- A blank religious title, academic title Dr., and a doctorate in the post-nominals prints without the Dr. honorific: "Jane Doe, Ph.D."
+- Mother is "Dear Mother <given name>".
+- `salutation()` is the whole greeting and has no trailing comma. The form preview adds one. New-chapter seeds start with `{{salutation}},`.
+- Stored templates and lists change only when an editor presses "Use the salutation field" (after confirm) or "Switch back", or an admin presses "Add the suggested values" on an empty list.
+- `addSuggestedListItems` reactivates an inactive match, skips an active match, inserts any other value at the end, and returns `{ added }`.
+
 **Done when:** the person page and mail preview show correct names and salutations for every row of the §5 table.
 
 **Tests:**

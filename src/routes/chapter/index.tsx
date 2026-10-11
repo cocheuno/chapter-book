@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
-import { addListItem, deleteListItem, listAllLists, updateChapter } from "@/lib/crm/actions";
+import { addListItem, addSuggestedListItems, deleteListItem, listAllLists, updateChapter } from "@/lib/crm/actions";
 import { clearOperationalBook } from "@/lib/crm/wipe-book";
 import { getSessionContext } from "@/lib/crm/member";
 import {
@@ -289,7 +289,7 @@ function ChapterInner() {
         <div>
           <h2 className="font-display text-xl">Lists</h2>
           <p className="text-sm text-ink-soft">
-            Religious titles, academic titles, states, and countries. These fill the dropdowns on people and partners.
+            Religious titles, academic titles, post-nominals, states, and countries. These fill the dropdowns on people and partners.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -325,7 +325,28 @@ function ChapterInner() {
               )}
             </li>
           ))}
-          {(current?.items.length ?? 0) === 0 && <li className="px-4 py-6 text-muted">This list is empty.</li>}
+          {(current?.items.length ?? 0) === 0 && (
+            <li className="px-4 py-6 text-muted">
+              <p>This list is empty.</p>
+              {isAdmin && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-3"
+                  onClick={async () => {
+                    try {
+                      await addSuggestedListItems({ data: { listKey: tab } });
+                      loadLists();
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Could not add the suggested values");
+                    }
+                  }}
+                >
+                  Add the suggested values
+                </Button>
+              )}
+            </li>
+          )}
         </ul>
         {isAdmin ? (
           <form

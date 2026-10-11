@@ -5,9 +5,10 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, lowerEmail, partySizeInRange } from "./ids";
 import { CONFERENCE_CHECKLIST, GOLD_MASS_CHECKLIST, OCCASIONS, isSingularOffice, roleLabel } from "./constants";
 import { formatWhen, schoolYearStartIso } from "./format";
-import { composedHonorific, LIST_KEYS, type ListKey } from "./lists";
+import { composedHonorific, LIST_KEYS, LIST_SEEDS, type ListKey } from "./lists";
 import { foldName } from "./match";
-import { composePersonName, listedName, splitMiddle, splitWalkupName } from "./names";
+import { composePersonName, listedName, postNominalsText, salutation, splitMiddle, splitWalkupName } from "./names";
+import { toHonorificGreeting, toSalutationGreeting } from "./templates";
 import { ensureEventWebPage } from "./event-page";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
 import { csvRow } from "./csv";
@@ -169,6 +170,8 @@ const personInput = z.object({
   suffix: z.string().optional(),
   religiousTitle: z.string().optional(),
   academicTitle: z.string().optional(),
+  postNominals: z.string().optional(),
+  salutationOverride: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
   mobile: z.string().optional(),
@@ -203,10 +206,11 @@ export const listPeople = createServerFn({ method: "GET" })
       honorific: string | null;
       religious_title: string | null;
       academic_title: string | null;
+      post_nominals: string | null;
     }>`
       select p.id, p.display_name, p.email, p.city, p.last_touch_at,
              p.given_name, p.family_name, coalesce(p.middle_name, p.middle_initial) as middle_name, p.suffix,
-             p.honorific, p.religious_title, p.academic_title
+             p.honorific, p.religious_title, p.academic_title, p.post_nominals
       from persons p
       where p.chapter_id = ${m.chapterId}
         and (${role ?? null}::text is null or exists (
@@ -305,6 +309,8 @@ export const createPerson = createServerFn({ method: "POST" })
     const family = data.familyName.trim();
     const mid = splitMiddle(data.middleName ?? data.middleInitial);
     const suffix = (data.suffix ?? "").trim() || null;
+    const postNominals = postNominalsText(data.postNominals) || null;
+    const salutationOverride = (data.salutationOverride ?? "").trim() || null;
     const honorific = composedHonorific(data.religiousTitle, data.academicTitle);
     const name = composePersonName({
       religiousTitle: data.religiousTitle,
@@ -313,6 +319,7 @@ export const createPerson = createServerFn({ method: "POST" })
       middleName: mid.middleName,
       familyName: family,
       suffix,
+      postNominals,
     });
     if (email) {
       const dup = await sql<{ id: string; display_name: string }>`
@@ -342,12 +349,12 @@ export const createPerson = createServerFn({ method: "POST" })
       await sql`
         insert into persons (
           id, chapter_id, display_name, given_name, family_name, middle_name, middle_initial, suffix,
-          honorific, religious_title, academic_title,
+          honorific, religious_title, academic_title, post_nominals, salutation_override,
           email, phone, mobile, street, street2, city, state, postal_code, country, website, dietary, notes, created_by
         )
         values (
           ${id}, ${m.chapterId}, ${name}, ${given}, ${family}, ${mid.middleName}, ${mid.middleInitial}, ${suffix},
-          ${honorific}, ${data.religiousTitle || null}, ${data.academicTitle || null},
+          ${honorific}, ${data.religiousTitle || null}, ${data.academicTitle || null}, ${postNominals}, ${salutationOverride},
           ${email}, ${data.phone || null}, ${data.mobile || null}, ${data.street || null}, ${data.street2 || null},
           ${data.city || null}, ${data.state || null}, ${data.postalCode || null},
           ${data.country || "United States"}, ${data.website || null}, ${data.dietary || null}, ${data.notes || null}, ${m.userId}
@@ -407,6 +414,19 @@ export const updatePerson = createServerFn({ method: "POST" })
     const family = data.familyName.trim();
     const mid = splitMiddle(data.middleName ?? data.middleInitial);
     const suffix = (data.suffix ?? "").trim() || null;
+    let postSource = data.postNominals;
+    let saluteSource = data.salutationOverride;
+    if (postSource === undefined || saluteSource === undefined) {
+      const stored = await sql<{ post_nominals: string | null; salutation_override: string | null }>`
+        select post_nominals, salutation_override from persons
+        where id = ${data.id} and chapter_id = ${m.chapterId}
+      `;
+      if (!stored[0]) throw new Error("Person not found");
+      if (postSource === undefined) postSource = stored[0].post_nominals ?? "";
+      if (saluteSource === undefined) saluteSource = stored[0].salutation_override ?? "";
+    }
+    const postNominals = postNominalsText(postSource) || null;
+    const salutationOverride = (saluteSource ?? "").trim() || null;
     const honorific = composedHonorific(data.religiousTitle, data.academicTitle);
     const name = composePersonName({
       religiousTitle: data.religiousTitle,
@@ -415,6 +435,7 @@ export const updatePerson = createServerFn({ method: "POST" })
       middleName: mid.middleName,
       familyName: family,
       suffix,
+      postNominals,
     });
     if (email) {
       const taken = await sql<{ id: string; display_name: string }>`
@@ -461,7 +482,9 @@ export const updatePerson = createServerFn({ method: "POST" })
         country = ${data.country || null},
         website = ${data.website || null},
         dietary = ${data.dietary || null},
-        notes = ${data.notes || null}
+        notes = ${data.notes || null},
+        post_nominals = ${postNominals},
+        salutation_override = ${salutationOverride}
       where id = ${data.id} and chapter_id = ${m.chapterId}
     `;
     await sql`delete from person_roles where person_id = ${data.id}`;
@@ -1631,6 +1654,7 @@ type Recipient = {
   familyName: string;
   orgName: string;
   roleAt: string;
+  salutation: string;
 };
 
 function mergeFields(
@@ -1641,6 +1665,7 @@ function mergeFields(
 ) {
   const map: Record<string, string> = {
     honorific: rec.honorific,
+    salutation: rec.salutation,
     given_name: rec.givenName,
     family_name: rec.familyName,
     display_name: rec.displayName,
@@ -1681,6 +1706,10 @@ async function resolveAudience(
     orgName?: string;
     roleAt?: string;
     organizationId?: string;
+    religious_title?: string | null;
+    academic_title?: string | null;
+    post_nominals?: string | null;
+    salutation_override?: string | null;
   }) => {
     if (seen.has(`p:${p.id}`)) return;
     if (p.status === "do_not_contact" || p.email_unsubscribed) {
@@ -1703,6 +1732,14 @@ async function resolveAudience(
       familyName: p.family_name ?? "",
       orgName: p.orgName ?? "",
       roleAt: p.roleAt ?? "",
+      salutation: salutation({
+        religiousTitle: p.religious_title,
+        academicTitle: p.academic_title,
+        givenName: p.given_name,
+        familyName: p.family_name,
+        postNominals: p.post_nominals,
+        salutationOverride: p.salutation_override,
+      }),
     });
   };
 
@@ -1724,12 +1761,18 @@ async function resolveAudience(
         honorific: string | null;
         given_name: string | null;
         family_name: string | null;
+        religious_title: string | null;
+        academic_title: string | null;
+        post_nominals: string | null;
+        salutation_override: string | null;
         email: string | null;
         email_unsubscribed: boolean;
         status: string;
         role_key: string;
       }>`
-        select p.id, p.display_name, p.honorific, p.given_name, p.family_name, p.email, p.email_unsubscribed, p.status, a.role_key
+        select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
+               p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
+               p.email, p.email_unsubscribed, p.status, a.role_key
         from affiliations a
         join persons p on p.id = a.person_id
         where a.organization_id = ${s.id} and a.is_current
@@ -1751,6 +1794,7 @@ async function resolveAudience(
           familyName: "",
           orgName: s.name,
           roleAt: "front office",
+          salutation: "Dear Friends",
         });
       } else {
         skips.push({ partyType: "organization", id: s.id, name: s.name, reason: "no_door" });
@@ -1767,12 +1811,18 @@ async function resolveAudience(
         honorific: string | null;
         given_name: string | null;
         family_name: string | null;
+        religious_title: string | null;
+        academic_title: string | null;
+        post_nominals: string | null;
+        salutation_override: string | null;
         email: string | null;
         email_unsubscribed: boolean;
         status: string;
         role_key: string;
       }>`
-        select p.id, p.display_name, p.honorific, p.given_name, p.family_name, p.email, p.email_unsubscribed, p.status, a.role_key
+        select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
+               p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
+               p.email, p.email_unsubscribed, p.status, a.role_key
         from affiliations a join persons p on p.id = a.person_id
         where a.organization_id = ${o.id} and a.is_current
       `;
@@ -1791,6 +1841,7 @@ async function resolveAudience(
           familyName: "",
           orgName: o.name,
           roleAt: "front office",
+          salutation: "Dear Friends",
         });
       } else {
         skips.push({ partyType: "organization", id: o.id, name: o.name, reason: "no_bulletin_contact" });
@@ -1803,11 +1854,17 @@ async function resolveAudience(
       honorific: string | null;
       given_name: string | null;
       family_name: string | null;
+      religious_title: string | null;
+      academic_title: string | null;
+      post_nominals: string | null;
+      salutation_override: string | null;
       email: string | null;
       email_unsubscribed: boolean;
       status: string;
     }>`
-      select pe.id, pe.display_name, pe.honorific, pe.given_name, pe.family_name, pe.email, pe.email_unsubscribed, pe.status
+      select pe.id, pe.display_name, pe.honorific, pe.given_name, pe.family_name,
+             pe.religious_title, pe.academic_title, pe.post_nominals, pe.salutation_override,
+             pe.email, pe.email_unsubscribed, pe.status
       from participations p join persons pe on pe.id = p.person_id
       where p.event_id = ${eventId} and p.party_type = 'person' and p.chapter_id = ${m.chapterId}
     `;
@@ -1819,11 +1876,17 @@ async function resolveAudience(
       honorific: string | null;
       given_name: string | null;
       family_name: string | null;
+      religious_title: string | null;
+      academic_title: string | null;
+      post_nominals: string | null;
+      salutation_override: string | null;
       email: string | null;
       email_unsubscribed: boolean;
       status: string;
     }>`
-      select p.id, p.display_name, p.honorific, p.given_name, p.family_name, p.email, p.email_unsubscribed, p.status
+      select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
+             p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
+             p.email, p.email_unsubscribed, p.status
       from persons p
       join person_roles r on r.person_id = p.id and r.role_key = 'academic_member'
       where p.chapter_id = ${m.chapterId}
@@ -1887,6 +1950,7 @@ export const previewMail = createServerFn({ method: "POST" })
         name: r.displayName,
         address: r.address,
         orgName: r.orgName,
+        salutation: r.salutation,
       })),
     };
   });
@@ -2022,6 +2086,30 @@ export const markNotifySchools = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const setTemplateGreeting = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      templateId: z.string(),
+      use: z.enum(["salutation", "honorific"]),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    const rows = await sql<{ body: string }>`
+      select body from mail_templates where id = ${data.templateId} and chapter_id = ${m.chapterId}
+    `;
+    if (!rows[0]) throw new Error("Template not found");
+    const body = data.use === "salutation" ? toSalutationGreeting(rows[0].body) : toHonorificGreeting(rows[0].body);
+    await sql`
+      update mail_templates set body = ${body}
+      where id = ${data.templateId} and chapter_id = ${m.chapterId}
+    `;
+    return { ok: true };
+  });
+
 export const updateChapter = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -2111,7 +2199,7 @@ export const listClergy = createServerFn({ method: "GET" })
     return rows.map((p) => ({ id: p.id, display_name: listedName(p) }));
   });
 
-const listKeySchema = z.enum(["religious_title", "academic_title", "state", "country"]);
+const listKeySchema = z.enum(["religious_title", "academic_title", "post_nominal", "state", "country"]);
 
 export const listItems = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -2170,6 +2258,39 @@ export const addListItem = createServerFn({ method: "POST" })
       values (${id}, ${m.chapterId}, ${data.listKey}, ${value}, ${(max[0]?.n ?? -1) + 1})
     `;
     return { id, restored: false };
+  });
+
+export const addSuggestedListItems = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ listKey: listKeySchema }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertAdmin(m.role);
+    const sql = await getSql();
+    let added = 0;
+    for (const raw of LIST_SEEDS[data.listKey]) {
+      const value = raw.trim();
+      const dup = await sql<{ id: string; active: boolean }>`
+        select id, active from list_items
+        where chapter_id = ${m.chapterId} and list_key = ${data.listKey} and lower(value) = ${value.toLowerCase()}
+      `;
+      if (dup[0]) {
+        if (dup[0].active) continue;
+        await sql`update list_items set active = true where id = ${dup[0].id}`;
+        added += 1;
+        continue;
+      }
+      const max = await sql<{ n: number }>`
+        select coalesce(max(sort_order), -1)::int as n from list_items
+        where chapter_id = ${m.chapterId} and list_key = ${data.listKey}
+      `;
+      await sql`
+        insert into list_items (id, chapter_id, list_key, value, sort_order)
+        values (${nid()}, ${m.chapterId}, ${data.listKey}, ${value}, ${(max[0]?.n ?? -1) + 1})
+      `;
+      added += 1;
+    }
+    return { added };
   });
 
 export const deleteListItem = createServerFn({ method: "POST" })
