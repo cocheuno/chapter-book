@@ -1,4 +1,5 @@
 import { ORG_AFFIL_ROLES, roleLabel } from "@/lib/crm/constants";
+import { deceasedMark } from "@/lib/crm/person-status";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/field";
 import { useMemo, useState } from "react";
@@ -14,6 +15,8 @@ export type PartnerPersonLink = {
   displayName: string;
   roleKey: string;
   affiliationId?: string;
+  startedOn?: string | null;
+  status?: string | null;
 };
 
 export function PartnerPeopleFields({
@@ -21,11 +24,13 @@ export function PartnerPeopleFields({
   attached,
   onAdd,
   onRemove,
+  onStartChange,
 }: {
   people: PartnerPersonOption[];
   attached: PartnerPersonLink[];
   onAdd: (personId: string, roleKey: string) => void | Promise<void>;
   onRemove: (row: PartnerPersonLink) => void | Promise<void>;
+  onStartChange?: (row: PartnerPersonLink, startedOn: string) => void | Promise<void>;
 }) {
   const [personId, setPersonId] = useState("");
   const [roleKey, setRoleKey] = useState("other");
@@ -41,11 +46,24 @@ export function PartnerPeopleFields({
             <li key={row.affiliationId ?? row.personId} className="flex min-h-11 items-center justify-between gap-3 px-3 py-2">
               <span>
                 {row.displayName}
+                {deceasedMark(row.status)}
                 <span className="ml-2 text-sm text-muted">· {roleLabel(row.roleKey)}</span>
+                {row.startedOn ? <span className="text-sm text-muted"> · since {row.startedOn.slice(0, 4)}</span> : null}
               </span>
-              <button type="button" className="text-sm text-danger hover:underline" onClick={() => void onRemove(row)}>
-                Remove
-              </button>
+              <span className="flex items-center gap-3">
+                {row.affiliationId && onStartChange ? (
+                  <input
+                    type="date"
+                    aria-label="Since"
+                    className="text-sm"
+                    value={row.startedOn ?? ""}
+                    onChange={(e) => void onStartChange(row, e.target.value)}
+                  />
+                ) : null}
+                <button type="button" className="text-sm text-danger hover:underline" onClick={() => void onRemove(row)}>
+                  Remove
+                </button>
+              </span>
             </li>
           ))}
         </ul>

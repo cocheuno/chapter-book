@@ -163,7 +163,14 @@ function EventInner() {
                     if (v) {
                       updateEvent({
                         data: { id: eventId, startsAt: fromDatetimeLocal(v, e.timezone ?? "America/Denver") },
-                      }).then(load);
+                      })
+                        .then(() => {
+                          toast.success("Saved");
+                          load();
+                        })
+                        .catch((err) => {
+                          toast.error(err instanceof Error ? err.message : "Could not save");
+                        });
                     }
                   }}
                 />

@@ -10,6 +10,7 @@ import { PERSON_ROLES, roleLabel } from "@/lib/crm/constants";
 import { createPerson, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPerson } from "@/lib/crm/match";
 import { composePersonName, isDegreeTitle } from "@/lib/crm/names";
+import { deceasedMark } from "@/lib/crm/person-status";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -239,7 +240,10 @@ function PeopleInner() {
           <li key={p.id}>
             <Link to="/people/$personId" params={{ personId: p.id }} className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 hover:bg-paper-2">
               <div>
-                <p className="font-medium">{p.display_name}</p>
+                <p className="font-medium">
+                  {p.display_name}
+                  {deceasedMark(p.status)}
+                </p>
                 <p className="text-sm text-muted">
                   {p.roles.map(roleLabel).join(", ")}
                   {p.primary ? ` · ${roleLabel(p.primary.role_key)} at ${p.primary.org_name}` : ""}

@@ -719,6 +719,13 @@ Corrections:
 3. **June reminder.** In June, Home shows a reminder card: "Check clergy assignments (most change July 1)". It is a card only; nothing is written to the database. An editor can turn it into a task.
 4. **No backfill.** Existing people keep their status, and existing affiliations have empty dates until an editor fills them.
 
+**Corrections** (the implementation prompt wins):
+
+- Marking an office not current sets `ended_on` to today in the chapter's time zone.
+- Adding an office always inserts a new row with an empty start date. A past row for the same person, partner, and role stays ended. It is not turned current again.
+- An editor sets the start date with `setAffiliationStart`. An empty value clears it.
+- The invite guard is `addInvite` (the prompt called it `addParticipant`). A deceased person is refused with "This person is marked deceased." The do-not-contact message stays.
+
 **Done when:** deceased people never appear in audiences, and past offices keep their dates.
 
 **Tests:** the audience filter (pure); the June card rule.

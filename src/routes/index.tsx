@@ -2,10 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getHome } from "@/lib/crm/actions";
+import { addClergyCheckTask, getHome } from "@/lib/crm/actions";
 import { hatLabel } from "@/lib/crm/constants";
 import { formatWhen } from "@/lib/crm/format";
+import { CLERGY_CHECK_TITLE } from "@/lib/crm/person-status";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({ component: HomePage });
 
@@ -20,11 +22,12 @@ function HomePage() {
 function HomeInner() {
   const [data, setData] = useState<Awaited<ReturnType<typeof getHome>> | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
+  function load() {
     getHome()
       .then(setData)
       .catch((e) => setErr(e instanceof Error ? e.message : "Could not load"));
-  }, []);
+  }
+  useEffect(load, []);
   if (err) return <p className="text-danger">{err}</p>;
   if (!data) return <p className="text-muted">Gathering the chapter…</p>;
 
@@ -34,6 +37,31 @@ function HomeInner() {
         <p className="text-sm tracking-wide text-muted uppercase">{data.member.chapterName}</p>
         <h1 className="font-display text-3xl">Home</h1>
       </header>
+
+      {data.clergyReminder && (
+        <section className="rounded-xl border border-line bg-surface p-5">
+          <h2 className="font-display text-xl">{CLERGY_CHECK_TITLE}</h2>
+          {data.clergyTaskExists ? (
+            <p className="mt-2 text-ink-soft">Task added.</p>
+          ) : (
+            <div className="mt-3">
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await addClergyCheckTask();
+                    load();
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Could not add the task");
+                  }
+                }}
+              >
+                Make it a task
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       {data.nextEvent ? (
         <section className="rounded-xl border border-line bg-surface p-5">

@@ -11,6 +11,7 @@ import {
   listPeople,
   logTouch,
   removeAffiliation,
+  setAffiliationStart,
   updateOrganization,
 } from "@/lib/crm/actions";
 import { useEffect, useState } from "react";
@@ -116,7 +117,18 @@ function OrgInner() {
               displayName: c.display_name,
               roleKey: c.role_key,
               affiliationId: c.id,
+              startedOn: c.started_on,
+              status: c.status,
             }))}
+            onStartChange={async (row, startedOn) => {
+              if (!row.affiliationId) return;
+              try {
+                await setAffiliationStart({ data: { id: row.affiliationId, startedOn } });
+                load();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not save");
+              }
+            }}
             onAdd={async (personId, roleKey) => {
               try {
                 await addAffiliation({ data: { personId, organizationId: orgId, roleKey } });
