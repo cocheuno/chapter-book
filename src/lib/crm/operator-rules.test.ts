@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -5,7 +6,10 @@ import {
   founderAllowed,
   hashInviteToken,
   isOperatorRole,
+  newPasswordError,
   normalizeOperatorEmail,
+  resetBlockedReason,
+  resetErrorMessage,
   roleChangeBlockedReason,
   signUpAllowed,
   type SignUpInvite,
@@ -22,6 +26,7 @@ describe("invite token", () => {
     const a = hashInviteToken("secret-token");
     const b = hashInviteToken("secret-token");
     assert.equal(a, b);
+    assert.equal(a, createHash("sha256").update("secret-token", "utf8").digest("hex"));
     assert.notEqual(a, "secret-token");
     assert.equal(a.length, 64);
   });
@@ -215,5 +220,47 @@ describe("roles", () => {
   it("accepts the three chapter roles only", () => {
     assert.equal(isOperatorRole("admin"), true);
     assert.equal(isOperatorRole("donor"), false);
+  });
+});
+
+describe("resetBlockedReason", () => {
+  it("names the four cases", () => {
+    assert.equal(
+      resetBlockedReason({ found: false, disabled: false, email: "lead@chapter.example" }),
+      "That operator is not in this book.",
+    );
+    assert.equal(
+      resetBlockedReason({ found: true, disabled: true, email: "lead@chapter.example" }),
+      "Restore this operator before resetting their password.",
+    );
+    assert.equal(
+      resetBlockedReason({ found: true, disabled: false, email: null }),
+      "That operator has no email address.",
+    );
+    assert.equal(
+      resetBlockedReason({ found: true, disabled: false, email: "lead@chapter.example" }),
+      null,
+    );
+  });
+});
+
+describe("newPasswordError", () => {
+  it("checks length, then that the two entries match", () => {
+    assert.equal(newPasswordError("short", "short"), "Use at least 8 characters.");
+    assert.equal(newPasswordError("a".repeat(129), "a".repeat(129)), "Use at most 128 characters.");
+    assert.equal(newPasswordError("longenough1", "longenough2"), "The two passwords do not match.");
+    assert.equal(newPasswordError("password", "password"), null);
+  });
+});
+
+describe("resetErrorMessage", () => {
+  it("turns known codes into sentences and keeps an unknown message", () => {
+    assert.equal(
+      resetErrorMessage({ code: "INVALID_TOKEN" }),
+      "This reset link has expired or was already used. Ask an admin for a new one.",
+    );
+    assert.equal(resetErrorMessage({ code: "PASSWORD_TOO_SHORT" }), "Use at least 8 characters.");
+    assert.equal(resetErrorMessage({ code: "NOPE", message: "Something else" }), "Something else");
+    assert.equal(resetErrorMessage(null), "Could not set the password.");
   });
 });

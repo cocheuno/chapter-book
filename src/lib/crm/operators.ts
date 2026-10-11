@@ -6,10 +6,12 @@ import { nid } from "./ids";
 import { assertAdmin, loadMember } from "./member";
 import {
   INVITE_DAYS,
+  RESET_MINUTES,
   disableBlockedReason,
   hashInviteToken,
   newInviteToken,
   normalizeOperatorEmail,
+  resetBlockedReason,
   roleChangeBlockedReason,
   type OperatorRole,
 } from "./operator-rules";
@@ -66,8 +68,22 @@ export const listOperators = createServerFn({ method: "GET" })
       created_at: string;
       email: string | null;
       name: string | null;
+      reset_created_at: string | null;
+      reset_used_at: string | null;
     }>`
-      select m.user_id, m.role, m.disabled_at, m.created_at, u.email, u.name
+      select m.user_id, m.role, m.disabled_at, m.created_at, u.email, u.name,
+        (
+          select to_char(max(r.created_at), 'YYYY-MM-DD')
+          from operator_resets r
+          where r.user_id = m.user_id
+        ) as reset_created_at,
+        (
+          select to_char(r.used_at, 'YYYY-MM-DD')
+          from operator_resets r
+          where r.user_id = m.user_id
+          order by r.created_at desc
+          limit 1
+        ) as reset_used_at
       from chapter_members m
       left join "user" u on u.id = m.user_id
       where m.chapter_id = ${m.chapterId}
@@ -174,6 +190,32 @@ export const removeUnassignedAccount = createServerFn({ method: "POST" })
     `;
     if (still[0]) throw new Error("That account has access to the book.");
     throw new Error("That account was not found.");
+  });
+
+/** Admin-only. Returns the plain token once; only its hash is stored. */
+export const createResetLink = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ userId: z.string() }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertAdmin(m.role);
+    const sql = await getSql();
+    const rows = await sql<{ disabled_at: string | null; email: string | null }>`
+      select m.disabled_at, u.email
+      from chapter_members m
+      join "user" u on u.id = m.user_id
+      where m.chapter_id = ${m.chapterId} and m.user_id = ${data.userId}
+    `;
+    const row = rows[0];
+    const blocked = resetBlockedReason({
+      found: Boolean(row),
+      disabled: Boolean(row?.disabled_at),
+      email: row?.email ?? null,
+    });
+    if (blocked) throw new Error(blocked);
+    if (!row?.email) throw new Error("That operator has no email address.");
+    const { issueResetToken } = await import("@/lib/auth/password-reset.server");
+    return { token: await issueResetToken(data.userId, row.email), minutes: RESET_MINUTES };
   });
 
 export const inviteOperator = createServerFn({ method: "POST" })

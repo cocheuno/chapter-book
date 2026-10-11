@@ -6,6 +6,7 @@ import { addListItem, addSuggestedListItems, deleteListItem, listAllLists, updat
 import { clearOperationalBook } from "@/lib/crm/wipe-book";
 import { getSessionContext } from "@/lib/crm/member";
 import {
+  createResetLink,
   inviteOperator,
   listOperators,
   removeUnassignedAccount,
@@ -37,6 +38,7 @@ function ChapterInner() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "editor" | "viewer">("editor");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [resetLink, setResetLink] = useState<{ email: string | null; url: string } | null>(null);
   const [wipeConfirm, setWipeConfirm] = useState("");
   const [wiping, setWiping] = useState(false);
 
@@ -86,6 +88,8 @@ function ChapterInner() {
                   {row.email}
                   {row.disabled_at ? " · disabled" : ""}
                   {row.user_id === ops?.selfId ? " · you" : ""}
+                  {row.reset_created_at ? ` · reset link ${row.reset_created_at}` : ""}
+                  {row.reset_used_at ? " (used)" : ""}
                 </p>
               </div>
               {isAdmin ? (
@@ -125,6 +129,32 @@ function ChapterInner() {
                   >
                     {row.disabled_at ? "Restore" : "Disable"}
                   </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={Boolean(row.disabled_at)}
+                    onClick={async () => {
+                      if (
+                        !window.confirm(
+                          `Create a password reset link for ${row.email}? An earlier reset link for them stops working. When they use it, they are signed out on every device within 5 minutes.`,
+                        )
+                      ) {
+                        return;
+                      }
+                      try {
+                        const r = await createResetLink({ data: { userId: row.user_id } });
+                        setResetLink({
+                          email: row.email,
+                          url: `${window.location.origin}/login?reset=${encodeURIComponent(r.token)}`,
+                        });
+                        setOps(await listOperators());
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Could not create a reset link");
+                      }
+                    }}
+                  >
+                    Reset link
+                  </Button>
                 </div>
               ) : (
                 <p className="text-sm text-muted">{row.role}</p>
@@ -132,6 +162,21 @@ function ChapterInner() {
             </li>
           ))}
         </ul>
+        {resetLink && (
+          <p className="break-all text-sm text-ink-soft">
+            Reset link for {resetLink.email}, works once within 60 minutes: {resetLink.url}{" "}
+            <button
+              type="button"
+              className="text-bronze hover:underline"
+              onClick={() => {
+                void navigator.clipboard.writeText(resetLink.url);
+                toast.success("Copied");
+              }}
+            >
+              Copy
+            </button>
+          </p>
+        )}
         {(ops?.invites.length ?? 0) > 0 && (
           <ul className="divide-y divide-line rounded-xl border border-dashed border-line bg-paper-2">
             {ops?.invites.map((inv) => (

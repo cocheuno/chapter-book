@@ -40,12 +40,14 @@ import { env } from "../env.server";
 import {
   founderAllowed,
   hashInviteToken,
+  RESET_MINUTES,
   signUpAllowed,
   type SignUpInvite,
 } from "../crm/operator-rules";
 import { ensureDbReady, getPglite, getSql } from "../db";
 import { brokerSignInEnabled } from "./broker-rules";
 import { emailAndPasswordEnabled } from "./email-password";
+import { markResetsUsed, storeResetToken } from "./reset-store.server";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
 import { GROK_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
@@ -264,7 +266,20 @@ export const auth = betterAuth({
   session: { cookieCache: { enabled: true, maxAge: 300 } },
 
   // Local email/password — toggled only via `./email-password` (not a plugin).
-  ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),
+  ...(emailAndPasswordEnabled
+    ? {
+        emailAndPassword: {
+          enabled: true,
+          sendResetPassword: async ({ user, token }) => storeResetToken(user.id, token),
+          onPasswordReset: async ({ user }) => markResetsUsed(user.id),
+          revokeSessionsOnPasswordReset: true,
+          resetPasswordTokenExpiresIn: RESET_MINUTES * 60,
+        },
+      }
+    : {}),
+
+  // Reset links are issued only by an admin through auth.api (see password-reset.server.ts); the public endpoint stays closed.
+  disabledPaths: ["/request-password-reset"],
 
   hooks: {
     before: inviteOnlySignUp,
