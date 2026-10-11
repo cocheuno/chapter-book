@@ -9,7 +9,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { PERSON_ROLES, roleLabel } from "@/lib/crm/constants";
 import { createPerson, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPerson } from "@/lib/crm/match";
-import { composePersonName } from "@/lib/crm/names";
+import { composePersonName, isDegreeTitle } from "@/lib/crm/names";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -22,6 +22,8 @@ const emptyName: PersonNameValue = {
   middleName: "",
   familyName: "",
   suffix: "",
+  postNominals: "",
+  salutationOverride: "",
 };
 
 function PeoplePage() {
@@ -50,6 +52,7 @@ function PeopleInner() {
   const [website, setWebsite] = useState("");
   const [notes, setNotes] = useState("");
   const [newRole, setNewRole] = useState("academic_member");
+  const [degreeInTitle, setDegreeInTitle] = useState(false);
   const [partners, setPartners] = useState<Awaited<ReturnType<typeof listPartners>>>([]);
   const [attached, setAttached] = useState<PersonPartnerLink[]>([]);
 
@@ -60,7 +63,8 @@ function PeopleInner() {
   }
   useEffect(load, [role]);
 
-  const listed = composePersonName(name);
+  const listed = composePersonName({ ...name, postNominals: "" });
+  const visible = degreeInTitle ? rows.filter((row) => isDegreeTitle(row.academic_title)) : rows;
   const hit = useMemo(
     () => matchPerson(allPeople, listed || `${name.givenName} ${name.familyName}`, email),
     [allPeople, listed, name.givenName, name.familyName, email],
@@ -97,6 +101,8 @@ function PeopleInner() {
           roles: [newRole],
           religiousTitle: name.religiousTitle,
           academicTitle: name.academicTitle,
+          postNominals: name.postNominals,
+          salutationOverride: name.salutationOverride,
           partners: attached.map((a) => ({ organizationId: a.organizationId, roleKey: a.roleKey })),
         },
       });
@@ -220,9 +226,16 @@ function PeopleInner() {
             {r.label}
           </button>
         ))}
+        <button
+          type="button"
+          className={`min-h-11 rounded-full px-3 py-1 text-sm ${degreeInTitle ? "bg-ink text-paper" : "bg-paper-2"}`}
+          onClick={() => setDegreeInTitle((on) => !on)}
+        >
+          Degree in the title field
+        </button>
       </div>
       <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
-        {rows.map((p) => (
+        {visible.map((p) => (
           <li key={p.id}>
             <Link to="/people/$personId" params={{ personId: p.id }} className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 hover:bg-paper-2">
               <div>
@@ -236,7 +249,11 @@ function PeopleInner() {
             </Link>
           </li>
         ))}
-        {rows.length === 0 && <li className="px-4 py-8 text-muted">Add the pastor of your first host parish.</li>}
+        {visible.length === 0 && (
+          <li className="px-4 py-8 text-muted">
+            {degreeInTitle ? "No one has a degree in the title field." : "Add the pastor of your first host parish."}
+          </li>
+        )}
       </ul>
     </div>
   );

@@ -18,7 +18,33 @@ export type NameParts = {
   familyName?: string | null;
   suffix?: string | null;
   displayName?: string | null;
+  postNominals?: string | null;
 };
+
+export function titleKey(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[.\s]/g, "");
+}
+
+export function postNominalsText(raw: string | null | undefined): string {
+  return (raw ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+const DOCTORATES = ["phd", "md", "scd", "dsc", "dphil", "edd", "do", "pharmd", "psyd", "std", "jcd", "thd", "dmin"];
+
+export function hasDoctorate(postNominals: string | null | undefined): boolean {
+  return (postNominals ?? "")
+    .split(",")
+    .map((part) => titleKey(part))
+    .some((key) => DOCTORATES.includes(key));
+}
+
+export function isDegreeTitle(title: string | null | undefined): boolean {
+  return ["phd", "md", "scd", "msc", "ma", "bs"].includes(titleKey(title));
+}
 
 function formatMiddle(raw: string): string {
   const t = raw.trim().replace(/\.$/, "");
@@ -42,16 +68,66 @@ function attachSuffix(core: string, suffix: string): string {
 }
 
 export function composePersonName(p: NameParts): string {
-  const honorific = composedHonorific(p.religiousTitle, p.academicTitle) || p.honorific?.trim() || "";
+  let honorific = composedHonorific(p.religiousTitle, p.academicTitle) || p.honorific?.trim() || "";
   const given = (p.givenName ?? "").trim();
   const middle = formatMiddle(p.middleName ?? p.middleInitial ?? "");
   const family = (p.familyName ?? "").trim();
   const suffix = (p.suffix ?? "").trim();
   const core = attachSuffix([given, middle, family].filter(Boolean).join(" "), suffix);
-  if (!core) return honorific;
-  if (!honorific) return core;
-  if (foldName(core).startsWith(foldName(honorific))) return core;
-  return `${honorific} ${core}`;
+  const posts = postNominalsText(p.postNominals);
+  if (
+    posts &&
+    core &&
+    !(p.religiousTitle ?? "").trim() &&
+    titleKey(p.academicTitle) === "dr" &&
+    hasDoctorate(p.postNominals)
+  ) {
+    honorific = "";
+  }
+  let result: string;
+  if (!core) result = honorific;
+  else if (!honorific) result = core;
+  else if (foldName(core).startsWith(foldName(honorific))) result = core;
+  else result = `${honorific} ${core}`;
+  if (posts && core) return `${result}, ${posts}`;
+  return result;
+}
+
+export function salutation(p: {
+  religiousTitle?: string | null;
+  academicTitle?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  postNominals?: string | null;
+  salutationOverride?: string | null;
+}): string {
+  const override = p.salutationOverride ?? "";
+  if (override.trim()) return override;
+  const given = (p.givenName ?? "").trim();
+  const family = (p.familyName ?? "").trim();
+  const last = family || given;
+  const first = given || family;
+  const religious = titleKey(p.religiousTitle);
+  if (religious === "pope") return "Your Holiness";
+  if (religious === "cardinal") return "Your Eminence";
+  if (religious === "mostrev" || religious === "bishop") return `Dear Bishop ${last}`.trim();
+  if (religious === "abbot") return "Dear Father Abbot";
+  if (religious === "msgr") return `Dear Monsignor ${last}`.trim();
+  if (religious === "rev" || religious === "fr" || religious === "veryrev" || religious === "revdr") {
+    return `Dear Father ${last}`.trim();
+  }
+  if (religious === "deacon" || religious === "dcn") return `Dear Deacon ${last}`.trim();
+  if (religious === "sr") return `Dear Sister ${first}`.trim();
+  if (religious === "mother") return `Dear Mother ${first}`.trim();
+  if (religious === "br") return `Dear Brother ${first}`.trim();
+  const academic = titleKey(p.academicTitle);
+  if (academic === "dr" || academic === "phd" || academic === "md" || academic === "scd") {
+    return `Dear Dr. ${last}`.trim();
+  }
+  if (academic === "prof" || academic === "profdr") return `Dear Professor ${last}`.trim();
+  if (hasDoctorate(p.postNominals)) return `Dear Dr. ${last}`.trim();
+  const plain = [given, family].filter(Boolean).join(" ");
+  return plain ? `Dear ${plain}` : "Dear Friend";
 }
 
 /** Name as it should appear in lists, even if display_name was saved without a title. */
@@ -64,6 +140,7 @@ export function listedName(
     middle_initial?: string | null;
     religious_title?: string | null;
     academic_title?: string | null;
+    post_nominals?: string | null;
   },
 ): string {
   const parts: NameParts = {
@@ -75,6 +152,7 @@ export function listedName(
     familyName: p.familyName ?? p.family_name,
     suffix: p.suffix,
     displayName: p.displayName ?? p.display_name,
+    postNominals: p.postNominals ?? p.post_nominals,
   };
   if (parts.givenName || parts.familyName) return composePersonName(parts);
   const stored = (parts.displayName ?? "").trim();

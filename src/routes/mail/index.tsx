@@ -2,8 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { listMail } from "@/lib/crm/actions";
+import { listMail, setTemplateGreeting } from "@/lib/crm/actions";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/mail/")({ component: MailPage });
 
@@ -60,6 +61,48 @@ function MailInner() {
               <p className="font-medium">{t.name}</p>
               <p className="text-sm text-muted">{t.audience_hint.replaceAll("_", " ")}</p>
               <Badge tone="muted">{t.key}</Badge>
+              {t.body.includes("Dear {{honorific}} {{family_name}}") ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-3"
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        `Change the greeting in “${t.name}” to the salutation field? You can switch it back.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    try {
+                      await setTemplateGreeting({ data: { templateId: t.id, use: "salutation" } });
+                      setData(await listMail());
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Could not change the greeting");
+                    }
+                  }}
+                >
+                  Use the salutation field
+                </Button>
+              ) : t.body.includes("{{salutation}}") ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <p className="text-sm text-ink-soft">Greeting: salutation field</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await setTemplateGreeting({ data: { templateId: t.id, use: "honorific" } });
+                        setData(await listMail());
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Could not change the greeting");
+                      }
+                    }}
+                  >
+                    Switch back
+                  </Button>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

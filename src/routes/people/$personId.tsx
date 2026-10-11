@@ -35,6 +35,8 @@ function PersonInner() {
     middleName: "",
     familyName: "",
     suffix: "",
+    postNominals: "",
+    salutationOverride: "",
   });
   const [edit, setEdit] = useState({
     email: "",
@@ -62,6 +64,8 @@ function PersonInner() {
         middleName: String(p.middle_name ?? p.middle_initial ?? ""),
         familyName: String(p.family_name ?? ""),
         suffix: String(p.suffix ?? ""),
+        postNominals: String(p.post_nominals ?? ""),
+        salutationOverride: String(p.salutation_override ?? ""),
       });
       setEdit({
         email: String(p.email ?? ""),
@@ -92,6 +96,7 @@ function PersonInner() {
     honorific: p.honorific,
     religious_title: p.religious_title,
     academic_title: p.academic_title,
+    post_nominals: p.post_nominals,
   });
   const address = [p.street, p.street2, [p.city, p.state, p.postal_code].filter(Boolean).join(" "), p.country]
     .filter(Boolean)
@@ -143,6 +148,8 @@ function PersonInner() {
                 suffix: name.suffix,
                 religiousTitle: name.religiousTitle,
                 academicTitle: name.academicTitle,
+                postNominals: name.postNominals,
+                salutationOverride: name.salutationOverride,
                 ...edit,
                 roles: data.roles.length ? data.roles : ["friend"],
               },

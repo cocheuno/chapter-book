@@ -3,6 +3,7 @@ import { nid } from "./ids.ts";
 export const LIST_KEYS = [
   { key: "religious_title", label: "Religious titles" },
   { key: "academic_title", label: "Academic titles" },
+  { key: "post_nominal", label: "Post-nominals" },
   { key: "state", label: "States" },
   { key: "country", label: "Countries" },
 ] as const;
@@ -28,6 +29,7 @@ export const LIST_SEEDS: Record<ListKey, string[]> = {
     "Rev. Dr.",
   ],
   academic_title: ["Dr.", "Prof.", "Prof. Dr.", "Ph.D.", "M.D.", "Sc.D.", "M.Sc.", "M.A.", "B.S."],
+  post_nominal: ["Ph.D.", "M.D.", "Sc.D.", "M.Sc.", "M.A.", "B.S.", "S.J.", "O.P.", "O.F.M.", "O.S.B.", "C.S.C.", "O.Carm."],
   state: [
     "Alabama",
     "Alaska",
