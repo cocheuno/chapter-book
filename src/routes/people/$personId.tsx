@@ -7,8 +7,9 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ListSelect } from "@/components/list-select";
 import { PersonPartnersFields } from "@/components/person-partners-fields";
 import { roleLabel } from "@/lib/crm/constants";
-import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, updatePerson } from "@/lib/crm/actions";
+import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, setPersonStatus, updatePerson } from "@/lib/crm/actions";
 import { listedName } from "@/lib/crm/names";
+import { PERSON_STATUSES, deceasedMark } from "@/lib/crm/person-status";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -52,6 +53,8 @@ function PersonInner() {
     dietary: "",
     notes: "",
   });
+  const [status, setStatus] = useState("active");
+  const [deceasedOn, setDeceasedOn] = useState("");
 
   function load() {
     getPerson({ data: personId }).then((d) => {
@@ -81,10 +84,25 @@ function PersonInner() {
         dietary: String(p.dietary ?? ""),
         notes: String(p.notes ?? ""),
       });
+      setStatus(String(p.status ?? "active"));
+      setDeceasedOn(String(p.deceased_on ?? ""));
     });
     listPartners({ data: undefined }).then((r) => setOrgs(r.map((o) => ({ id: o.id, name: o.name }))));
   }
   useEffect(load, [personId]);
+
+  async function saveStatus(nextStatus: string, nextDeceasedOn: string) {
+    try {
+      await setPersonStatus({
+        data: { id: personId, status: nextStatus, deceasedOn: nextStatus === "deceased" ? nextDeceasedOn : "" },
+      });
+      toast.success("Saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    }
+    load();
+  }
+
   if (!data) return <p className="text-muted">Loading…</p>;
   const p = data.person as Record<string, string | null>;
   const heading = listedName({
@@ -111,7 +129,10 @@ function PersonInner() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="font-display text-3xl">{heading}</h1>
+        <h1 className="font-display text-3xl">
+          {heading}
+          {deceasedMark(p.status)}
+        </h1>
         <div className="mt-2 flex flex-wrap gap-2">
           {data.roles.map((r) => (
             <Badge key={r} tone="bronze">
@@ -133,6 +154,38 @@ function PersonInner() {
         ) : null}
         {p.dietary && <p className="mt-1 text-sm">Dietary: {p.dietary}</p>}
       </header>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Status">
+          <Select
+            value={status}
+            onChange={(e) => {
+              const next = e.target.value;
+              setStatus(next);
+              void saveStatus(next, next === "deceased" ? deceasedOn : "");
+            }}
+          >
+            {PERSON_STATUSES.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {status === "deceased" && (
+          <Field label="Died on">
+            <Input
+              type="date"
+              value={deceasedOn}
+              onChange={(e) => {
+                const next = e.target.value;
+                setDeceasedOn(next);
+                void saveStatus("deceased", next);
+              }}
+            />
+          </Field>
+        )}
+      </div>
 
       <form
         className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"
@@ -261,6 +314,28 @@ function PersonInner() {
           />
         </div>
       </section>
+
+      {data.pastAffiliations.length > 0 && (
+        <section>
+          <h2 className="mb-2 font-display text-xl">Past offices</h2>
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+            {data.pastAffiliations.map((a, index) => {
+              const org = a.org_name || "Partner";
+              const dated = Boolean(a.started_on || a.ended_on);
+              const startYear = a.started_on ? a.started_on.slice(0, 4) : "?";
+              const endYear = a.ended_on ? a.ended_on.slice(0, 4) : "?";
+              const line = dated
+                ? `${roleLabel(a.role_key)} at ${org} · ${startYear}–${endYear}`
+                : `${roleLabel(a.role_key)} at ${org} · ended`;
+              return (
+                <li key={`${a.role_key}-${org}-${a.ended_on ?? ""}-${index}`} className="px-4 py-3">
+                  {line}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section>
         <h2 className="mb-2 font-display text-xl">Gatherings</h2>

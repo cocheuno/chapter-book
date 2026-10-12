@@ -5,7 +5,15 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { nid, lowerEmail, partySizeInRange } from "./ids";
 import { CONFERENCE_CHECKLIST, GOLD_MASS_CHECKLIST, OCCASIONS, isSingularOffice, roleLabel } from "./constants";
 import { missingChecklistItems } from "./checklist";
+import { todayIn } from "./dates";
 import { formatWhen, schoolYearStartIso } from "./format";
+import {
+  CLERGY_CHECK_TITLE,
+  audienceSkipReason,
+  clergyReminderDue,
+  isContactable,
+  isPersonStatus,
+} from "./person-status";
 import { composedHonorific, LIST_KEYS, LIST_SEEDS, type ListKey } from "./lists";
 import { foldName } from "./match";
 import { composePersonName, listedName, postNominalsText, salutation, splitMiddle, splitWalkupName } from "./names";
@@ -119,7 +127,45 @@ export const getHome = createServerFn({ method: "GET" })
       order by o.name
       limit 5
     `;
-    return { member: m, nextEvent: next, rsvp, openChecklist, tasks, quietSchools: quiet };
+    const today = todayIn(m.timezone);
+    const clergyDue = `${today.slice(0, 4)}-06-30`;
+    const clergyTask = await sql<{ id: string }>`
+      select id from tasks
+      where chapter_id = ${m.chapterId} and title = ${CLERGY_CHECK_TITLE} and due_on = ${clergyDue}
+      limit 1
+    `;
+    return {
+      member: m,
+      nextEvent: next,
+      rsvp,
+      openChecklist,
+      tasks,
+      quietSchools: quiet,
+      clergyReminder: clergyReminderDue(today),
+      clergyTaskExists: Boolean(clergyTask[0]),
+    };
+  });
+
+export const addClergyCheckTask = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const today = todayIn(m.timezone);
+    if (!clergyReminderDue(today)) return { added: false };
+    const dueOn = `${today.slice(0, 4)}-06-30`;
+    const sql = await getSql();
+    const existing = await sql<{ id: string }>`
+      select id from tasks
+      where chapter_id = ${m.chapterId} and title = ${CLERGY_CHECK_TITLE} and due_on = ${dueOn}
+      limit 1
+    `;
+    if (existing[0]) return { added: false };
+    await sql`
+      insert into tasks (id, chapter_id, title, due_on, status, hat)
+      values (${nid()}, ${m.chapterId}, ${CLERGY_CHECK_TITLE}, ${dueOn}, ${"open"}, ${"secretary"})
+    `;
+    return { added: true };
   });
 
 export const searchAll = createServerFn({ method: "GET" })
@@ -208,10 +254,11 @@ export const listPeople = createServerFn({ method: "GET" })
       religious_title: string | null;
       academic_title: string | null;
       post_nominals: string | null;
+      status: string;
     }>`
       select p.id, p.display_name, p.email, p.city, p.last_touch_at,
              p.given_name, p.family_name, coalesce(p.middle_name, p.middle_initial) as middle_name, p.suffix,
-             p.honorific, p.religious_title, p.academic_title, p.post_nominals
+             p.honorific, p.religious_title, p.academic_title, p.post_nominals, p.status
       from persons p
       where p.chapter_id = ${m.chapterId}
         and (${role ?? null}::text is null or exists (
@@ -265,6 +312,18 @@ export const getPerson = createServerFn({ method: "GET" })
       left join organizations o on o.id = a.organization_id
       where a.person_id = ${id} and a.is_current
     `;
+    const pastAffiliations = await sql<{
+      role_key: string;
+      org_name: string | null;
+      started_on: string | null;
+      ended_on: string | null;
+    }>`
+      select a.role_key, o.name as org_name, a.started_on, a.ended_on
+      from affiliations a
+      left join organizations o on o.id = a.organization_id
+      where a.person_id = ${id} and a.chapter_id = ${m.chapterId} and a.is_current = false
+      order by a.ended_on desc nulls last
+    `;
     const gatherings = await sql<{
       event_id: string;
       title: string;
@@ -291,7 +350,15 @@ export const getPerson = createServerFn({ method: "GET" })
       select id, kind, happened_at, summary from touches
       where person_id = ${id} order by happened_at desc limit 12
     `;
-    return { person: rows[0], roles: roles.map((r) => r.role_key), affiliations, gatherings, celebrated, touches };
+    return {
+      person: rows[0],
+      roles: roles.map((r) => r.role_key),
+      affiliations,
+      pastAffiliations,
+      gatherings,
+      celebrated,
+      touches,
+    };
   });
 
 export const createPerson = createServerFn({ method: "POST" })
@@ -495,6 +562,35 @@ export const updatePerson = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const setPersonStatus = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      id: z.string(),
+      status: z.string(),
+      deceasedOn: z.string().optional(),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    if (!isPersonStatus(data.status)) throw new Error("Unknown status.");
+    let deceasedOn: string | null = null;
+    if (data.status === "deceased") {
+      const raw = (data.deceasedOn ?? "").trim();
+      if (raw && !isoDate.safeParse(raw).success) throw new Error("Enter a date as YYYY-MM-DD.");
+      deceasedOn = raw || null;
+    }
+    const sql = await getSql();
+    await sql`
+      update persons set status = ${data.status}, deceased_on = ${deceasedOn}
+      where id = ${data.id} and chapter_id = ${m.chapterId}
+    `;
+    return { ok: true };
+  });
+
 export const addAffiliation = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -538,20 +634,12 @@ export const addAffiliation = createServerFn({ method: "POST" })
         );
       }
     }
-    const dormant = await sql<{ id: string }>`
-      select id from affiliations
-      where person_id = ${data.personId} and organization_id = ${data.organizationId} and role_key = ${data.roleKey}
-    `;
-    if (dormant[0]) {
-      await sql`update affiliations set is_current = true, is_primary = ${data.isPrimary ?? false} where id = ${dormant[0].id}`;
-      return { ok: true };
-    }
     try {
       await sql`
-        insert into affiliations (id, chapter_id, person_id, target_type, organization_id, role_key, is_primary)
+        insert into affiliations (id, chapter_id, person_id, target_type, organization_id, role_key, is_primary, started_on)
         values (
           ${nid()}, ${m.chapterId}, ${data.personId}, ${"organization"},
-          ${data.organizationId}, ${data.roleKey}, ${data.isPrimary ?? false}
+          ${data.organizationId}, ${data.roleKey}, ${data.isPrimary ?? false}, ${null}
         )
       `;
     } catch (err) {
@@ -571,7 +659,23 @@ export const removeAffiliation = createServerFn({ method: "POST" })
     assertEditor(m.role);
     const sql = await getSql();
     await sql`
-      update affiliations set is_current = false
+      update affiliations set is_current = false, ended_on = ${todayIn(m.timezone)}
+      where id = ${data.id} and chapter_id = ${m.chapterId}
+    `;
+    return { ok: true };
+  });
+
+export const setAffiliationStart = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ id: z.string(), startedOn: z.string() }).parse)
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    const raw = data.startedOn.trim();
+    if (raw && !isoDate.safeParse(raw).success) throw new Error("Enter a date as YYYY-MM-DD.");
+    const sql = await getSql();
+    await sql`
+      update affiliations set started_on = ${raw || null}
       where id = ${data.id} and chapter_id = ${m.chapterId}
     `;
     return { ok: true };
@@ -653,10 +757,13 @@ export const getOrganization = createServerFn({ method: "GET" })
       email: string | null;
       phone: string | null;
       is_primary: boolean;
+      started_on: string | null;
+      status: string;
     }>`
       select a.id, a.person_id, p.display_name, p.given_name, p.family_name,
              coalesce(p.middle_name, p.middle_initial) as middle_name, p.suffix,
-             p.honorific, p.religious_title, p.academic_title, a.role_key, p.email, p.phone, a.is_primary
+             p.honorific, p.religious_title, p.academic_title, a.role_key, p.email, p.phone, a.is_primary,
+             a.started_on, p.status
       from affiliations a
       join persons p on p.id = a.person_id
       where a.organization_id = ${id} and a.is_current
@@ -1302,14 +1409,16 @@ export const cloneEvent = createServerFn({ method: "POST" })
       coming_to_dinner: boolean;
       coming_to_lecture: boolean;
     }>`
-      select party_type, person_id, organization_id, kind_key, party_size, guest_name,
-             coming_to_mass, coming_to_dinner, coming_to_lecture
-      from participations
-      where event_id = ${data.eventId}
+      select p.party_type, p.person_id, p.organization_id, p.kind_key, p.party_size, p.guest_name,
+             p.coming_to_mass, p.coming_to_dinner, p.coming_to_lecture
+      from participations p
+      left join persons pe on pe.id = p.person_id
+      where p.event_id = ${data.eventId}
         and (
-          (kind_key in ('guest','group_lead') and guest_status in ('attended','attending'))
-          or kind_key = 'org_publicity'
+          (p.kind_key in ('guest','group_lead') and p.guest_status in ('attended','attending'))
+          or p.kind_key = 'org_publicity'
         )
+        and (pe.id is null or pe.status not in ('deceased', 'do_not_contact'))
     `;
     for (const g of guests) {
       await sql`
@@ -1460,6 +1569,7 @@ export const addInvite = createServerFn({ method: "POST" })
         select status, dietary, display_name from persons where id = ${data.personId} and chapter_id = ${m.chapterId}
       `;
       if (!blocked[0]) throw new Error("Person not found.");
+      if (blocked[0].status === "deceased") throw new Error("This person is marked deceased.");
       if (blocked[0].status === "do_not_contact") throw new Error("This person is marked do not contact.");
       const already = await sql<{ id: string }>`
         select id from participations
@@ -1776,14 +1886,12 @@ async function resolveAudience(
     salutation_override?: string | null;
   }) => {
     if (seen.has(`p:${p.id}`)) return;
-    if (p.status === "do_not_contact" || p.email_unsubscribed) {
-      skips.push({ partyType: "person", id: p.id, name: p.display_name, reason: "unsubscribed" });
+    const reason = audienceSkipReason(p);
+    if (reason) {
+      skips.push({ partyType: "person", id: p.id, name: p.display_name, reason });
       return;
     }
-    if (!p.email) {
-      skips.push({ partyType: "person", id: p.id, name: p.display_name, reason: "no_email" });
-      return;
-    }
+    if (!p.email) return;
     seen.add(`p:${p.id}`);
     recipients.push({
       kind: "person",
@@ -1843,8 +1951,8 @@ async function resolveAudience(
       `;
       const preferred = s.preferred_door || "science_chair";
       const order = [preferred, "science_chair", "campus_minister", "principal"];
-      let found = doors.find((d) => d.role_key === order[0] && d.email && !d.email_unsubscribed && d.status !== "do_not_contact");
-      if (!found) found = doors.find((d) => order.includes(d.role_key) && d.email && !d.email_unsubscribed);
+      let found = doors.find((d) => d.role_key === order[0] && isContactable(d));
+      if (!found) found = doors.find((d) => order.includes(d.role_key) && isContactable(d));
       if (found) {
         pushPerson({ ...found, orgName: s.name, roleAt: found.role_key.replaceAll("_", " "), organizationId: s.id });
       } else if (s.main_email) {
@@ -1891,8 +1999,8 @@ async function resolveAudience(
         where a.organization_id = ${o.id} and a.is_current
       `;
       const found =
-        people.find((d) => d.role_key === "parish_secretary" && d.email) ||
-        people.find((d) => d.role_key === "pastor" && d.email);
+        people.find((d) => d.role_key === "parish_secretary" && isContactable(d)) ||
+        people.find((d) => d.role_key === "pastor" && isContactable(d));
       if (found) pushPerson({ ...found, orgName: o.name, roleAt: found.role_key.replaceAll("_", " "), organizationId: o.id });
       else if (o.main_email) {
         recipients.push({
