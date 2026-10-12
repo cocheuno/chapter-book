@@ -29,6 +29,17 @@ describe("audienceSkipReason", () => {
     assert.equal(audienceSkipReason({ status: "inactive", email: "a@example.com" }), null);
     assert.equal(audienceSkipReason({ status: "moved", email: "a@example.com" }), null);
   });
+
+  it("skips news_consent no, and still lets deceased win", () => {
+    assert.equal(audienceSkipReason({ status: "active", email: "a@example.com", news_consent: "no" }), "no_news");
+    assert.equal(audienceSkipReason({ status: "active", email: "", news_consent: "no" }), "no_news");
+    assert.equal(audienceSkipReason({ status: "active", email: "a@example.com", news_consent: "unknown" }), null);
+    assert.equal(audienceSkipReason({ status: "active", email: "a@example.com", news_consent: "yes" }), null);
+    assert.equal(
+      audienceSkipReason({ status: "deceased", email: "a@example.com", news_consent: "no" }),
+      "deceased",
+    );
+  });
 });
 
 describe("isContactable", () => {
@@ -41,6 +52,8 @@ describe("isContactable", () => {
       { status: "active", email: "a@example.com" },
       { status: "inactive", email: "a@example.com" },
       { status: "moved", email: "a@example.com" },
+      { status: "active", email: "a@example.com", news_consent: "no" },
+      { status: "active", email: "a@example.com", news_consent: "yes" },
     ];
     for (const person of people) {
       assert.equal(isContactable(person), audienceSkipReason(person) === null);

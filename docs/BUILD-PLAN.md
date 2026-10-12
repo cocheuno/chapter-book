@@ -744,6 +744,12 @@ Follow `docs/PAYMENTS.md`, **Phase 1**, with the Phase 1 prompt there, and `docs
 - Register-page copy blocks use `PublicCopy` (WP-09). The form and buttons are outside them.
 - **Rule 1:** the conference page's Register button keeps the editor's typed link. An event setting, "Use Chapter Book registration", is off by default; while it is off, nothing on the public page changes. Turning it on is the editor's choice.
 
+**Split:** WP-20a (tables and setup screen), WP-20b (public register page, holds, fulfil, manage page, held confirmations, the switch), WP-20c (registrations desk and exports).
+
+**Corrections** (the implementation prompt wins):
+
+- `registration_pages` holds the register-page copy and the on/off switch. `use_book_registration` defaults to false. Nothing reads the switch until WP-20b, and saving page copy does not change it.
+
 ### WP-21 Stripe in test mode
 
 `docs/PAYMENTS.md`, **Phase 2**. Also add `offers` to the event JSON-LD (WP-12): price range, `availability`, `validFrom`.

@@ -164,6 +164,7 @@ export const GUEST_STATUSES = [
 export const ADMISSIONS = [
   { key: "free", label: "Free" },
   { key: "private", label: "Private" },
+  { key: "paid", label: "Paid (tickets)" },
 ] as const;
 
 export type Admission = (typeof ADMISSIONS)[number]["key"];
