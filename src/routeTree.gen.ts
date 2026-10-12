@@ -23,6 +23,7 @@ import { Route as PartnersIndexRouteImport } from './routes/partners/index'
 import { Route as PartnersOrgIdRouteImport } from './routes/partners/$orgId'
 import { Route as PeopleIndexRouteImport } from './routes/people/index'
 import { Route as PeoplePersonIdRouteImport } from './routes/people/$personId'
+import { Route as RTokenRouteImport } from './routes/r/$token'
 import { Route as SchoolsIndexRouteImport } from './routes/schools/index'
 import { Route as SchoolsSchoolIdRouteImport } from './routes/schools/$schoolId'
 import { Route as SiteIndexRouteImport } from './routes/site/index'
@@ -36,6 +37,7 @@ import { Route as EventsEventIdRegistrationRouteImport } from './routes/events/$
 import { Route as EventsEventIdReportRouteImport } from './routes/events/$eventId/report'
 import { Route as PSlugIndexRouteImport } from './routes/p/$slug/index'
 import { Route as PSlugCalendarDoticsRouteImport } from './routes/p/$slug/calendar[.]ics'
+import { Route as PSlugRegisterRouteImport } from './routes/p/$slug/register'
 import { Route as PSlugSpeakersSpeakerRouteImport } from './routes/p/$slug/speakers/$speaker'
 
 const IndexRoute = IndexRouteImport.update({
@@ -108,6 +110,11 @@ const PeoplePersonIdRoute = PeoplePersonIdRouteImport.update({
   path: '/people/$personId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RTokenRoute = RTokenRouteImport.update({
+  id: '/r/$token',
+  path: '/r/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SchoolsIndexRoute = SchoolsIndexRouteImport.update({
   id: '/schools/',
   path: '/schools/',
@@ -174,6 +181,11 @@ const PSlugCalendarDoticsRoute = PSlugCalendarDoticsRouteImport.update({
   path: '/calendar.ics',
   getParentRoute: () => PSlugRoute,
 } as any)
+const PSlugRegisterRoute = PSlugRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => PSlugRoute,
+} as any)
 const PSlugSpeakersSpeakerRoute = PSlugSpeakersSpeakerRouteImport.update({
   id: '/speakers/$speaker',
   path: '/speakers/$speaker',
@@ -190,6 +202,7 @@ export interface FileRoutesByFullPath {
   '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
   '/events/': typeof EventsIndexRoute
@@ -206,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/events/$eventId/registration': typeof EventsEventIdRegistrationRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
+  '/p/$slug/register': typeof PSlugRegisterRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
   '/p/$slug/': typeof PSlugIndexRoute
   '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
@@ -219,6 +233,7 @@ export interface FileRoutesByTo {
   '/mail/compose': typeof MailComposeRoute
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter': typeof ChapterIndexRoute
   '/events': typeof EventsIndexRoute
@@ -235,6 +250,7 @@ export interface FileRoutesByTo {
   '/events/$eventId/registration': typeof EventsEventIdRegistrationRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
+  '/p/$slug/register': typeof PSlugRegisterRoute
   '/events/$eventId': typeof EventsEventIdIndexRoute
   '/p/$slug': typeof PSlugIndexRoute
   '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
@@ -250,6 +266,7 @@ export interface FileRoutesById {
   '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
   '/events/': typeof EventsIndexRoute
@@ -266,6 +283,7 @@ export interface FileRoutesById {
   '/events/$eventId/registration': typeof EventsEventIdRegistrationRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
+  '/p/$slug/register': typeof PSlugRegisterRoute
   '/events/$eventId/': typeof EventsEventIdIndexRoute
   '/p/$slug/': typeof PSlugIndexRoute
   '/p/$slug/speakers/$speaker': typeof PSlugSpeakersSpeakerRoute
@@ -282,6 +300,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter/'
     | '/events/'
@@ -298,6 +317,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/registration'
     | '/events/$eventId/report'
     | '/p/$slug/calendar.ics'
+    | '/p/$slug/register'
     | '/events/$eventId/'
     | '/p/$slug/'
     | '/p/$slug/speakers/$speaker'
@@ -311,6 +331,7 @@ export interface FileRouteTypes {
     | '/mail/compose'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter'
     | '/events'
@@ -327,6 +348,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/registration'
     | '/events/$eventId/report'
     | '/p/$slug/calendar.ics'
+    | '/p/$slug/register'
     | '/events/$eventId'
     | '/p/$slug'
     | '/p/$slug/speakers/$speaker'
@@ -341,6 +363,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter/'
     | '/events/'
@@ -357,6 +380,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/registration'
     | '/events/$eventId/report'
     | '/p/$slug/calendar.ics'
+    | '/p/$slug/register'
     | '/events/$eventId/'
     | '/p/$slug/'
     | '/p/$slug/speakers/$speaker'
@@ -372,6 +396,7 @@ export interface RootRouteChildren {
   PSlugRoute: typeof PSlugRouteWithChildren
   PartnersOrgIdRoute: typeof PartnersOrgIdRoute
   PeoplePersonIdRoute: typeof PeoplePersonIdRoute
+  RTokenRoute: typeof RTokenRoute
   SchoolsSchoolIdRoute: typeof SchoolsSchoolIdRoute
   ChapterIndexRoute: typeof ChapterIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
@@ -490,6 +515,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PeoplePersonIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/r/$token': {
+      id: '/r/$token'
+      path: '/r/$token'
+      fullPath: '/r/$token'
+      preLoaderRoute: typeof RTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schools/': {
       id: '/schools/'
       path: '/schools'
@@ -581,6 +613,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PSlugCalendarDoticsRouteImport
       parentRoute: typeof PSlugRoute
     }
+    '/p/$slug/register': {
+      id: '/p/$slug/register'
+      path: '/register'
+      fullPath: '/p/$slug/register'
+      preLoaderRoute: typeof PSlugRegisterRouteImport
+      parentRoute: typeof PSlugRoute
+    }
     '/p/$slug/speakers/$speaker': {
       id: '/p/$slug/speakers/$speaker'
       path: '/speakers/$speaker'
@@ -593,12 +632,14 @@ declare module '@tanstack/react-router' {
 
 interface PSlugRouteChildren {
   PSlugCalendarDoticsRoute: typeof PSlugCalendarDoticsRoute
+  PSlugRegisterRoute: typeof PSlugRegisterRoute
   PSlugIndexRoute: typeof PSlugIndexRoute
   PSlugSpeakersSpeakerRoute: typeof PSlugSpeakersSpeakerRoute
 }
 
 const PSlugRouteChildren: PSlugRouteChildren = {
   PSlugCalendarDoticsRoute: PSlugCalendarDoticsRoute,
+  PSlugRegisterRoute: PSlugRegisterRoute,
   PSlugIndexRoute: PSlugIndexRoute,
   PSlugSpeakersSpeakerRoute: PSlugSpeakersSpeakerRoute,
 }
@@ -615,6 +656,7 @@ const rootRouteChildren: RootRouteChildren = {
   PSlugRoute: PSlugRouteWithChildren,
   PartnersOrgIdRoute: PartnersOrgIdRoute,
   PeoplePersonIdRoute: PeoplePersonIdRoute,
+  RTokenRoute: RTokenRoute,
   SchoolsSchoolIdRoute: SchoolsSchoolIdRoute,
   ChapterIndexRoute: ChapterIndexRoute,
   EventsIndexRoute: EventsIndexRoute,

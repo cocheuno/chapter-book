@@ -21,6 +21,7 @@ export type ConferencePageData = ConferenceItem & {
   calendar_href?: string | null;
   sessionStarts?: Record<string, string>;
   programTimeZone?: string | null;
+  register_href?: string | null;
 };
 
 function clean(value: string | null | undefined): string {
@@ -57,7 +58,7 @@ function RegisterLink({ href, className }: { href: string; className: string }) 
 export function ConferencePage({ page }: { page: ConferencePageData }) {
   const program = buildConferenceProgram(page.program);
   const speakers = page.speakerLineup?.length ? lineupFromSpeakers(page.speakerLineup, page.program) : program.speakers;
-  const register = pieceHref({ url: page.url });
+  const register = page.register_href ?? pieceHref({ url: page.url });
   const venuePhoto = siteImageSrc(page.image_id);
   const hasProgram = program.keynotes.length + program.tracks.length + program.workshops.length > 0;
   const days = programDays(page.program, page.sessionStarts ?? {}, page.programTimeZone || CHAPTER_TIME_ZONE);

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { publicCopyHtml } from "./announcement-html";
 import { nid } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { parsePriceCents } from "@/lib/payments/pricing";
@@ -76,9 +77,17 @@ function requireText(value: string, message: string): string {
 }
 
 async function requireEvent(sql: Sql, chapterId: string, eventId: string) {
-  const rows = await sql<{ id: string; title: string; timezone: string }>`
-    select id, title, timezone from events
-    where id = ${eventId} and chapter_id = ${chapterId}
+  const rows = await sql<{
+    id: string;
+    title: string;
+    timezone: string;
+    public_item_id: string | null;
+    slug: string | null;
+  }>`
+    select e.id, e.title, e.timezone, e.public_item_id, i.slug
+    from events e
+    left join site_items i on i.id = e.public_item_id and i.chapter_id = e.chapter_id
+    where e.id = ${eventId} and e.chapter_id = ${chapterId}
   `;
   const event = rows[0];
   if (!event) throw new Error("Event not found");
@@ -147,7 +156,7 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
     `;
     const page = pages[0];
     return {
-      event: { title: event.title, timezone: event.timezone },
+      event: { title: event.title, timezone: event.timezone, slug: event.slug },
       parts: parts.map((part) => ({
         id: part.id,
         chapter_id: part.chapter_id,
@@ -378,7 +387,7 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
     const intro = blankToNull(data.intro);
     const forSchools = blankToNull(data.forSchools);
     const manageMessage = blankToNull(data.manageMessage);
-    // The on/off switch stays untouched. Nothing reads it until WP-20b.
+    // The on/off switch stays untouched. setBookRegistration is the only writer.
     await sql`
       insert into registration_pages (
         event_id, chapter_id, intro, for_schools, manage_message, updated_at, updated_by
@@ -409,7 +418,8 @@ export const saveAgreement = createServerFn({ method: "POST" })
     const member = await editor(context.userId);
     const sql = await getSql();
     await requireEvent(sql, member.chapterId, data.eventId);
-    const html = data.html.trim();
+    const trimmed = data.html.trim();
+    const html = publicCopyHtml(trimmed) ?? trimmed;
     const latest = await sql<{ html: string }>`
       select html from consent_texts
       where event_id = ${data.eventId} and chapter_id = ${member.chapterId} and kind = ${data.kind}
@@ -423,4 +433,42 @@ export const saveAgreement = createServerFn({ method: "POST" })
       values (${id}, ${member.chapterId}, ${data.eventId}, ${data.kind}, ${html}, ${member.userId})
     `;
     return { saved: true, id };
+  });
+
+export const setBookRegistration = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string().min(1), enabled: z.boolean() }).parse)
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    const sql = await getSql();
+    const event = await requireEvent(sql, member.chapterId, data.eventId);
+    if (!event.public_item_id) throw new Error("This event has no public page.");
+    if (data.enabled) {
+      const tickets = await sql<{ id: string }>`
+        select id from ticket_types
+        where event_id = ${data.eventId} and chapter_id = ${member.chapterId}
+          and kind = 'admission' and active
+        limit 1
+      `;
+      if (!tickets[0]) throw new Error("Add a ticket first.");
+    }
+    await sql`
+      insert into registration_pages (
+        event_id, chapter_id, use_book_registration, updated_at, updated_by
+      ) values (
+        ${data.eventId}, ${member.chapterId}, ${data.enabled}, now(), ${member.userId}
+      )
+      on conflict (event_id) do update set
+        use_book_registration = excluded.use_book_registration,
+        updated_at = now(),
+        updated_by = excluded.updated_by
+    `;
+    await sql`
+      insert into audit_log (id, chapter_id, actor, action, entity, entity_id, detail)
+      values (
+        ${nid()}, ${member.chapterId}, ${member.userId}, ${"registration_switch"}, ${"event"}, ${data.eventId},
+        ${JSON.stringify({ enabled: data.enabled })}::jsonb
+      )
+    `;
+    return { ok: true };
   });

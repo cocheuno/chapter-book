@@ -12,6 +12,7 @@ import {
   savePart,
   saveRegistrationPage,
   saveTicketType,
+  setBookRegistration,
 } from "@/lib/crm/registration-setup";
 import { formatCents, parsePriceCents, seatsLeft } from "@/lib/payments/pricing";
 import { useCallback, useEffect, useState } from "react";
@@ -157,6 +158,8 @@ function RegistrationInner() {
   const [parts, setParts] = useState<PartDraft[]>([]);
   const [tickets, setTickets] = useState<TicketDraft[]>([]);
   const [page, setPage] = useState<PageDraft>({ intro: "", forSchools: "", manageMessage: "" });
+  const [bookOn, setBookOn] = useState(false);
+  const [publicSlug, setPublicSlug] = useState<string | null>(null);
   const [agreements, setAgreements] = useState<AgreementDraft[]>(
     AGREEMENTS.map((item) => ({ kind: item.kind, label: item.label, html: "", createdAt: null })),
   );
@@ -173,6 +176,8 @@ function RegistrationInner() {
         forSchools: data.page.for_schools ?? "",
         manageMessage: data.page.manage_message ?? "",
       });
+      setBookOn(data.page.use_book_registration);
+      setPublicSlug(data.event.slug);
       setAgreements(toAgreements(data));
       setReady(true);
     });
@@ -263,10 +268,47 @@ function RegistrationInner() {
         <h1 className="font-display text-3xl">Registration</h1>
         {title ? <p className="text-ink-soft">{title}</p> : null}
         <p className="rounded-xl border border-line bg-paper p-4 text-sm text-ink-soft">
-          Setting up only. Nothing here is public yet. The register page is built in the next step and stays off until
-          you turn on 'Use Chapter Book registration'.
+          The public register page stays off until you turn on 'Use Chapter Book registration'.
         </p>
       </header>
+
+      <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-5"
+            checked={bookOn}
+            disabled={busy}
+            onChange={(event) => {
+              const next = event.target.checked;
+              if (
+                next &&
+                !window.confirm(
+                  "Turn on Chapter Book registration? The public page's Register button will open the book's register page.",
+                )
+              ) {
+                return;
+              }
+              void run(() => setBookRegistration({ data: { eventId, enabled: next } }));
+            }}
+          />
+          Use Chapter Book registration
+        </label>
+        {bookOn && publicSlug ? (
+          <>
+            <p className="font-mono text-sm">/p/{publicSlug}/register</p>
+            <p className="text-sm text-ink-soft">
+              The GoDaddy card still uses the conference's Register link field. Change that field to this address if you
+              want it there too.
+            </p>
+          </>
+        ) : null}
+        {publicSlug ? (
+          <a href={`/p/${publicSlug}/register?preview=1`} className="text-sm text-bronze hover:underline">
+            Preview the register page
+          </a>
+        ) : null}
+      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">

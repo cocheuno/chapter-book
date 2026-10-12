@@ -81,6 +81,7 @@ function PublicPage() {
             calendar_href: calendar,
             sessionStarts: page.sessionStarts,
             programTimeZone: page.programTimeZone,
+            register_href: page.bookRegistration && page.slug ? `/p/${page.slug}/register` : undefined,
           }}
         />
       </>
@@ -122,6 +123,16 @@ function PublicPage() {
             </p>
           ) : null}
           {page.location ? <p className="text-sm text-ink-soft">{page.location}</p> : null}
+          {page.bookRegistration && page.slug ? (
+            <p>
+              <a
+                href={`/p/${page.slug}/register`}
+                className="inline-flex min-h-11 items-center justify-center rounded-full bg-ink px-4 text-sm font-medium text-paper"
+              >
+                Register
+              </a>
+            </p>
+          ) : null}
           {page.audience ? <p className="text-sm text-muted">{page.audience}</p> : null}
           {page.eventPage ? (
             <a
