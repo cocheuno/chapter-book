@@ -21,38 +21,13 @@ import {
   turnstileMode,
   type RegistrationCatalog,
 } from "@/lib/payments/registration-rules";
+import { registrationInput } from "./registration-input";
+
+export { registrationInput };
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
 
 const AGREEMENT_ORDER = ["privacy", "refund", "conduct"] as const;
-
-const attendeeInput = z.object({
-  givenName: z.string(),
-  familyName: z.string(),
-  email: z.string().optional(),
-  under18: z.boolean(),
-  admissionId: z.string(),
-  addOnIds: z.array(z.string()),
-  badgeAffiliation: z.string().optional(),
-  dietary: z.string().optional(),
-  accessibility: z.string().optional(),
-});
-
-const registrationInput = z.object({
-  purchaser: z.object({
-    name: z.string().min(1),
-    email: z.string().email(),
-    phone: z.string().optional(),
-  }),
-  attendees: z.array(attendeeInput),
-  acceptedAgreementIds: z.array(z.string()),
-  newsOptIn: z.boolean(),
-  heardFrom: z.string().optional(),
-  utmSource: z.string().optional(),
-  website: z.string().optional(),
-  turnstileToken: z.string().optional(),
-  slug: z.string().min(1),
-});
 
 type RegistrationEvent = {
   itemId: string;
@@ -534,7 +509,7 @@ function confirmationText(input: {
 
 /** Public register page. Null until an editor turns registration on. */
 export const getRegisterPage = createServerFn({ method: "GET" })
-  .validator((slug: string) => z.string().min(1).parse(slug))
+  .validator((slug: string) => z.string().min(1).max(200).parse(slug))
   .handler(async ({ data: slug }) => {
     const sql = await getSql();
     const chapterId = await firstChapterId(sql);
@@ -552,7 +527,7 @@ export const getRegisterPage = createServerFn({ method: "GET" })
 /** Same page for an editor or a viewer, including while the switch is off. */
 export const getRegisterPreview = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .validator((slug: string) => z.string().min(1).parse(slug))
+  .validator((slug: string) => z.string().min(1).max(200).parse(slug))
   .handler(async ({ context, data: slug }) => {
     const member = await loadMember(context.userId);
     const sql = await getSql();
@@ -954,7 +929,7 @@ async function placeParticipation(
 }
 
 export const getManagePage = createServerFn({ method: "GET" })
-  .validator((token: string) => z.string().min(1).parse(token))
+  .validator((token: string) => z.string().min(1).max(200).parse(token))
   .handler(async ({ data: token }) => {
     const sql = await getSql();
     const chapterId = await firstChapterId(sql);
