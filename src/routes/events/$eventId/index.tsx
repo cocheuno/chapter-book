@@ -101,6 +101,9 @@ function EventInner() {
           <Link to="/events/$eventId/check-in" params={{ eventId }}>
             <Button variant="secondary">Check in</Button>
           </Link>
+          <Link to="/events/$eventId/registration" params={{ eventId }}>
+            <Button variant="secondary">Registration</Button>
+          </Link>
         </div>
       </header>
 

@@ -16,10 +16,12 @@ export function isPersonStatus(value: string): value is PersonStatus {
 export function audienceSkipReason(p: {
   status?: string | null;
   email_unsubscribed?: boolean | null;
+  news_consent?: string | null;
   email?: string | null;
-}): "deceased" | "unsubscribed" | "no_email" | null {
+}): "deceased" | "unsubscribed" | "no_news" | "no_email" | null {
   if (p.status === "deceased") return "deceased";
   if (p.status === "do_not_contact" || p.email_unsubscribed) return "unsubscribed";
+  if (p.news_consent === "no") return "no_news";
   if (!p.email) return "no_email";
   return null;
 }
@@ -27,6 +29,7 @@ export function audienceSkipReason(p: {
 export function isContactable(p: {
   status?: string | null;
   email_unsubscribed?: boolean | null;
+  news_consent?: string | null;
   email?: string | null;
 }): boolean {
   return audienceSkipReason(p) === null;

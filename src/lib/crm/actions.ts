@@ -1116,7 +1116,7 @@ export const createEvent = createServerFn({ method: "POST" })
       hostParishId: z.string().optional(),
       theme: z.string().optional(),
       companionEventId: z.string().optional(),
-      admission: z.enum(["private", "free"]).optional(),
+      admission: z.enum(["private", "free", "paid"]).optional(),
       webPage: z.boolean().optional(),
     }).parse,
   )
@@ -1191,7 +1191,7 @@ export const updateEvent = createServerFn({ method: "POST" })
       homilistId: z.string().nullable().optional(),
       intendedAudience: z.string().optional(),
       theme: z.string().optional(),
-      admission: z.enum(["private", "free"]).optional(),
+      admission: z.enum(["private", "free", "paid"]).optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -1939,12 +1939,13 @@ async function resolveAudience(
         salutation_override: string | null;
         email: string | null;
         email_unsubscribed: boolean;
+        news_consent: string | null;
         status: string;
         role_key: string;
       }>`
         select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
                p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
-               p.email, p.email_unsubscribed, p.status, a.role_key
+               p.email, p.email_unsubscribed, p.news_consent, p.status, a.role_key
         from affiliations a
         join persons p on p.id = a.person_id
         where a.organization_id = ${s.id} and a.is_current
@@ -1989,12 +1990,13 @@ async function resolveAudience(
         salutation_override: string | null;
         email: string | null;
         email_unsubscribed: boolean;
+        news_consent: string | null;
         status: string;
         role_key: string;
       }>`
         select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
                p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
-               p.email, p.email_unsubscribed, p.status, a.role_key
+               p.email, p.email_unsubscribed, p.news_consent, p.status, a.role_key
         from affiliations a join persons p on p.id = a.person_id
         where a.organization_id = ${o.id} and a.is_current
       `;
@@ -2032,11 +2034,12 @@ async function resolveAudience(
       salutation_override: string | null;
       email: string | null;
       email_unsubscribed: boolean;
+      news_consent: string | null;
       status: string;
     }>`
       select pe.id, pe.display_name, pe.honorific, pe.given_name, pe.family_name,
              pe.religious_title, pe.academic_title, pe.post_nominals, pe.salutation_override,
-             pe.email, pe.email_unsubscribed, pe.status
+             pe.email, pe.email_unsubscribed, pe.news_consent, pe.status
       from participations p join persons pe on pe.id = p.person_id
       where p.event_id = ${eventId} and p.party_type = 'person' and p.chapter_id = ${m.chapterId}
     `;
@@ -2054,11 +2057,12 @@ async function resolveAudience(
       salutation_override: string | null;
       email: string | null;
       email_unsubscribed: boolean;
+      news_consent: string | null;
       status: string;
     }>`
       select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
              p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
-             p.email, p.email_unsubscribed, p.status
+             p.email, p.email_unsubscribed, p.news_consent, p.status
       from persons p
       join person_roles r on r.person_id = p.id and r.role_key = 'academic_member'
       where p.chapter_id = ${m.chapterId}
