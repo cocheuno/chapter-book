@@ -43,7 +43,8 @@ function downloadCsv(file: { csv: string; filename: string }) {
   link.href = URL.createObjectURL(blob);
   link.download = file.filename;
   link.click();
-  URL.revokeObjectURL(link.href);
+  const href = link.href;
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 
 function statusTone(status: string): "ok" | "warn" | "muted" {
@@ -395,9 +396,11 @@ function RegistrationCard({
         </div>
         {canEdit ? (
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" disabled={busy} onClick={onCancelRegistration}>
-              Cancel registration
-            </Button>
+            {registration.status === "free" ? (
+              <Button type="button" variant="secondary" disabled={busy} onClick={onCancelRegistration}>
+                Cancel registration
+              </Button>
+            ) : null}
             <Button type="button" variant="ghost" disabled={busy} onClick={onCopyEmail}>
               Copy confirmation email
             </Button>
@@ -438,7 +441,7 @@ function RegistrationCard({
                   <p className="text-sm text-muted">{attendee.tickets.join(", ") || "No ticket"}</p>
                   {attendee.dietary ? <p className="text-sm text-muted">{attendee.dietary}</p> : null}
                 </div>
-                {canEdit && !attendee.cancelled ? (
+                {canEdit && isActiveRegistration(registration.status) && !attendee.cancelled ? (
                   <div className="flex gap-2">
                     <Button type="button" variant="ghost" disabled={busy} onClick={() => onStartRename(attendee)}>
                       Rename

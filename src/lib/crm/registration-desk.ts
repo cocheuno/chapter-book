@@ -82,14 +82,14 @@ async function writeAudit(
   `;
 }
 
-/** Cancels one attendee, then releases one seat per distinct part. */
-async function releaseAttendee(sql: Sql, chapterId: string, eventId: string, attendeeId: string) {
+/** Cancels one attendee, then releases one seat per distinct part. False when already cancelled. */
+async function releaseAttendee(sql: Sql, chapterId: string, eventId: string, attendeeId: string): Promise<boolean> {
   const marked = await sql<{ id: string }>`
     update registration_attendees set cancelled_at = now()
     where id = ${attendeeId} and chapter_id = ${chapterId} and cancelled_at is null
     returning id
   `;
-  if (!marked[0]) throw new Error("Already cancelled.");
+  if (!marked[0]) return false;
   const parts = await sql<{ part_id: string }>`
     select distinct tp.part_id
     from attendee_items ai
@@ -116,6 +116,7 @@ async function releaseAttendee(sql: Sql, chapterId: string, eventId: string, att
       and guest_status in ('attending', 'no_response', 'waitlisted')
     returning id
   `;
+  return true;
 }
 
 async function cancelOpenAttendees(sql: Sql, chapterId: string, eventId: string, registrationId: string) {
@@ -123,8 +124,11 @@ async function cancelOpenAttendees(sql: Sql, chapterId: string, eventId: string,
     select id from registration_attendees
     where registration_id = ${registrationId} and chapter_id = ${chapterId} and cancelled_at is null
   `;
-  for (const row of rows) await releaseAttendee(sql, chapterId, eventId, row.id);
-  return rows.length;
+  let cancelled = 0;
+  for (const row of rows) {
+    if (await releaseAttendee(sql, chapterId, eventId, row.id)) cancelled += 1;
+  }
+  return cancelled;
 }
 
 async function cancelHeldMail(sql: Sql, chapterId: string, registrationId: string) {
@@ -388,7 +392,8 @@ export const cancelAttendee = createServerFn({ method: "POST" })
     const attendee = rows[0];
     if (!attendee) throw new Error("Attendee not found.");
     if (attendee.status !== "free") throw new Error("Only free registrations can be cancelled here for now.");
-    await releaseAttendee(sql, member.chapterId, data.eventId, attendee.id);
+    const released = await releaseAttendee(sql, member.chapterId, data.eventId, attendee.id);
+    if (!released) throw new Error("Already cancelled.");
     const remaining = await sql<{ n: number }>`
       select count(*)::int as n from registration_attendees
       where registration_id = ${attendee.registration_id}
@@ -396,8 +401,19 @@ export const cancelAttendee = createServerFn({ method: "POST" })
         and cancelled_at is null
     `;
     if (asNumber(remaining[0]?.n) === 0) {
-      await cancelOpenAttendees(sql, member.chapterId, data.eventId, attendee.registration_id);
-      await cancelHeldMail(sql, member.chapterId, attendee.registration_id);
+      const closed = await sql<{ id: string }>`
+        update registrations set status = 'cancelled', cancelled_at = now()
+        where id = ${attendee.registration_id} and chapter_id = ${member.chapterId} and status = 'free'
+        returning id
+      `;
+      if (closed[0]) {
+        await cancelHeldMail(sql, member.chapterId, attendee.registration_id);
+        await writeAudit(sql, member.chapterId, member.userId, "registration_cancelled", "registration", attendee.registration_id, {
+          code: attendee.code,
+          attendees: 0,
+          reason: "last attendee cancelled",
+        });
+      }
     }
     await writeAudit(sql, member.chapterId, member.userId, "attendee_cancelled", "registration_attendee", attendee.id, {
       code: attendee.code,
@@ -458,6 +474,7 @@ export const renameAttendee = createServerFn({ method: "POST" })
         and a.chapter_id = ${member.chapterId}
         and a.cancelled_at is null
         and r.event_id = ${data.eventId}
+        and r.status in ('free', 'paid', 'pending')
     `;
     const current = rows[0];
     if (!current) throw new Error("Attendee not found.");
