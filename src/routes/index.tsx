@@ -95,6 +95,30 @@ function HomeInner() {
         </section>
       )}
 
+      {data.registrations.length > 0 ? (
+        <section>
+          <h2 className="mb-3 font-display text-xl">Registrations</h2>
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+            {data.registrations.map((row) => (
+              <li key={row.eventId}>
+                <Link
+                  to="/events/$eventId/registrations"
+                  params={{ eventId: row.eventId }}
+                  className="block px-4 py-3 hover:bg-paper-2"
+                >
+                  <span className="font-medium">{row.title}</span>
+                  <span className="mt-1 block text-sm text-muted">
+                    {row.sinceYesterday} since yesterday · {row.activeAttendees} active attendees
+                    {" · "}
+                    {row.seatsLeft == null ? "No seat limit" : `Seats left: ${row.seatsLeft}`}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section>
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-display text-xl">Due this week</h2>

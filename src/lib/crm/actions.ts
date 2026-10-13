@@ -21,6 +21,7 @@ import { toHonorificGreeting, toSalutationGreeting } from "./templates";
 import { ensureEventWebPage } from "./event-page";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
 import { csvRow } from "./csv";
+import { seatsLeft } from "@/lib/payments/pricing";
 
 type Row = Record<string, string | number | boolean | null>;
 
@@ -134,6 +135,62 @@ export const getHome = createServerFn({ method: "GET" })
       where chapter_id = ${m.chapterId} and title = ${CLERGY_CHECK_TITLE} and due_on = ${clergyDue}
       limit 1
     `;
+    const registrationEvents = await sql<{
+      id: string;
+      title: string;
+      since_yesterday: number;
+      active_attendees: number;
+    }>`
+      select e.id, e.title,
+        count(distinct r.id) filter (
+          where r.status in ('free', 'paid', 'pending')
+            and r.created_at >= now() - interval '24 hours'
+        )::int as since_yesterday,
+        count(distinct a.id) filter (
+          where r.status in ('free', 'paid', 'pending') and a.cancelled_at is null
+        )::int as active_attendees
+      from events e
+      left join registration_pages rp on rp.event_id = e.id and rp.chapter_id = e.chapter_id
+      left join registrations r on r.event_id = e.id and r.chapter_id = e.chapter_id
+      left join registration_attendees a on a.registration_id = r.id and a.chapter_id = r.chapter_id
+      where e.chapter_id = ${m.chapterId}
+        and (
+          coalesce(rp.use_book_registration, false)
+          or exists (
+            select 1 from registrations existing
+            where existing.event_id = e.id and existing.chapter_id = e.chapter_id
+          )
+        )
+      group by e.id, e.title
+      order by e.title
+    `;
+    const partRows = registrationEvents.length
+      ? await sql<{ event_id: string; capacity: number | null; held: number; taken: number }>`
+          select event_id, capacity, held, taken
+          from event_parts
+          where chapter_id = ${m.chapterId}
+        `
+      : [];
+    const registrations = registrationEvents.map((event) => {
+      let left: number | null = null;
+      for (const part of partRows) {
+        if (part.event_id !== event.id) continue;
+        const seats = seatsLeft({
+          capacity: part.capacity == null ? null : Number(part.capacity),
+          held: Number(part.held ?? 0),
+          taken: Number(part.taken ?? 0),
+        });
+        if (seats == null) continue;
+        if (left == null || seats < left) left = seats;
+      }
+      return {
+        eventId: event.id,
+        title: event.title,
+        sinceYesterday: Number(event.since_yesterday ?? 0),
+        activeAttendees: Number(event.active_attendees ?? 0),
+        seatsLeft: left,
+      };
+    });
     return {
       member: m,
       nextEvent: next,
@@ -143,6 +200,7 @@ export const getHome = createServerFn({ method: "GET" })
       quietSchools: quiet,
       clergyReminder: clergyReminderDue(today),
       clergyTaskExists: Boolean(clergyTask[0]),
+      registrations,
     };
   });
 

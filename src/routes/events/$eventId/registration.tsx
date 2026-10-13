@@ -261,9 +261,14 @@ function RegistrationInner() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
-        Back
-      </Link>
+      <div className="flex flex-wrap gap-4">
+        <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
+          Back
+        </Link>
+        <Link to="/events/$eventId/registrations" params={{ eventId }} className="text-sm text-bronze hover:underline">
+          Registrations
+        </Link>
+      </div>
       <header className="space-y-2">
         <h1 className="font-display text-3xl">Registration</h1>
         {title ? <p className="text-ink-soft">{title}</p> : null}
