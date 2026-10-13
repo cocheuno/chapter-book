@@ -506,8 +506,16 @@ async function readPublicPage(
     const canonicalPath = canonicalDetailPaths(siblings).get(page.id);
     const canonicalSlug = canonicalPath?.startsWith("/p/") ? canonicalPath.slice(3) : null;
     if (canonicalSlug && canonicalSlug !== page.slug) {
-      return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[], ...noTimes };
+      return { ...page, canonicalSlug, program: [] as SiteItemRow[], eventPage: null, speakerLineup: [] as SpeakerRecord[], ...noTimes, bookRegistration: false };
     }
+    const bookRows = await sql<{ use_book_registration: boolean }>`
+      select rp.use_book_registration
+      from events e
+      join registration_pages rp on rp.event_id = e.id and rp.chapter_id = e.chapter_id
+      where e.chapter_id = ${chapterId} and e.public_item_id = ${page.id} and rp.use_book_registration
+      limit 1
+    `;
+    const bookRegistration = Boolean(bookRows[0]);
     const gatherings = await listGatherings(sql, chapterId);
     const shelf = await sql<{ id: string; slug: string | null; title: string; published: boolean }>`
       select id, slug, title, published from site_items where chapter_id = ${chapterId}
@@ -517,7 +525,7 @@ async function readPublicPage(
       gatherings.find((gathering) => gathering.id === page.gathering_id)?.public_item_id ?? null,
     );
     if (page.layout !== "conference") {
-      return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[], ...noTimes };
+      return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[], ...noTimes, bookRegistration };
     }
     const program = await sql<SiteItemRow>`
       select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
@@ -567,7 +575,7 @@ async function readPublicPage(
         .filter((link) => link.speaker_id === person.id && link.site_item_id)
         .map((link) => link.site_item_id as string),
     }));
-  return { ...page, canonicalSlug: null, program, eventPage, speakerLineup, sessionStarts, programTimeZone };
+  return { ...page, canonicalSlug: null, program, eventPage, speakerLineup, sessionStarts, programTimeZone, bookRegistration };
 }
 
 /** Dated published event for the calendar file. No sign-in. Reads only. */

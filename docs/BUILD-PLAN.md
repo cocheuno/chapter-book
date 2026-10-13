@@ -748,7 +748,14 @@ Follow `docs/PAYMENTS.md`, **Phase 1**, with the Phase 1 prompt there, and `docs
 
 **Corrections** (the implementation prompt wins):
 
-- `registration_pages` holds the register-page copy and the on/off switch. `use_book_registration` defaults to false. Nothing reads the switch until WP-20b, and saving page copy does not change it.
+- `registration_pages` holds the register-page copy and the on/off switch. `use_book_registration` defaults to false. Saving page copy does not change the switch.
+- WP-20b: free tickets increment `taken` (not `held`). Undo is `taken = taken - n`.
+- The throttle key is `register:` plus a hash of the IP. A raw IP is never stored.
+- When `persons_name_no_email_uq` matches, link that no-email person and add the task `Web registration: check ${display_name} (matched by name only)`.
+- `saveAgreement` stores `publicCopyHtml(html)` when that returns HTML, otherwise the trimmed text.
+- Registration codes in this package are `Ryy-XXXX` (Crockford).
+- WP-20b does not take payment, hold seats for paid tickets, open the desk, register minors, accept promo codes, or send mail. Confirmation rows stay `held`.
+- While `use_book_registration` is false, `/p/<slug>/register` answers 404 and the conference Register buttons keep the typed link.
 
 ### WP-21 Stripe in test mode
 

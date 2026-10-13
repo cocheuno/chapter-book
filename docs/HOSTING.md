@@ -27,6 +27,8 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `FOUNDER_EMAIL` | **Production** only. The address of the chapter's admin account. Only that address can open an empty hosted book. |
 | `GROK_CHROME` | **Production and Preview:** `off`. Stops Grok's page chrome (the grok.com script and share-tag rewriting) on Vercel. Grok's own workspace preview is not affected. |
 | `BROKER_SIGNIN` | Leave unset on Vercel (Production and Preview). Grok's Google/X sign-in service then stays off wherever `BETTER_AUTH_URL` is set. Set to `on` only for a deployment that must use it. |
+| `TURNSTILE_SITE_KEY` | **Production:** the real widget's site key. **Preview:** Cloudflare's test key `1x00000000000000000000AA`. When neither Turnstile key is set, the check is skipped. |
+| `TURNSTILE_SECRET_KEY` | **Production:** the real widget's secret key. **Preview:** Cloudflare's test key `1x0000000000000000000000000000000AA`. When neither Turnstile key is set, the check is skipped. |
 
 Do not paste these into GitHub, Slack, or chat.
 
