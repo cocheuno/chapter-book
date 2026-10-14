@@ -397,7 +397,7 @@ export const cancelAttendee = createServerFn({ method: "POST" })
           action: "registration_cancelled",
           entity: "registration",
           entityId: attendee.registration_id,
-          detail: { code: attendee.code, attendees: 0, reason: "last attendee cancelled" },
+          detail: { code: attendee.code, attendees: 0, reason: "last attendee cancelled", eventId: data.eventId },
         });
       }
     }
@@ -407,7 +407,7 @@ export const cancelAttendee = createServerFn({ method: "POST" })
       action: "attendee_cancelled",
       entity: "registration_attendee",
       entityId: attendee.id,
-      detail: { code: attendee.code, registrationId: attendee.registration_id },
+      detail: { code: attendee.code, registrationId: attendee.registration_id, eventId: data.eventId },
     });
     return { ok: true };
   });
@@ -436,7 +436,7 @@ export const cancelRegistration = createServerFn({ method: "POST" })
       action: "registration_cancelled",
       entity: "registration",
       entityId: registration.id,
-      detail: { code: registration.code, attendees },
+      detail: { code: registration.code, attendees, eventId: data.eventId },
     });
     return { ok: true };
   });
@@ -494,7 +494,7 @@ export const renameAttendee = createServerFn({ method: "POST" })
       action: "attendee_renamed",
       entity: "registration_attendee",
       entityId: current.id,
-      detail: { code: current.code, from, to },
+      detail: { code: current.code, from, to, eventId: data.eventId },
     });
     return { id: current.id };
   });
@@ -526,7 +526,7 @@ export const getConfirmationEmail = createServerFn({ method: "POST" })
       action: "confirmation_viewed",
       entity: "registration",
       entityId: registration.id,
-      detail: { code: registration.code },
+      detail: { code: registration.code, eventId: data.eventId },
     });
     const row = rows[0];
     if (!row) return null;

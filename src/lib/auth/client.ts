@@ -1,6 +1,7 @@
 import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { runPreSignInSignOut, runSignOut } from "../../../scripts/sign-out-plan.mjs";
+import { clearNavStorage } from "@/lib/nav/nav-store";
 import { GROK_PROVIDERS } from "./providers";
 
 /**
@@ -230,6 +231,11 @@ export async function signOut(redirectTo = "/"): Promise<void> {
     },
     clearToken: () => setBearerToken(null),
     redirect: () => {
+      try {
+        clearNavStorage();
+      } catch {
+        /* storage may be unavailable */
+      }
       window.location.href = redirectTo;
     },
   });

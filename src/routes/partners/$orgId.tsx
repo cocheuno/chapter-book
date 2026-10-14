@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { ListSelect } from "@/components/list-select";
 import { PartnerPeopleFields } from "@/components/partner-people-fields";
@@ -14,7 +15,8 @@ import {
   setAffiliationStart,
   updateOrganization,
 } from "@/lib/crm/actions";
-import { useEffect, useState } from "react";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/partners/$orgId")({ component: OrgPage });
@@ -29,6 +31,7 @@ function OrgPage() {
 
 function OrgInner() {
   const { orgId } = Route.useParams();
+  const partnersHref = useListHref("partners", "/partners");
   const [data, setData] = useState<Awaited<ReturnType<typeof getOrganization>> | null>(null);
   const [form, setForm] = useState({
     name: "",
@@ -54,9 +57,17 @@ function OrgInner() {
   });
   const [touch, setTouch] = useState("");
   const [people, setPeople] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
+  const latestId = useRef(orgId);
+  if (latestId.current !== orgId) {
+    latestId.current = orgId;
+    setData(null);
+  }
 
   function load() {
-    getOrganization({ data: orgId }).then((d) => {
+    const id = orgId;
+    setData(null);
+    getOrganization({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
       setData(d);
       const o = d.org as Record<string, string | number | null>;
       setForm({
@@ -85,6 +96,14 @@ function OrgInner() {
     listPeople({ data: undefined }).then(setPeople);
   }
   useEffect(load, [orgId]);
+  useEffect(() => {
+    if (!data) return;
+    const org = data.org as { id?: string; name?: string | null };
+    if (org.id !== orgId) return;
+    const label = String(org.name ?? "").trim();
+    if (!label) return;
+    rememberVisit({ kind: "partner", id: orgId, label, href: `/partners/${orgId}` });
+  }, [data, orgId]);
   if (!data) return <p className="text-muted">Loading…</p>;
   const o = data.org as Record<string, string | number | null>;
   const typeKey = String(o.type_key);
@@ -94,6 +113,7 @@ function OrgInner() {
   return (
     <div className="space-y-8">
       <header>
+        <Crumbs trail={[{ label: "Partners", to: partnersHref }, { label: String(o.name) }]} />
         <p className="text-sm text-muted">
           {orgTypeLabel(typeKey)}
           {o.diocese_name ? ` · ${o.diocese_name}` : ""}

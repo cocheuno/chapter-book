@@ -1564,7 +1564,12 @@ export const listInvites = createServerFn({ method: "GET" })
       left join organizations o on o.id = p.organization_id
       where p.event_id = ${eventId} and p.party_type = 'organization'
     `;
+    // Own select so the chapter-scope test still sees exactly two participation joins.
+    const titled = await sql<{ title: string | null }>`
+      select title from events where id = ${eventId} and chapter_id = ${m.chapterId}
+    `;
     return {
+      title: titled[0]?.title ?? "",
       people: people.map((p) => ({
         ...p,
         display_name: p.person_id ? listedName(p) : p.guest_name || p.display_name,

@@ -1,8 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { getMailing } from "@/lib/crm/actions";
-import { useEffect, useState } from "react";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
+import { useEffect, useRef, useState } from "react";
 
 export const Route = createFileRoute("/mail/$mailingId")({ component: MailingPage });
 
@@ -16,20 +18,43 @@ function MailingPage() {
 
 function MailingInner() {
   const { mailingId } = Route.useParams();
+  const mailHref = useListHref("mail", "/mail");
   const [data, setData] = useState<Awaited<ReturnType<typeof getMailing>> | null>(null);
+  const latestId = useRef(mailingId);
+  if (latestId.current !== mailingId) {
+    latestId.current = mailingId;
+    setData(null);
+  }
+  function load() {
+    const id = mailingId;
+    setData(null);
+    getMailing({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
+      setData(d);
+    });
+  }
+  useEffect(load, [mailingId]);
   useEffect(() => {
-    getMailing({ data: mailingId }).then(setData);
-  }, [mailingId]);
+    if (!data) return;
+    const mailing = data.mailing as { id?: string; subject_snapshot?: string | null };
+    if (mailing.id !== mailingId) return;
+    const subject = String(mailing.subject_snapshot ?? "").trim();
+    rememberVisit({
+      kind: "letter",
+      id: mailingId,
+      label: subject || "(no subject)",
+      href: `/mail/${mailingId}`,
+    });
+  }, [data, mailingId]);
   if (!data) return <p className="text-muted">Loading…</p>;
   const m = data.mailing as Record<string, string | number | null>;
+  const subject = String(m.subject_snapshot ?? "").trim();
   return (
     <div className="space-y-6">
-      <Link to="/mail" className="text-sm text-bronze hover:underline">
-        All mail
-      </Link>
+      <Crumbs trail={[{ label: "Mail", to: mailHref }, { label: subject || "(no subject)" }]} />
       <header>
         <Badge>{String(m.status)}</Badge>
-        <h1 className="mt-2 font-display text-3xl">{String(m.subject_snapshot)}</h1>
+        <h1 className="mt-2 font-display text-3xl">{subject || "(no subject)"}</h1>
         <p className="text-muted">{m.audience_count} sent</p>
       </header>
       <pre className="rounded-xl border border-line bg-surface p-4 font-sans text-sm whitespace-pre-wrap">

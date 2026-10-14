@@ -1,8 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { listInvites, updateParticipation, walkUpCheckIn } from "@/lib/crm/actions";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -18,6 +20,7 @@ function CheckInPage() {
 
 function CheckInInner() {
   const { eventId } = Route.useParams();
+  const eventsHref = useListHref("events", "/events");
   const [data, setData] = useState<Awaited<ReturnType<typeof listInvites>> | null>(null);
   const [q, setQ] = useState("");
   const [walk, setWalk] = useState({ name: "", email: "" });
@@ -27,6 +30,11 @@ function CheckInInner() {
     listInvites({ data: eventId }).then(setData);
   }
   useEffect(load, [eventId]);
+  const eventTitle = data?.title?.trim() ?? "";
+  useEffect(() => {
+    if (!eventTitle) return;
+    rememberVisit({ kind: "event", id: eventId, label: eventTitle, href: `/events/${eventId}` });
+  }, [eventTitle, eventId]);
   const people = useMemo(() => {
     const list = data?.people ?? [];
     const qq = q.trim().toLowerCase();
@@ -37,9 +45,13 @@ function CheckInInner() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
-      <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
-        Done
-      </Link>
+      <Crumbs
+        trail={[
+          { label: "Events", to: eventsHref },
+          ...(eventTitle ? [{ label: eventTitle, to: `/events/${eventId}` }] : []),
+          { label: "Check in" },
+        ]}
+      />
       <h1 className="font-display text-3xl">Check in</h1>
       <p className="text-lg tabular-nums text-bronze">{attended} attended</p>
       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" autoFocus />

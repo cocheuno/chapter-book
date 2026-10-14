@@ -3,6 +3,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listMail, setTemplateGreeting } from "@/lib/crm/actions";
+import { rememberList } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +20,7 @@ function MailPage() {
 function MailInner() {
   const [data, setData] = useState<Awaited<ReturnType<typeof listMail>> | null>(null);
   useEffect(() => {
+    rememberList("mail", "/mail");
     listMail().then(setData);
   }, []);
   if (!data) return <p className="text-muted">Loading…</p>;

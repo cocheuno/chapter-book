@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { DuplicateHint } from "@/components/duplicate-hint";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
 import { createEvent, listEvents, listParishes } from "@/lib/crm/actions";
 import { fromDatetimeLocal, nextOccasionLocal } from "@/lib/crm/format";
 import { matchEventTitle } from "@/lib/crm/match";
+import { useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -22,6 +24,7 @@ function NewEventPage() {
 
 function NewEventInner() {
   const nav = useNavigate();
+  const eventsHref = useListHref("events", "/events");
   const [typeKey, setTypeKey] = useState<"gold_mass" | "conference">("gold_mass");
   const [occasion, setOccasion] = useState("st_albert");
   const [title, setTitle] = useState(() => {
@@ -86,6 +89,7 @@ function NewEventInner() {
         }
       }}
     >
+      <Crumbs trail={[{ label: "Events", to: eventsHref }, { label: "Plan a gathering" }]} />
       <h1 className="font-display text-3xl">Plan a gathering</h1>
       <Field label="Kind">
         <Select value={typeKey} onChange={(e) => setTypeKey(e.target.value as "gold_mass" | "conference")}>

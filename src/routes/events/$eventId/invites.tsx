@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
@@ -12,6 +13,7 @@ import {
   updateParticipation,
 } from "@/lib/crm/actions";
 import { orgTypeLabel } from "@/lib/crm/constants";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -101,6 +103,7 @@ function countedSize(rows: { party_size: number; guest_status: string | null; co
 
 function InvitesInner() {
   const { eventId } = Route.useParams();
+  const eventsHref = useListHref("events", "/events");
   const [data, setData] = useState<Awaited<ReturnType<typeof listInvites>> | null>(null);
   const [tab, setTab] = useState<"people" | "partners">("people");
   const [pick, setPick] = useState("");
@@ -118,6 +121,11 @@ function InvitesInner() {
     listPartners({ data: undefined }).then(setOrgs);
   }
   useEffect(load, [eventId]);
+  useEffect(() => {
+    const label = data?.title?.trim();
+    if (!label) return;
+    rememberVisit({ kind: "event", id: eventId, label, href: `/events/${eventId}` });
+  }, [data, eventId]);
   if (!data) return <p className="text-muted">Loading…</p>;
 
   const totals = countedSize(data.people);
@@ -126,9 +134,13 @@ function InvitesInner() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
-            Back to workspace
-          </Link>
+          <Crumbs
+            trail={[
+              { label: "Events", to: eventsHref },
+              ...(data.title.trim() ? [{ label: data.title, to: `/events/${eventId}` }] : []),
+              { label: "Invites" },
+            ]}
+          />
           <h1 className="font-display text-3xl">Invites</h1>
           <p className="mt-1 text-sm text-ink-soft">
             {totals.attendees} attending · Mass {totals.mass} · Dinner {totals.dinner} · Lecture {totals.lecture}

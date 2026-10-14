@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   uniqueEmails,
   type DeskFilter,
 } from "@/lib/payments/registration-desk";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -63,6 +65,7 @@ function RegistrationsPage() {
 
 function RegistrationsInner() {
   const { eventId } = Route.useParams();
+  const eventsHref = useListHref("events", "/events");
   const [data, setData] = useState<Desk | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -88,6 +91,12 @@ function RegistrationsInner() {
       gone = true;
     };
   }, [load]);
+
+  useEffect(() => {
+    const label = data?.event.title?.trim();
+    if (!label) return;
+    rememberVisit({ kind: "event", id: eventId, label, href: `/events/${eventId}` });
+  }, [data, eventId]);
 
   async function run(work: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -119,10 +128,14 @@ function RegistrationsInner() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header className="space-y-3">
+        <Crumbs
+          trail={[
+            { label: "Events", to: eventsHref },
+            { label: data.event.title, to: `/events/${eventId}` },
+            { label: "Registrations" },
+          ]}
+        />
         <div className="flex flex-wrap gap-4">
-          <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
-            Back to event
-          </Link>
           <Link to="/events/$eventId/registration" params={{ eventId }} className="text-sm text-bronze hover:underline">
             Registration setup
           </Link>

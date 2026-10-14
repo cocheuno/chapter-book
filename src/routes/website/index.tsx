@@ -58,6 +58,8 @@ function WebsitePage() {
 function WebsiteInner() {
   const search = Route.useSearch();
   const opened = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<SiteData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<SiteKind>("announcement");
@@ -120,6 +122,10 @@ function WebsiteInner() {
       endsOn: item.ends_on ?? "",
     });
     setPendingFile(null);
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      titleRef.current?.focus();
+    });
   }
 
   useEffect(() => {
@@ -272,6 +278,7 @@ function WebsiteInner() {
 
       {canEdit && (
         <form
+          ref={formRef}
           className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"
           onSubmit={async (e) => {
             e.preventDefault();
@@ -350,7 +357,7 @@ function WebsiteInner() {
         >
           <h2 className="font-display text-xl sm:col-span-2">{form.id ? "Edit item" : `Add ${tab}`}</h2>
           <Field label="Title">
-            <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+            <Input ref={titleRef} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
           </Field>
           <Field label="Kind">
             <Select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as SiteKind })}>

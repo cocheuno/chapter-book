@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { listEvents, listMail, markNotifySchools, previewMail, sendMail } from "@/lib/crm/actions";
+import { useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +26,8 @@ function ComposePage() {
 function ComposeInner() {
   const search = Route.useSearch();
   const nav = useNavigate();
+  const mailHref = useListHref("mail", "/mail");
+  const eventsHref = useListHref("events", "/events");
   const [templates, setTemplates] = useState<Awaited<ReturnType<typeof listMail>>["templates"]>([]);
   const [events, setEvents] = useState<{ id: string; title: string }[]>([]);
   const [templateId, setTemplateId] = useState("");
@@ -48,8 +52,21 @@ function ComposeInner() {
     setTyped("");
   }
 
+  const linked = search.eventId ? events.find((row) => row.id === search.eventId) : undefined;
+  const trail = search.eventId
+    ? [
+        { label: "Events", to: eventsHref },
+        ...(linked?.title ? [{ label: linked.title, to: `/events/${search.eventId}` }] : []),
+        { label: "New letter" },
+      ]
+    : [
+        { label: "Mail", to: mailHref },
+        { label: "New letter" },
+      ];
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
+      <Crumbs trail={trail} />
       <h1 className="font-display text-3xl">New letter</h1>
       <Field label="Template">
         <Select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
