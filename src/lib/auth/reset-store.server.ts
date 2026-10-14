@@ -1,4 +1,5 @@
 import { getSql } from "../db";
+import { recordAudit } from "../crm/audit";
 import { nid } from "../crm/ids";
 import { hashInviteToken } from "../crm/operator-rules";
 
@@ -28,10 +29,21 @@ export function takeResetToken(userId: string): string | null {
 /** Mark every open reset used, and drop Better Auth's plain reset rows. */
 export async function markResetsUsed(userId: string): Promise<void> {
   const sql = await getSql();
-  await sql`
+  const used = await sql<{ chapter_id: string }>`
     update operator_resets set used_at = now()
     where user_id = ${userId} and used_at is null
+    returning chapter_id
   `;
+  for (const chapterId of new Set(used.map((row) => row.chapter_id))) {
+    await recordAudit(sql, {
+      chapterId,
+      actor: userId,
+      action: "password_reset_used",
+      entity: "operator",
+      entityId: userId,
+      detail: {},
+    });
+  }
   await sql`
     delete from verification
     where identifier like 'reset-password:%' and value = ${userId}

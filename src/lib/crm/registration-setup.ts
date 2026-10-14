@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { publicCopyHtml } from "./announcement-html";
+import { recordAudit } from "./audit";
+import { changedFields } from "./audit-rules";
 import { nid } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { parsePriceCents } from "@/lib/payments/pricing";
@@ -99,6 +101,22 @@ async function editor(userId: string) {
   const member = await loadMember(userId);
   assertEditor(member.role);
   return member;
+}
+
+async function auditSetup(
+  sql: Sql,
+  member: { chapterId: string; userId: string },
+  eventId: string,
+  detail: { what: string; name: string; price_cents?: number },
+) {
+  await recordAudit(sql, {
+    chapterId: member.chapterId,
+    actor: member.userId,
+    action: "registration_setup_saved",
+    entity: "event",
+    entityId: eventId,
+    detail,
+  });
 }
 
 async function partsOfEvent(sql: Sql, chapterId: string, eventId: string, partIds: string[]) {
@@ -228,6 +246,18 @@ export const savePart = createServerFn({ method: "POST" })
     const ends = whenOrNull(data.endsAt);
     const capacity = capacityOrNull(data.capacity);
     if (data.partId) {
+      const beforeRows = await sql<{
+        title: string;
+        starts_at: Date | string | null;
+        ends_at: Date | string | null;
+        capacity: number | null;
+        is_meal: boolean;
+        sort_order: number;
+      }>`
+        select title, starts_at, ends_at, capacity, is_meal, sort_order
+        from event_parts
+        where id = ${data.partId} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
+      `;
       const saved = await sql<{ id: string }>`
         update event_parts set
           title = ${title},
@@ -240,6 +270,31 @@ export const savePart = createServerFn({ method: "POST" })
         returning id
       `;
       if (!saved[0]) throw new Error("Part not found");
+      const before = beforeRows[0];
+      if (
+        before &&
+        changedFields(
+          {
+            title: before.title,
+            starts_at: iso(before.starts_at),
+            ends_at: iso(before.ends_at),
+            capacity: before.capacity,
+            is_meal: before.is_meal,
+            sort_order: before.sort_order,
+          },
+          {
+            title,
+            starts_at: iso(starts),
+            ends_at: iso(ends),
+            capacity,
+            is_meal: data.isMeal,
+            sort_order: data.sortOrder,
+          },
+          ["title", "starts_at", "ends_at", "capacity", "is_meal", "sort_order"],
+        ).length
+      ) {
+        await auditSetup(sql, member, data.eventId, { what: "part", name: title });
+      }
       return { id: saved[0].id };
     }
     const id = nid();
@@ -251,6 +306,7 @@ export const savePart = createServerFn({ method: "POST" })
         ${capacity}, ${data.isMeal}, ${data.sortOrder}
       )
     `;
+    await auditSetup(sql, member, data.eventId, { what: "part", name: title });
     return { id };
   });
 
@@ -270,10 +326,14 @@ export const removePart = createServerFn({ method: "POST" })
     if (Number(part.held) !== 0 || Number(part.taken) !== 0) {
       throw new Error("Seats are held or taken for this part.");
     }
-    await sql`
+    const removed = await sql<{ title: string }>`
       delete from event_parts
       where id = ${data.partId} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
+      returning title
     `;
+    if (removed[0]) {
+      await auditSetup(sql, member, data.eventId, { what: "part_removed", name: removed[0].title });
+    }
     return { id: data.partId };
   });
 
@@ -309,7 +369,25 @@ export const saveTicketType = createServerFn({ method: "POST" })
     const partIds = await partsOfEvent(sql, member.chapterId, data.eventId, data.partIds);
     let id = data.ticketTypeId;
     let replaceParts = true;
+    let changed = true;
     if (id) {
+      const current = await sql<{
+        kind: string;
+        name: string;
+        description: string | null;
+        price_cents: number;
+        for_minors: boolean;
+        needs_code: boolean;
+        sales_start: Date | string | null;
+        sales_end: Date | string | null;
+        active: boolean;
+        sort_order: number;
+      }>`
+        select kind, name, description, price_cents, for_minors, needs_code,
+               sales_start, sales_end, active, sort_order
+        from ticket_types
+        where id = ${id} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
+      `;
       const issued = await sql<{ attendee_id: string }>`
         select ai.attendee_id
         from attendee_items ai
@@ -347,6 +425,48 @@ export const saveTicketType = createServerFn({ method: "POST" })
         returning id
       `;
       if (!saved[0]) throw new Error("Ticket not found");
+      const row = current[0];
+      const columnChanges = row
+        ? changedFields(
+            {
+              kind: row.kind,
+              name: row.name,
+              description: row.description,
+              price_cents: row.price_cents,
+              for_minors: row.for_minors,
+              needs_code: row.needs_code,
+              sales_start: iso(row.sales_start),
+              sales_end: iso(row.sales_end),
+              active: row.active,
+              sort_order: row.sort_order,
+            },
+            {
+              kind: data.kind,
+              name,
+              description,
+              price_cents: cents,
+              for_minors: data.forMinors,
+              needs_code: data.needsCode,
+              sales_start: iso(salesStart),
+              sales_end: iso(salesEnd),
+              active: data.active,
+              sort_order: data.sortOrder,
+            },
+            [
+              "kind",
+              "name",
+              "description",
+              "price_cents",
+              "for_minors",
+              "needs_code",
+              "sales_start",
+              "sales_end",
+              "active",
+              "sort_order",
+            ],
+          )
+        : [];
+      changed = columnChanges.length > 0 || !sameParts;
     } else {
       id = nid();
       await sql`
@@ -367,6 +487,9 @@ export const saveTicketType = createServerFn({ method: "POST" })
         `;
       }
     }
+    if (changed) {
+      await auditSetup(sql, member, data.eventId, { what: "ticket", name, price_cents: cents });
+    }
     return { id };
   });
 
@@ -377,8 +500,8 @@ export const removeTicketType = createServerFn({ method: "POST" })
     const member = await editor(context.userId);
     const sql = await getSql();
     await requireEvent(sql, member.chapterId, data.eventId);
-    const tickets = await sql<{ id: string }>`
-      select id from ticket_types
+    const tickets = await sql<{ id: string; name: string }>`
+      select id, name from ticket_types
       where id = ${data.ticketTypeId} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
     `;
     if (!tickets[0]) throw new Error("Ticket not found");
@@ -388,10 +511,14 @@ export const removeTicketType = createServerFn({ method: "POST" })
       limit 1
     `;
     if (used[0]) throw new Error("Tickets were already issued. Set it inactive instead.");
-    await sql`
+    const removed = await sql<{ name: string }>`
       delete from ticket_types
       where id = ${data.ticketTypeId} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
+      returning name
     `;
+    if (removed[0]) {
+      await auditSetup(sql, member, data.eventId, { what: "ticket_removed", name: removed[0].name });
+    }
     return { id: data.ticketTypeId };
   });
 
@@ -408,10 +535,16 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const member = await editor(context.userId);
     const sql = await getSql();
-    await requireEvent(sql, member.chapterId, data.eventId);
+    const event = await requireEvent(sql, member.chapterId, data.eventId);
     const intro = blankToNull(data.intro);
     const forSchools = blankToNull(data.forSchools);
     const manageMessage = blankToNull(data.manageMessage);
+    const existing = await sql<{ intro: string | null; for_schools: string | null; manage_message: string | null }>`
+      select intro, for_schools, manage_message
+      from registration_pages
+      where event_id = ${data.eventId} and chapter_id = ${member.chapterId}
+    `;
+    const before = existing[0] ?? { intro: null, for_schools: null, manage_message: null };
     // The on/off switch stays untouched. setBookRegistration is the only writer.
     await sql`
       insert into registration_pages (
@@ -427,6 +560,15 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
         updated_at = now(),
         updated_by = excluded.updated_by
     `;
+    if (
+      changedFields(
+        before,
+        { intro, for_schools: forSchools, manage_message: manageMessage },
+        ["intro", "for_schools", "manage_message"],
+      ).length
+    ) {
+      await auditSetup(sql, member, data.eventId, { what: "page", name: event.title });
+    }
     return { ok: true };
   });
 
@@ -457,6 +599,7 @@ export const saveAgreement = createServerFn({ method: "POST" })
       insert into consent_texts (id, chapter_id, event_id, kind, html, created_by)
       values (${id}, ${member.chapterId}, ${data.eventId}, ${data.kind}, ${html}, ${member.userId})
     `;
+    await auditSetup(sql, member, data.eventId, { what: "agreement", name: data.kind });
     return { saved: true, id };
   });
 

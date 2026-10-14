@@ -4,6 +4,7 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { csvRow } from "./csv";
 import { todayIn } from "./dates";
+import { recordAudit } from "./audit";
 import { nid } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { seatsLeft } from "@/lib/payments/pricing";
@@ -62,24 +63,6 @@ async function requireEvent(sql: Sql, chapterId: string, eventId: string) {
   `;
   if (!rows[0]) throw new Error("Event not found");
   return rows[0];
-}
-
-async function writeAudit(
-  sql: Sql,
-  chapterId: string,
-  actor: string,
-  action: string,
-  entity: string,
-  entityId: string | null,
-  detail: Record<string, unknown>,
-) {
-  await sql`
-    insert into audit_log (id, chapter_id, actor, action, entity, entity_id, detail)
-    values (
-      ${nid()}, ${chapterId}, ${actor}, ${action}, ${entity}, ${entityId},
-      ${JSON.stringify(detail)}::jsonb
-    )
-  `;
 }
 
 /** Cancels one attendee, then releases one seat per distinct part. False when already cancelled. */
@@ -408,16 +391,23 @@ export const cancelAttendee = createServerFn({ method: "POST" })
       `;
       if (closed[0]) {
         await cancelHeldMail(sql, member.chapterId, attendee.registration_id);
-        await writeAudit(sql, member.chapterId, member.userId, "registration_cancelled", "registration", attendee.registration_id, {
-          code: attendee.code,
-          attendees: 0,
-          reason: "last attendee cancelled",
+        await recordAudit(sql, {
+          chapterId: member.chapterId,
+          actor: member.userId,
+          action: "registration_cancelled",
+          entity: "registration",
+          entityId: attendee.registration_id,
+          detail: { code: attendee.code, attendees: 0, reason: "last attendee cancelled" },
         });
       }
     }
-    await writeAudit(sql, member.chapterId, member.userId, "attendee_cancelled", "registration_attendee", attendee.id, {
-      code: attendee.code,
-      registrationId: attendee.registration_id,
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "attendee_cancelled",
+      entity: "registration_attendee",
+      entityId: attendee.id,
+      detail: { code: attendee.code, registrationId: attendee.registration_id },
     });
     return { ok: true };
   });
@@ -440,9 +430,13 @@ export const cancelRegistration = createServerFn({ method: "POST" })
     if (!registration) throw new Error("Only free registrations can be cancelled here for now.");
     const attendees = await cancelOpenAttendees(sql, member.chapterId, data.eventId, registration.id);
     await cancelHeldMail(sql, member.chapterId, registration.id);
-    await writeAudit(sql, member.chapterId, member.userId, "registration_cancelled", "registration", registration.id, {
-      code: registration.code,
-      attendees,
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "registration_cancelled",
+      entity: "registration",
+      entityId: registration.id,
+      detail: { code: registration.code, attendees },
     });
     return { ok: true };
   });
@@ -494,10 +488,13 @@ export const renameAttendee = createServerFn({ method: "POST" })
         ${dueInSevenDays(member.timezone)}, ${"open"}, ${data.eventId}, ${current.person_id}, ${"secretary"}
       )
     `;
-    await writeAudit(sql, member.chapterId, member.userId, "attendee_renamed", "registration_attendee", current.id, {
-      code: current.code,
-      from,
-      to,
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "attendee_renamed",
+      entity: "registration_attendee",
+      entityId: current.id,
+      detail: { code: current.code, from, to },
     });
     return { id: current.id };
   });
@@ -523,8 +520,13 @@ export const getConfirmationEmail = createServerFn({ method: "POST" })
       order by created_at desc, id desc
       limit 1
     `;
-    await writeAudit(sql, member.chapterId, member.userId, "confirmation_viewed", "registration", registration.id, {
-      code: registration.code,
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "confirmation_viewed",
+      entity: "registration",
+      entityId: registration.id,
+      detail: { code: registration.code },
     });
     const row = rows[0];
     if (!row) return null;
@@ -532,7 +534,14 @@ export const getConfirmationEmail = createServerFn({ method: "POST" })
   });
 
 async function exportAudit(sql: Sql, chapterId: string, actor: string, eventId: string, kind: string, rows: number) {
-  await writeAudit(sql, chapterId, actor, "export", "event", eventId, { kind, rows });
+  await recordAudit(sql, {
+    chapterId,
+    actor,
+    action: "export",
+    entity: "event",
+    entityId: eventId,
+    detail: { kind, rows },
+  });
 }
 
 export const exportRegistrationAttendees = createServerFn({ method: "POST" })

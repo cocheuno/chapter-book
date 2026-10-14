@@ -7,6 +7,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { recordAudit } from "./audit";
+import { changedFields } from "./audit-rules";
 import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { chooseConferenceItem } from "./conference-page";
@@ -227,17 +229,48 @@ export const saveConferenceCopy = createServerFn({ method: "POST" })
     assertEditor(m.role);
     const sql = await getSql();
     const itemId = await ensurePublicItem(sql, m.chapterId, data.eventId);
+    const before = await sql<{
+      title: string;
+      subtitle: string | null;
+      summary: string | null;
+      url: string | null;
+      body: string | null;
+      layout: string | null;
+      published: boolean;
+    }>`
+      select title, subtitle, summary, url, body, layout, published
+      from site_items where id = ${itemId} and chapter_id = ${m.chapterId}
+    `;
+    const next = {
+      title: data.title.trim(),
+      subtitle: data.headline?.trim() || null,
+      summary: data.summary?.trim() || null,
+      url: data.registerUrl?.trim() || null,
+      body: data.body?.trim() || null,
+      layout: "conference",
+      published: true,
+    };
     await sql`
       update site_items set
-        title = ${data.title.trim()},
-        subtitle = ${data.headline?.trim() || null},
-        summary = ${data.summary?.trim() || null},
-        url = ${data.registerUrl?.trim() || null},
-        body = ${data.body?.trim() || null},
-        layout = ${"conference"},
-        published = ${true}
+        title = ${next.title},
+        subtitle = ${next.subtitle},
+        summary = ${next.summary},
+        url = ${next.url},
+        body = ${next.body},
+        layout = ${next.layout},
+        published = ${next.published}
       where id = ${itemId} and chapter_id = ${m.chapterId}
     `;
+    if (changedFields(before[0] ?? {}, next, ["title", "subtitle", "summary", "url", "body", "layout", "published"]).length) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "conference_copy_saved",
+        entity: "event",
+        entityId: data.eventId,
+        detail: { what: "copy", name: next.title },
+      });
+    }
     return { ok: true };
   });
 
@@ -257,16 +290,31 @@ export const saveConferenceVenue = createServerFn({ method: "POST" })
     const sql = await getSql();
     const itemId = await ensurePublicItem(sql, m.chapterId, data.eventId);
     const imageId = await ownedImage(sql, m.chapterId, data.imageId);
-    const previous = await sql<{ image_id: string | null }>`
-      select image_id from site_items where id = ${itemId} and chapter_id = ${m.chapterId}
+    const previous = await sql<{ title: string; when_label: string | null; location: string | null; image_id: string | null }>`
+      select title, when_label, location, image_id from site_items where id = ${itemId} and chapter_id = ${m.chapterId}
     `;
+    const nextVenue = {
+      when_label: data.whenLabel?.trim() || null,
+      location: data.location?.trim() || null,
+      image_id: imageId,
+    };
     await sql`
       update site_items set
-        when_label = ${data.whenLabel?.trim() || null},
-        location = ${data.location?.trim() || null},
-        image_id = ${imageId}
+        when_label = ${nextVenue.when_label},
+        location = ${nextVenue.location},
+        image_id = ${nextVenue.image_id}
       where id = ${itemId} and chapter_id = ${m.chapterId}
     `;
+    if (changedFields(previous[0] ?? {}, nextVenue, ["when_label", "location", "image_id"]).length) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "conference_venue_saved",
+        entity: "event",
+        entityId: data.eventId,
+        detail: { what: "venue", name: previous[0]?.title ?? "" },
+      });
+    }
     const old = previous[0]?.image_id ?? null;
     if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
     return { ok: true };
@@ -293,10 +341,19 @@ export const addConferenceSpeaker = createServerFn({ method: "POST" })
       select coalesce(max(sort_order), 0)::int as n from event_speakers where event_id = ${data.eventId}
     `;
     const id = nid();
+    const name = data.name.trim();
     await sql`
       insert into event_speakers (id, event_id, name, sort_order)
-      values (${id}, ${data.eventId}, ${data.name.trim()}, ${(max[0]?.n ?? 0) + 1})
+      values (${id}, ${data.eventId}, ${name}, ${(max[0]?.n ?? 0) + 1})
     `;
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "conference_speaker_added",
+      entity: "event",
+      entityId: data.eventId,
+      detail: { what: "speaker", name },
+    });
     return { id };
   });
 
@@ -316,9 +373,10 @@ export const saveConferenceSpeaker = createServerFn({ method: "POST" })
     const name = data.name.trim();
     const role = data.role?.trim() || null;
     const body = data.body?.trim() || null;
-    const previous = await sql<{ image_id: string | null }>`
-      select image_id from event_speakers where id = ${data.speakerId}
+    const previous = await sql<{ name: string; role: string | null; body: string | null; image_id: string | null }>`
+      select name, role, body, image_id from event_speakers where id = ${data.speakerId} and event_id = ${data.eventId}
     `;
+    const nextSpeaker = { name, role, body, image_id: imageId };
     await sql`
       update event_speakers set
         name = ${name},
@@ -348,6 +406,16 @@ export const saveConferenceSpeaker = createServerFn({ method: "POST" })
     `;
     const old = previous[0]?.image_id ?? null;
     if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    if (changedFields(previous[0] ?? {}, nextSpeaker, ["name", "role", "body", "image_id"]).length) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "conference_speaker_saved",
+        entity: "event",
+        entityId: data.eventId,
+        detail: { what: "speaker", name },
+      });
+    }
     return { ok: true };
   });
 
@@ -363,7 +431,20 @@ export const removeConferenceSpeaker = createServerFn({ method: "POST" })
       update event_sessions set speaker_id = null
       where speaker_id = ${data.speakerId} and event_id = ${data.eventId}
     `;
-    await sql`delete from event_speakers where id = ${data.speakerId} and event_id = ${data.eventId}`;
+    const removed = await sql<{ name: string }>`
+      delete from event_speakers where id = ${data.speakerId} and event_id = ${data.eventId}
+      returning name
+    `;
+    if (removed[0]) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "conference_speaker_removed",
+        entity: "event",
+        entityId: data.eventId,
+        detail: { what: "speaker", name: removed[0].name },
+      });
+    }
     return { ok: true };
   });
 
@@ -482,9 +563,25 @@ export const saveConferenceSession = createServerFn({ method: "POST" })
       speakerBody = person.body;
       imageId = person.image_id;
     }
-    const previous = await sql<{ image_id: string | null }>`
-      select image_id from event_sessions where id = ${data.sessionId} and event_id = ${data.eventId}
+    const previousRows = await sql<{
+      title: string;
+      room: string | null;
+      when_label: string | null;
+      track: string | null;
+      public_speaker: string | null;
+      summary: string | null;
+      body: string | null;
+      article_url: string | null;
+      image_id: string | null;
+      featured: boolean;
+      speaker_id: string | null;
+      starts_at: Date | string | null;
+    }>`
+      select title, room, when_label, track, public_speaker, summary, body, article_url,
+             image_id, featured, speaker_id, starts_at
+      from event_sessions where id = ${data.sessionId} and event_id = ${data.eventId}
     `;
+    const previous = previousRows[0];
     await writeTalk(
       sql,
       m.chapterId,
@@ -493,13 +590,15 @@ export const saveConferenceSession = createServerFn({ method: "POST" })
       { ...data, speaker: speakerName ?? undefined, body: speakerBody ?? undefined, speakerId: speakerId ?? undefined },
       imageId,
     );
+    let nextStarts: string | null | undefined;
     if (data.startsAt !== undefined) {
       const value = data.startsAt.trim();
       if (value && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/.test(value)) {
         throw new Error("That start time is not valid.");
       }
+      nextStarts = value || null;
       await sql`
-        update event_sessions set starts_at = ${value || null}::timestamptz
+        update event_sessions set starts_at = ${nextStarts}::timestamptz
         where id = ${data.sessionId} and event_id = ${data.eventId}
       `;
     }
@@ -507,8 +606,56 @@ export const saveConferenceSession = createServerFn({ method: "POST" })
       update event_sessions set speaker_id = ${speakerId}
       where id = ${data.sessionId} and event_id = ${data.eventId}
     `;
-    const old = previous[0]?.image_id ?? null;
+    const old = previous?.image_id ?? null;
     if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    if (previous) {
+      const next = {
+        title: data.title.trim(),
+        room: data.room?.trim() || null,
+        when_label: data.whenLabel?.trim() || null,
+        track: data.track?.trim() || null,
+        public_speaker: speakerName,
+        summary: data.summary?.trim() || null,
+        body: speakerBody?.trim() || null,
+        article_url: data.articleUrl?.trim() || null,
+        image_id: imageId,
+        featured: data.featured ?? false,
+        speaker_id: speakerId,
+      };
+      const changed = changedFields(previous, next, [
+        "title",
+        "room",
+        "when_label",
+        "track",
+        "public_speaker",
+        "summary",
+        "body",
+        "article_url",
+        "image_id",
+        "featured",
+        "speaker_id",
+      ]);
+      if (nextStarts !== undefined) {
+        const prevIso =
+          previous.starts_at instanceof Date
+            ? previous.starts_at.toISOString()
+            : previous.starts_at
+              ? new Date(previous.starts_at).toISOString()
+              : "";
+        const nextIso = nextStarts ? new Date(nextStarts).toISOString() : "";
+        if (prevIso !== nextIso) changed.push("starts_at");
+      }
+      if (changed.length) {
+        await recordAudit(sql, {
+          chapterId: m.chapterId,
+          actor: m.userId,
+          action: "conference_session_saved",
+          entity: "event",
+          entityId: data.eventId,
+          detail: { what: "session", name: next.title },
+        });
+      }
+    }
     return { ok: true };
   });
 
@@ -529,6 +676,7 @@ export const addConferenceSession = createServerFn({ method: "POST" })
       insert into event_sessions (id, event_id, title, sort_order)
       values (${sessionId}, ${data.eventId}, ${data.title.trim()}, ${(max[0]?.n ?? 0) + 1})
     `;
+    const title = data.title.trim();
     await writeTalk(
       sql,
       m.chapterId,
@@ -537,10 +685,18 @@ export const addConferenceSession = createServerFn({ method: "POST" })
       {
         eventId: data.eventId,
         sessionId,
-        title: data.title.trim(),
+        title,
       },
       null,
     );
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "conference_session_added",
+      entity: "event",
+      entityId: data.eventId,
+      detail: { what: "session", name: title },
+    });
     return { id: sessionId };
   });
 
@@ -552,15 +708,28 @@ export const removeConferenceSession = createServerFn({ method: "POST" })
     assertEditor(m.role);
     const sql = await getSql();
     await requireConference(sql, m.chapterId, data.eventId);
-    const rows = await sql<{ site_item_id: string | null; image_id: string | null }>`
-      select site_item_id, image_id from event_sessions where id = ${data.sessionId} and event_id = ${data.eventId}
+    const rows = await sql<{ site_item_id: string | null; image_id: string | null; title: string }>`
+      select site_item_id, image_id, title from event_sessions
+      where id = ${data.sessionId} and event_id = ${data.eventId}
     `;
     const row = rows[0];
     if (!row) return { ok: true };
-    await sql`delete from event_sessions where id = ${data.sessionId} and event_id = ${data.eventId}`;
+    const removed = await sql<{ title: string }>`
+      delete from event_sessions where id = ${data.sessionId} and event_id = ${data.eventId}
+      returning title
+    `;
+    if (!removed[0]) return { ok: true };
     if (row.site_item_id) {
       await sql`delete from site_items where id = ${row.site_item_id} and chapter_id = ${m.chapterId}`;
     }
     if (row.image_id) await releaseImage(sql, m.chapterId, row.image_id);
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "conference_session_removed",
+      entity: "event",
+      entityId: data.eventId,
+      detail: { what: "session", name: removed[0].title },
+    });
     return { ok: true };
   });

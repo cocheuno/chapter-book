@@ -21,6 +21,8 @@ import { toHonorificGreeting, toSalutationGreeting } from "./templates";
 import { ensureEventWebPage } from "./event-page";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
 import { csvRow } from "./csv";
+import { recordAudit } from "./audit";
+import { changedFields } from "./audit-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
 
 type Row = Record<string, string | number | boolean | null>;
@@ -2267,6 +2269,14 @@ export const sendMail = createServerFn({ method: "POST" })
         )
       `;
     }
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "mailing_sent",
+      entity: "mailing",
+      entityId: mailingId,
+      detail: { recipients: recipients.length, skipped: skips.length, eventId: data.eventId ?? null },
+    });
     let checklistPrompt = false;
     if (t[0].key === "school_faculty_invite" && data.eventId) {
       const open = await sql<{ id: string }>`
@@ -2360,20 +2370,61 @@ export const updateChapter = createServerFn({ method: "POST" })
     const m = await ctx(context.userId);
     assertAdmin(m.role);
     const sql = await getSql();
-    await sql`
-      update chapters set
-        name = ${data.name.trim()},
-        contact_line = ${data.contactLine || null},
-        from_name = ${data.fromName || data.name.trim()},
-        from_address = ${lowerEmail(data.fromAddress)},
-        reply_to = ${lowerEmail(data.replyTo) ?? lowerEmail(data.fromAddress)},
-        timezone = ${data.timezone || m.timezone}
-      where id = ${m.chapterId}
+    const beforeRows = await sql<{
+      name: string;
+      contact_line: string | null;
+      from_name: string | null;
+      from_address: string | null;
+      reply_to: string | null;
+      timezone: string;
+    }>`
+      select name, contact_line, from_name, from_address, reply_to, timezone
+      from chapters where id = ${m.chapterId}
     `;
+    const next = {
+      name: data.name.trim(),
+      contact_line: data.contactLine || null,
+      from_name: data.fromName || data.name.trim(),
+      from_address: lowerEmail(data.fromAddress),
+      reply_to: lowerEmail(data.replyTo) ?? lowerEmail(data.fromAddress),
+      timezone: data.timezone || m.timezone,
+    };
+    const saved = await sql<{ id: string }>`
+      update chapters set
+        name = ${next.name},
+        contact_line = ${next.contact_line},
+        from_name = ${next.from_name},
+        from_address = ${next.from_address},
+        reply_to = ${next.reply_to},
+        timezone = ${next.timezone}
+      where id = ${m.chapterId}
+      returning id
+    `;
+    const before = beforeRows[0];
+    if (saved[0] && before) {
+      const changed = changedFields(before, next, [
+        "name",
+        "contact_line",
+        "from_name",
+        "from_address",
+        "reply_to",
+        "timezone",
+      ]);
+      if (changed.length) {
+        await recordAudit(sql, {
+          chapterId: m.chapterId,
+          actor: m.userId,
+          action: "chapter_saved",
+          entity: "chapter",
+          entityId: m.chapterId,
+          detail: { changed },
+        });
+      }
+    }
     return { ok: true };
   });
 
-export const exportNametags = createServerFn({ method: "GET" })
+export const exportNametags = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((eventId: string) => eventId)
   .handler(async ({ context, data: eventId }) => {
@@ -2399,6 +2450,14 @@ export const exportNametags = createServerFn({ method: "GET" })
         and p.guest_status in ('attending', 'attended', 'no_response')
       order by pe.display_name
     `;
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "export",
+      entity: "event",
+      entityId: eventId,
+      detail: { kind: "nametags", rows: rows.length },
+    });
     const header = "honorific,display_name,nametag_line,org_or_school_name,party_size,kind,status,dietary";
     const lines = rows.map((r) => {
       const name = r.display_name;
@@ -2534,10 +2593,21 @@ export const deleteListItem = createServerFn({ method: "POST" })
     const m = await ctx(context.userId);
     assertAdmin(m.role);
     const sql = await getSql();
-    await sql`
+    const removed = await sql<{ list_key: string; value: string }>`
       update list_items set active = false
-      where id = ${data.id} and chapter_id = ${m.chapterId}
+      where id = ${data.id} and chapter_id = ${m.chapterId} and active
+      returning list_key, value
     `;
+    if (removed[0]) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "list_item_removed",
+        entity: "chapter",
+        entityId: m.chapterId,
+        detail: { list: removed[0].list_key, value: removed[0].value },
+      });
+    }
     return { ok: true };
   });
 
