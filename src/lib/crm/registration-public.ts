@@ -969,7 +969,7 @@ export const getManagePage = createServerFn({ method: "GET" })
       from registration_attendees a
       left join attendee_items ai on ai.attendee_id = a.id
       left join ticket_types t on t.id = ai.ticket_type_id
-      where a.registration_id = ${row.id} and a.chapter_id = ${chapterId}
+      where a.registration_id = ${row.id} and a.chapter_id = ${chapterId} and a.cancelled_at is null
       order by a.given_name, a.family_name, a.id, t.sort_order, t.name
     `;
     const grouped = new Map<string, { id: string; name: string; tickets: string[] }>();

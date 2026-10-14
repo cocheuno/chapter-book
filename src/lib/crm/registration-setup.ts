@@ -6,6 +6,7 @@ import { publicCopyHtml } from "./announcement-html";
 import { nid } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { parsePriceCents } from "@/lib/payments/pricing";
+import { ticketPartsUnchanged } from "@/lib/payments/registration-desk";
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
 
@@ -307,7 +308,29 @@ export const saveTicketType = createServerFn({ method: "POST" })
     const salesEnd = whenOrNull(data.salesEnd);
     const partIds = await partsOfEvent(sql, member.chapterId, data.eventId, data.partIds);
     let id = data.ticketTypeId;
+    let replaceParts = true;
     if (id) {
+      const issued = await sql<{ attendee_id: string }>`
+        select ai.attendee_id
+        from attendee_items ai
+        join registration_attendees a on a.id = ai.attendee_id and a.chapter_id = ${member.chapterId}
+        where ai.ticket_type_id = ${id}
+        limit 1
+      `;
+      const currentParts = await sql<{ part_id: string }>`
+        select l.part_id
+        from ticket_type_parts l
+        join event_parts p on p.id = l.part_id and p.chapter_id = ${member.chapterId} and p.event_id = ${data.eventId}
+        where l.ticket_type_id = ${id}
+      `;
+      const sameParts = ticketPartsUnchanged(
+        currentParts.map((part) => part.part_id),
+        partIds,
+      );
+      if (issued[0] && !sameParts) {
+        throw new Error("Tickets were already issued, so its parts can't change. Add a new ticket instead.");
+      }
+      replaceParts = !sameParts;
       const saved = await sql<{ id: string }>`
         update ticket_types set
           kind = ${data.kind},
@@ -336,11 +359,13 @@ export const saveTicketType = createServerFn({ method: "POST" })
         )
       `;
     }
-    await sql`delete from ticket_type_parts where ticket_type_id = ${id}`;
-    for (const partId of partIds) {
-      await sql`
-        insert into ticket_type_parts (ticket_type_id, part_id) values (${id}, ${partId})
-      `;
+    if (replaceParts) {
+      await sql`delete from ticket_type_parts where ticket_type_id = ${id}`;
+      for (const partId of partIds) {
+        await sql`
+          insert into ticket_type_parts (ticket_type_id, part_id) values (${id}, ${partId})
+        `;
+      }
     }
     return { id };
   });

@@ -34,6 +34,7 @@ import { Route as EventsEventIdIndexRouteImport } from './routes/events/$eventId
 import { Route as EventsEventIdCheckInRouteImport } from './routes/events/$eventId/check-in'
 import { Route as EventsEventIdInvitesRouteImport } from './routes/events/$eventId/invites'
 import { Route as EventsEventIdRegistrationRouteImport } from './routes/events/$eventId/registration'
+import { Route as EventsEventIdRegistrationsRouteImport } from './routes/events/$eventId/registrations'
 import { Route as EventsEventIdReportRouteImport } from './routes/events/$eventId/report'
 import { Route as PSlugIndexRouteImport } from './routes/p/$slug/index'
 import { Route as PSlugCalendarDoticsRouteImport } from './routes/p/$slug/calendar[.]ics'
@@ -166,6 +167,12 @@ const EventsEventIdRegistrationRoute =
     path: '/events/$eventId/registration',
     getParentRoute: () => rootRouteImport,
   } as any)
+const EventsEventIdRegistrationsRoute =
+  EventsEventIdRegistrationsRouteImport.update({
+    id: '/events/$eventId/registrations',
+    path: '/events/$eventId/registrations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const EventsEventIdReportRoute = EventsEventIdReportRouteImport.update({
   id: '/events/$eventId/report',
   path: '/events/$eventId/report',
@@ -217,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/registration': typeof EventsEventIdRegistrationRoute
+  '/events/$eventId/registrations': typeof EventsEventIdRegistrationsRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
   '/p/$slug/register': typeof PSlugRegisterRoute
@@ -248,6 +256,7 @@ export interface FileRoutesByTo {
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/registration': typeof EventsEventIdRegistrationRoute
+  '/events/$eventId/registrations': typeof EventsEventIdRegistrationsRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
   '/p/$slug/register': typeof PSlugRegisterRoute
@@ -281,6 +290,7 @@ export interface FileRoutesById {
   '/events/$eventId/check-in': typeof EventsEventIdCheckInRoute
   '/events/$eventId/invites': typeof EventsEventIdInvitesRoute
   '/events/$eventId/registration': typeof EventsEventIdRegistrationRoute
+  '/events/$eventId/registrations': typeof EventsEventIdRegistrationsRoute
   '/events/$eventId/report': typeof EventsEventIdReportRoute
   '/p/$slug/calendar.ics': typeof PSlugCalendarDoticsRoute
   '/p/$slug/register': typeof PSlugRegisterRoute
@@ -315,6 +325,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/registration'
+    | '/events/$eventId/registrations'
     | '/events/$eventId/report'
     | '/p/$slug/calendar.ics'
     | '/p/$slug/register'
@@ -346,6 +357,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/registration'
+    | '/events/$eventId/registrations'
     | '/events/$eventId/report'
     | '/p/$slug/calendar.ics'
     | '/p/$slug/register'
@@ -378,6 +390,7 @@ export interface FileRouteTypes {
     | '/events/$eventId/check-in'
     | '/events/$eventId/invites'
     | '/events/$eventId/registration'
+    | '/events/$eventId/registrations'
     | '/events/$eventId/report'
     | '/p/$slug/calendar.ics'
     | '/p/$slug/register'
@@ -411,6 +424,7 @@ export interface RootRouteChildren {
   EventsEventIdCheckInRoute: typeof EventsEventIdCheckInRoute
   EventsEventIdInvitesRoute: typeof EventsEventIdInvitesRoute
   EventsEventIdRegistrationRoute: typeof EventsEventIdRegistrationRoute
+  EventsEventIdRegistrationsRoute: typeof EventsEventIdRegistrationsRoute
   EventsEventIdReportRoute: typeof EventsEventIdReportRoute
   EventsEventIdIndexRoute: typeof EventsEventIdIndexRoute
 }
@@ -592,6 +606,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsEventIdRegistrationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/events/$eventId/registrations': {
+      id: '/events/$eventId/registrations'
+      path: '/events/$eventId/registrations'
+      fullPath: '/events/$eventId/registrations'
+      preLoaderRoute: typeof EventsEventIdRegistrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/events/$eventId/report': {
       id: '/events/$eventId/report'
       path: '/events/$eventId/report'
@@ -671,6 +692,7 @@ const rootRouteChildren: RootRouteChildren = {
   EventsEventIdCheckInRoute: EventsEventIdCheckInRoute,
   EventsEventIdInvitesRoute: EventsEventIdInvitesRoute,
   EventsEventIdRegistrationRoute: EventsEventIdRegistrationRoute,
+  EventsEventIdRegistrationsRoute: EventsEventIdRegistrationsRoute,
   EventsEventIdReportRoute: EventsEventIdReportRoute,
   EventsEventIdIndexRoute: EventsEventIdIndexRoute,
 }
