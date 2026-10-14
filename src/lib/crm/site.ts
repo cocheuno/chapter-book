@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { recordAudit } from "./audit";
+import { changedFields } from "./audit-rules";
 import { nid, slugify } from "./ids";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
@@ -50,6 +52,44 @@ export type SiteItemRow = {
   eventPage?: { href: string; title: string } | null;
   detailsHref?: string | null;
 };
+
+const SITE_ITEM_FIELDS = [
+  "title",
+  "subtitle",
+  "summary",
+  "url",
+  "location",
+  "when_label",
+  "audience",
+  "featured",
+  "published",
+  "sort_order",
+  "slug",
+  "body",
+  "layout",
+  "conference_id",
+  "image_id",
+  "gathering_id",
+  "on_shelf",
+  "starts_on",
+  "ends_on",
+] as const;
+
+type SiteAuditRow = Record<(typeof SITE_ITEM_FIELDS)[number] | "kind", string | number | boolean | null>;
+
+async function readSiteAudit(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  id: string,
+): Promise<SiteAuditRow | null> {
+  const rows = await sql<SiteAuditRow>`
+    select kind, title, subtitle, summary, url, location, when_label, audience, featured, published,
+      sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on
+    from site_items
+    where id = ${id} and chapter_id = ${chapterId}
+  `;
+  return rows[0] ?? null;
+}
 
 const emptySettings: SettingsRow = {
   public_title: DEFAULT_SITE.publicTitle,
@@ -202,6 +242,16 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    const beforeRows = await sql<SettingsRow>`
+      select public_title, public_tagline, about, contact_email
+      from site_settings where chapter_id = ${m.chapterId}
+    `;
+    const before = beforeRows[0] ?? {
+      public_title: null,
+      public_tagline: null,
+      about: null,
+      contact_email: null,
+    };
     await sql`
       insert into site_settings (chapter_id, public_title, public_tagline, about, contact_email)
       values (
@@ -215,6 +265,21 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
         contact_email = excluded.contact_email,
         updated_at = now()
     `;
+    const afterRows = await sql<SettingsRow>`
+      select public_title, public_tagline, about, contact_email
+      from site_settings where chapter_id = ${m.chapterId}
+    `;
+    const changed = changedFields(before, afterRows[0] ?? {}, ["public_title", "public_tagline", "about", "contact_email"]);
+    if (changed.length) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "site_settings_saved",
+        entity: "chapter",
+        entityId: m.chapterId,
+        detail: { changed },
+      });
+    }
     return { ok: true };
   });
 
@@ -418,6 +483,7 @@ export const saveSiteItem = createServerFn({ method: "POST" })
       throw new Error("The end date is before the start date.");
     }
     if (data.id) {
+      const before = await readSiteAudit(sql, m.chapterId, data.id);
       await sql`
         update site_items set
           kind = ${data.kind},
@@ -444,6 +510,25 @@ export const saveSiteItem = createServerFn({ method: "POST" })
       if (previousImageId && previousImageId !== imageId) {
         await releaseSiteImage(sql, m.chapterId, previousImageId);
       }
+      const after = await readSiteAudit(sql, m.chapterId, data.id);
+      if (before && after) {
+        const changed = changedFields(before, after, SITE_ITEM_FIELDS);
+        const detail = { kind: after.kind, title: after.title, slug: after.slug, changed };
+        let action = "";
+        if (before.published === false && after.published === true) action = "site_item_published";
+        else if (before.published === true && after.published === false) action = "site_item_unpublished";
+        else if (changed.length) action = "site_item_saved";
+        if (action) {
+          await recordAudit(sql, {
+            chapterId: m.chapterId,
+            actor: m.userId,
+            action,
+            entity: "site_item",
+            entityId: data.id,
+            detail,
+          });
+        }
+      }
       return { id: data.id, slug };
     }
     const id = nid();
@@ -467,6 +552,14 @@ export const saveSiteItem = createServerFn({ method: "POST" })
       if (isUniqueViolation(err)) throw new Error(`${title} is already on the site shelf.`);
       throw err;
     }
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "site_item_created",
+      entity: "site_item",
+      entityId: id,
+      detail: { kind: data.kind, title, slug, published: data.published ?? false },
+    });
     return { id, slug };
   });
 
@@ -647,6 +740,10 @@ export const removeSiteItem = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    const existing = await sql<{ kind: string; title: string; slug: string | null }>`
+      select kind, title, slug from site_items
+      where id = ${data.id} and chapter_id = ${m.chapterId}
+    `;
     const imageId = await itemImageId(sql, m.chapterId, data.id);
     try {
       await sql`
@@ -658,5 +755,15 @@ export const removeSiteItem = createServerFn({ method: "POST" })
     }
     await sql`delete from site_items where id = ${data.id} and chapter_id = ${m.chapterId}`;
     if (imageId) await releaseSiteImage(sql, m.chapterId, imageId);
+    if (existing[0]) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "site_item_removed",
+        entity: "site_item",
+        entityId: data.id,
+        detail: { kind: existing[0].kind, title: existing[0].title, slug: existing[0].slug },
+      });
+    }
     return { ok: true };
   });

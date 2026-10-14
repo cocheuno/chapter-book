@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiPublicSiteRouteImport } from './routes/api/public-site'
 import { Route as ChapterIndexRouteImport } from './routes/chapter/index'
+import { Route as ChapterActivityRouteImport } from './routes/chapter/activity'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
 import { Route as EventsNewRouteImport } from './routes/events/new'
 import { Route as MailIndexRouteImport } from './routes/mail/index'
@@ -59,6 +60,11 @@ const ApiPublicSiteRoute = ApiPublicSiteRouteImport.update({
 const ChapterIndexRoute = ChapterIndexRouteImport.update({
   id: '/chapter/',
   path: '/chapter/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChapterActivityRoute = ChapterActivityRouteImport.update({
+  id: '/chapter/activity',
+  path: '/chapter/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsIndexRoute = EventsIndexRouteImport.update({
@@ -203,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/public-site': typeof ApiPublicSiteRoute
+  '/chapter/activity': typeof ChapterActivityRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/public-site': typeof ApiPublicSiteRoute
+  '/chapter/activity': typeof ChapterActivityRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
@@ -269,6 +277,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/public-site': typeof ApiPublicSiteRoute
+  '/chapter/activity': typeof ChapterActivityRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
   '/mail/compose': typeof MailComposeRoute
@@ -304,6 +313,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/public-site'
+    | '/chapter/activity'
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
@@ -337,6 +347,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/public-site'
+    | '/chapter/activity'
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/public-site'
+    | '/chapter/activity'
     | '/events/new'
     | '/mail/$mailingId'
     | '/mail/compose'
@@ -403,6 +415,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   ApiPublicSiteRoute: typeof ApiPublicSiteRoute
+  ChapterActivityRoute: typeof ChapterActivityRoute
   EventsNewRoute: typeof EventsNewRoute
   MailMailingIdRoute: typeof MailMailingIdRoute
   MailComposeRoute: typeof MailComposeRoute
@@ -457,6 +470,13 @@ declare module '@tanstack/react-router' {
       path: '/chapter'
       fullPath: '/chapter/'
       preLoaderRoute: typeof ChapterIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chapter/activity': {
+      id: '/chapter/activity'
+      path: '/chapter/activity'
+      fullPath: '/chapter/activity'
+      preLoaderRoute: typeof ChapterActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events/': {
@@ -671,6 +691,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   ApiPublicSiteRoute: ApiPublicSiteRoute,
+  ChapterActivityRoute: ChapterActivityRoute,
   EventsNewRoute: EventsNewRoute,
   MailMailingIdRoute: MailMailingIdRoute,
   MailComposeRoute: MailComposeRoute,

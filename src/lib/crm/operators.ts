@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { recordAudit } from "./audit";
 import { nid } from "./ids";
 import { assertAdmin, loadMember } from "./member";
 import {
@@ -163,6 +164,14 @@ export const acceptInvite = createServerFn({ method: "POST" })
         values (${context.userId}, ${invite.chapter_id}, ${invite.role})
       `;
     }
+    await recordAudit(sql, {
+      chapterId: invite.chapter_id,
+      actor: context.userId,
+      action: "invite_accepted",
+      entity: "operator",
+      entityId: context.userId,
+      detail: { email: invite.email, role: invite.role },
+    });
     return { ok: true as const };
   });
 
@@ -174,6 +183,10 @@ export const removeUnassignedAccount = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertAdmin(m.role);
     const sql = await getSql();
+    const accounts = await sql<{ email: string | null }>`
+      select email from "user" where id = ${data.userId}
+    `;
+    const email = accounts[0]?.email ?? "";
     // Session and account rows reference "user" with on delete cascade.
     // One conditional delete, so a membership cannot appear between statements.
     const removed = await sql<{ id: string }>`
@@ -184,7 +197,17 @@ export const removeUnassignedAccount = createServerFn({ method: "POST" })
         )
       returning id
     `;
-    if (removed[0]) return { ok: true as const };
+    if (removed[0]) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "account_removed",
+        entity: "operator",
+        entityId: data.userId,
+        detail: { email },
+      });
+      return { ok: true as const };
+    }
     const still = await sql<{ id: string }>`
       select id from "user" where id = ${data.userId}
     `;
@@ -215,7 +238,16 @@ export const createResetLink = createServerFn({ method: "POST" })
     if (blocked) throw new Error(blocked);
     if (!row?.email) throw new Error("That operator has no email address.");
     const { issueResetToken } = await import("@/lib/auth/password-reset.server");
-    return { token: await issueResetToken(data.userId, row.email), minutes: RESET_MINUTES };
+    const token = await issueResetToken(data.userId, row.email);
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "reset_link_created",
+      entity: "operator",
+      entityId: data.userId,
+      detail: { email: row.email },
+    });
+    return { token, minutes: RESET_MINUTES };
   });
 
 export const inviteOperator = createServerFn({ method: "POST" })
@@ -249,13 +281,22 @@ export const inviteOperator = createServerFn({ method: "POST" })
     `;
     const token = newInviteToken();
     const expires = new Date(Date.now() + INVITE_DAYS * 86400000).toISOString();
+    const inviteId = nid();
     await sql`
       insert into operator_invites (id, chapter_id, email, role, token_hash, created_by, expires_at)
       values (
-        ${nid()}, ${m.chapterId}, ${email}, ${data.role}, ${hashInviteToken(token)},
+        ${inviteId}, ${m.chapterId}, ${email}, ${data.role}, ${hashInviteToken(token)},
         ${m.userId}, ${expires}
       )
     `;
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "operator_invited",
+      entity: "operator",
+      entityId: inviteId,
+      detail: { email, role: data.role },
+    });
     return { token, email, role: data.role, expiresAt: expires };
   });
 
@@ -266,10 +307,21 @@ export const revokeInvite = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertAdmin(m.role);
     const sql = await getSql();
-    await sql`
+    const removed = await sql<{ email: string }>`
       delete from operator_invites
       where id = ${data.id} and chapter_id = ${m.chapterId} and accepted_at is null
+      returning email
     `;
+    if (removed[0]) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "invite_revoked",
+        entity: "operator",
+        entityId: data.id,
+        detail: { email: removed[0].email },
+      });
+    }
     return { ok: true };
   });
 
@@ -280,12 +332,15 @@ export const setOperatorRole = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertAdmin(m.role);
     const sql = await getSql();
-    const rows = await sql<{ role: OperatorRole; disabled_at: string | null }>`
-      select role, disabled_at from chapter_members
-      where user_id = ${data.userId} and chapter_id = ${m.chapterId}
+    const rows = await sql<{ role: OperatorRole; disabled_at: string | null; email: string | null }>`
+      select m.role, m.disabled_at, u.email
+      from chapter_members m
+      left join "user" u on u.id = m.user_id
+      where m.user_id = ${data.userId} and m.chapter_id = ${m.chapterId}
     `;
     if (!rows[0]) throw new Error("Operator not found.");
     if (rows[0].disabled_at) throw new Error("Restore this operator before changing their role.");
+    if (rows[0].role === data.role) return { ok: true };
     const blocked = roleChangeBlockedReason({
       targetRole: rows[0].role,
       nextRole: data.role,
@@ -296,6 +351,14 @@ export const setOperatorRole = createServerFn({ method: "POST" })
       update chapter_members set role = ${data.role}
       where user_id = ${data.userId} and chapter_id = ${m.chapterId}
     `;
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "role_changed",
+      entity: "operator",
+      entityId: data.userId,
+      detail: { email: rows[0].email ?? "", from: rows[0].role, to: data.role },
+    });
     return { ok: true };
   });
 
@@ -306,11 +369,14 @@ export const setOperatorDisabled = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertAdmin(m.role);
     const sql = await getSql();
-    const rows = await sql<{ role: OperatorRole; disabled_at: string | null }>`
-      select role, disabled_at from chapter_members
-      where user_id = ${data.userId} and chapter_id = ${m.chapterId}
+    const rows = await sql<{ role: OperatorRole; disabled_at: string | null; email: string | null }>`
+      select m.role, m.disabled_at, u.email
+      from chapter_members m
+      left join "user" u on u.id = m.user_id
+      where m.user_id = ${data.userId} and m.chapter_id = ${m.chapterId}
     `;
     if (!rows[0]) throw new Error("Operator not found.");
+    const email = rows[0].email ?? "";
     if (data.disabled) {
       const blocked = disableBlockedReason({
         targetUserId: data.userId,
@@ -324,11 +390,27 @@ export const setOperatorDisabled = createServerFn({ method: "POST" })
         update chapter_members set disabled_at = now()
         where user_id = ${data.userId} and chapter_id = ${m.chapterId}
       `;
-    } else {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "operator_disabled",
+        entity: "operator",
+        entityId: data.userId,
+        detail: { email },
+      });
+    } else if (rows[0].disabled_at) {
       await sql`
         update chapter_members set disabled_at = null
         where user_id = ${data.userId} and chapter_id = ${m.chapterId}
       `;
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "operator_restored",
+        entity: "operator",
+        entityId: data.userId,
+        detail: { email },
+      });
     }
     return { ok: true };
   });

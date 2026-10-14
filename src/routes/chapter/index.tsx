@@ -1,9 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { addListItem, addSuggestedListItems, deleteListItem, listAllLists, updateChapter } from "@/lib/crm/actions";
-import { clearOperationalBook } from "@/lib/crm/wipe-book";
 import { getSessionContext } from "@/lib/crm/member";
 import {
   createResetLink,
@@ -39,8 +38,6 @@ function ChapterInner() {
   const [inviteRole, setInviteRole] = useState<"admin" | "editor" | "viewer">("editor");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<{ email: string | null; url: string } | null>(null);
-  const [wipeConfirm, setWipeConfirm] = useState("");
-  const [wiping, setWiping] = useState(false);
 
   function loadLists() {
     listAllLists().then(setLists);
@@ -68,6 +65,13 @@ function ChapterInner() {
   return (
     <div className="mx-auto max-w-2xl space-y-10">
       <div>
+        {isAdmin ? (
+          <p className="mb-2">
+            <Link to="/chapter/activity" className="text-sm text-bronze hover:underline">
+              Activity
+            </Link>
+          </p>
+        ) : null}
         <h1 className="font-display text-3xl">Chapter</h1>
         <p className="text-ink-soft">You are {m.role}. Mailbox, operators, and the lists that fill the dropdowns.</p>
       </div>
@@ -416,43 +420,6 @@ function ChapterInner() {
           <p className="text-sm text-muted">Only an admin can add or remove list values.</p>
         )}
       </section>
-
-      {isAdmin && (
-        <section className="space-y-3 rounded-xl border border-danger/40 bg-surface p-4">
-          <h2 className="font-display text-xl">Clear dummy people, partners, and gatherings</h2>
-          <p className="text-sm text-ink-soft">
-            Removes the Santa Fe demo from the book so you can enter real Wisconsin people and events. Operators,
-            lists, and website copy stay. Type <span className="font-medium text-ink">clear demo</span> to confirm.
-          </p>
-          <form
-            className="flex flex-col gap-2 sm:flex-row"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (wipeConfirm.trim().toLowerCase() !== "clear demo") return;
-              setWiping(true);
-              try {
-                const r = await clearOperationalBook();
-                setWipeConfirm("");
-                toast.success(`Removed ${r.people} people, ${r.partners} partners, ${r.events} gatherings.`);
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Could not clear the book");
-              } finally {
-                setWiping(false);
-              }
-            }}
-          >
-            <Input
-              value={wipeConfirm}
-              onChange={(e) => setWipeConfirm(e.target.value)}
-              placeholder="clear demo"
-              aria-label="Type clear demo to confirm"
-            />
-            <Button type="submit" variant="secondary" disabled={wiping || wipeConfirm.trim().toLowerCase() !== "clear demo"}>
-              Remove demo
-            </Button>
-          </form>
-        </section>
-      )}
 
       <p className="text-sm text-muted">
         Letters are recorded in the chapter mailroom. Connect your real sending domain on the from-address when you

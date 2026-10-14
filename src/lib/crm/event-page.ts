@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { recordAudit } from "./audit";
 import { nid, slugify } from "./ids";
 import { matchingEventPage } from "./event-link";
 import { assertEditor, loadMember } from "./member";
@@ -91,10 +92,38 @@ export const setEventWebPage = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    const beforeRows = await sql<{ title: string; public_item_id: string | null; published: boolean | null }>`
+      select e.title, e.public_item_id, s.published
+      from events e
+      left join site_items s on s.id = e.public_item_id and s.chapter_id = e.chapter_id
+      where e.id = ${data.eventId} and e.chapter_id = ${m.chapterId}
+    `;
+    const before = beforeRows[0];
     if (data.enabled) {
       const id = await ensureEventWebPage(sql, m.chapterId, data.eventId);
+      const alreadyOn = before?.public_item_id === id && before.published === true;
+      if (before && !alreadyOn) {
+        await recordAudit(sql, {
+          chapterId: m.chapterId,
+          actor: m.userId,
+          action: "event_web_page_set",
+          entity: "event",
+          entityId: data.eventId,
+          detail: { what: "web page", name: before.title, itemId: id, enabled: true },
+        });
+      }
       return { id, enabled: true };
     }
     await hideEventWebPage(sql, m.chapterId, data.eventId);
+    if (before?.public_item_id && before.published === true) {
+      await recordAudit(sql, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "event_web_page_set",
+        entity: "event",
+        entityId: data.eventId,
+        detail: { what: "web page", name: before.title, itemId: before.public_item_id, enabled: false },
+      });
+    }
     return { id: null, enabled: false };
   });

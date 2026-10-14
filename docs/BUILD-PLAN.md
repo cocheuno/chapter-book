@@ -155,17 +155,17 @@ Code changes must not change the chapter's current data, or what the public webs
 | 07 | Chapter scoping and safe CSV | — | Done 2026-10-04 (PR 25) | S10, S11 |
 | 08 | Lockfile, lint, CI | — | Done 2026-10-04 (PR 26) | W5 |
 | **Phase 0b: website and CRM basics (Oct–Nov)** | | | | |
-| 09 | `<section>` HTML on every public field | 05 | Ready (D2 default) | §7 |
-| 10 | Website quick fixes | 09 | Ready | §9 |
-| 11 | Real dates on events | 10 | Ready | §9 |
-| 12 | Server-rendered public pages, share cards, JSON-LD, real 404 | 03, 09, 11 | Ready (H2) | W1 |
-| 13 | Conference page for three days | 11, 12 | Ready | W3 |
-| 14 | Post-nominals and salutations | — | Ready | §5 |
-| 15 | Conference checklist and treasurer hat | — | Ready | §4 |
-| 16 | Password reset links | 01 | Ready | §8 |
-| 17 | Person statuses and dated affiliations | — | Ready | §8 |
+| 09 | `<section>` HTML on every public field | 05 | Done (PR 28) | §7 |
+| 10 | Website quick fixes | 09 | Done (PR 29) | §9 |
+| 11 | Real dates on events | 10 | Done (PR 30) | §9 |
+| 12 | Server-rendered public pages, share cards, JSON-LD, real 404 | 03, 09, 11 | Done (PR 32) | W1 |
+| 13 | Conference page for three days | 11, 12 | Done (PR 33) | W3 |
+| 14 | Post-nominals and salutations | — | Done (PR 34) | §5 |
+| 15 | Conference checklist and treasurer hat | — | Done (PR 35) | §4 |
+| 16 | Password reset links | 01 | Done (PR 36) | §8 |
+| 17 | Person statuses and dated affiliations | — | Done (PR 37) | §8 |
 | **Phase 1–3: registration and payments (Oct–Dec)** | | | | |
-| 20 | Free registration and the mail outbox | 01, 05, 06, 09 | Ready (H9) | PAYMENTS Phase 1, MAIL seam |
+| 20 | Free registration and the mail outbox | 01, 05, 06, 09 | Done (PRs 38–40) | PAYMENTS Phase 1, MAIL seam |
 | 21 | Stripe in test mode | 20 | Needs H7, H8 | PAYMENTS Phase 2 |
 | 22 | Minors, groups, safe-environment records | 20 | Needs D4 | PAYMENTS Phase 3, §4 |
 | 23 | Audit log everywhere | 20 | Ready | C8 |
