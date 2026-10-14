@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { PersonNameFields, type PersonNameValue } from "@/components/person-name-fields";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { PersonPartnersFields } from "@/components/person-partners-fields";
 import { roleLabel } from "@/lib/crm/constants";
 import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, setPersonStatus, updatePerson } from "@/lib/crm/actions";
 import { listedName } from "@/lib/crm/names";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { PERSON_STATUSES, deceasedMark } from "@/lib/crm/person-status";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +27,7 @@ function PersonPage() {
 
 function PersonInner() {
   const { personId } = Route.useParams();
+  const peopleHref = useListHref("people", "/people");
   const [data, setData] = useState<Awaited<ReturnType<typeof getPerson>> | null>(null);
   const [summary, setSummary] = useState("");
   const [kind, setKind] = useState("call");
@@ -90,6 +93,23 @@ function PersonInner() {
     listPartners({ data: undefined }).then((r) => setOrgs(r.map((o) => ({ id: o.id, name: o.name }))));
   }
   useEffect(load, [personId]);
+  useEffect(() => {
+    if (!data) return;
+    const person = data.person as Record<string, string | null>;
+    const label = listedName({
+      display_name: person.display_name,
+      given_name: person.given_name,
+      family_name: person.family_name,
+      middle_name: person.middle_name ?? person.middle_initial,
+      suffix: person.suffix,
+      honorific: person.honorific,
+      religious_title: person.religious_title,
+      academic_title: person.academic_title,
+      post_nominals: person.post_nominals,
+    });
+    if (!label) return;
+    rememberVisit({ kind: "person", id: personId, label, href: `/people/${personId}` });
+  }, [data, personId]);
 
   async function saveStatus(nextStatus: string, nextDeceasedOn: string) {
     try {
@@ -129,6 +149,7 @@ function PersonInner() {
   return (
     <div className="space-y-8">
       <header>
+        <Crumbs trail={[{ label: "People", to: peopleHref }, { label: heading }]} />
         <h1 className="font-display text-3xl">
           {heading}
           {deceasedMark(p.status)}

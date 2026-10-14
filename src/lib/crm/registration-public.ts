@@ -807,7 +807,7 @@ export const createRegistration = createServerFn({ method: "POST" })
         insert into audit_log (id, chapter_id, actor, action, entity, entity_id, detail)
         values (
           ${nid()}, ${chapterId}, ${"public"}, ${"registration_created"}, ${"registration"}, ${registrationId},
-          ${JSON.stringify({ code, attendees: data.attendees.length, agreements: data.acceptedAgreementIds })}::jsonb
+          ${JSON.stringify({ code, attendees: data.attendees.length, agreements: data.acceptedAgreementIds, eventId: event.eventId })}::jsonb
         )
       `;
       return { manageUrl: `/r/${token}` };

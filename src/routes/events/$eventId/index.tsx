@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   setTaskStatus,
   updateEvent,
 } from "@/lib/crm/actions";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -36,6 +38,7 @@ function EventPage() {
 
 function EventInner() {
   const { eventId } = Route.useParams();
+  const eventsHref = useListHref("events", "/events");
   const [data, setData] = useState<Awaited<ReturnType<typeof getEvent>> | null>(null);
   const [clergy, setClergy] = useState<{ id: string; display_name: string }[]>([]);
   const [parishes, setParishes] = useState<{ id: string; name: string }[]>([]);
@@ -50,6 +53,12 @@ function EventInner() {
     listParishes().then(setParishes);
   }
   useEffect(load, [eventId]);
+  useEffect(() => {
+    if (!data) return;
+    const label = String((data.event as { title?: string | null }).title ?? "").trim();
+    if (!label) return;
+    rememberVisit({ kind: "event", id: eventId, label, href: `/events/${eventId}` });
+  }, [data, eventId]);
   if (!data) return <p className="text-muted">Loading…</p>;
   const e = data.event as Record<string, string | null>;
   const isGold = e.type_key === "gold_mass";
@@ -70,6 +79,7 @@ function EventInner() {
     <div className="space-y-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
+          <Crumbs trail={[{ label: "Events", to: eventsHref }, { label: String(e.title ?? "") }]} />
           <div className="flex flex-wrap gap-2">
             <Badge tone="bronze">{isGold ? "Gold Mass" : "Conference"}</Badge>
             <Badge>{e.status}</Badge>

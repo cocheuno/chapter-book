@@ -164,11 +164,12 @@ Code changes must not change the chapter's current data, or what the public webs
 | 15 | Conference checklist and treasurer hat | — | Done (PR 35) | §4 |
 | 16 | Password reset links | 01 | Done (PR 36) | §8 |
 | 17 | Person statuses and dated affiliations | — | Done (PR 37) | §8 |
+| 18 | Breadcrumbs, Recent menu, lists that remember their filter | — | Ready | Usability |
 | **Phase 1–3: registration and payments (Oct–Dec)** | | | | |
 | 20 | Free registration and the mail outbox | 01, 05, 06, 09 | Done (PRs 38–40) | PAYMENTS Phase 1, MAIL seam |
 | 21 | Stripe in test mode | 20 | Needs H7, H8 | PAYMENTS Phase 2 |
 | 22 | Minors, groups, safe-environment records | 20 | Needs D4 | PAYMENTS Phase 3, §4 |
-| 23 | Audit log everywhere | 20 | Ready | C8 |
+| 23 | Audit log everywhere | 20 | Done (PR 41) | C8 |
 | 24 | Two-factor for admins | 01 | Ready | C9 |
 | 25 | Go live | 21–24 | Needs D3, H6–H8 | PAYMENTS Phase 4 |
 | **Data quality and reach** | | | | |

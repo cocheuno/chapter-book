@@ -8,10 +8,16 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ORG_TYPES, orgTypeLabel } from "@/lib/crm/constants";
 import { createOrganization, listDioceses, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPartner } from "@/lib/crm/match";
+import { rememberList } from "@/lib/nav/nav-store";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/partners/")({ component: PartnersPage });
+export const Route = createFileRoute("/partners/")({
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: typeof search.tab === "string" && search.tab.length > 0 ? search.tab : undefined,
+  }),
+  component: PartnersPage,
+});
 
 function PartnersPage() {
   return (
@@ -22,7 +28,9 @@ function PartnersPage() {
 }
 
 function PartnersInner() {
-  const [tab, setTab] = useState<string | undefined>(undefined);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const tab = search.tab;
   const [rows, setRows] = useState<Awaited<ReturnType<typeof listPartners>>>([]);
   const [allPartners, setAllPartners] = useState<Awaited<ReturnType<typeof listPartners>>>([]);
   const [open, setOpen] = useState(false);
@@ -50,6 +58,12 @@ function PartnersInner() {
     listPeople({ data: undefined }).then(setPeople);
   }
   useEffect(load, [tab]);
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab) params.set("tab", tab);
+    const query = params.toString();
+    rememberList("partners", query ? `/partners?${query}` : "/partners");
+  }, [tab]);
 
   const hit = useMemo(() => matchPartner(allPartners, name, city), [allPartners, name, city]);
 
@@ -194,7 +208,7 @@ function PartnersInner() {
             key={k ?? "all"}
             type="button"
             className={`min-h-11 rounded-full px-3 py-1 text-sm ${tab === k ? "bg-ink text-paper" : "bg-paper-2"}`}
-            onClick={() => setTab(k)}
+            onClick={() => void navigate({ search: { tab: k }, replace: true })}
           >
             {k ? orgTypeLabel(k) : "All"}
           </button>

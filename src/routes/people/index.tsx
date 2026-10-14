@@ -11,10 +11,17 @@ import { createPerson, listPartners, listPeople } from "@/lib/crm/actions";
 import { matchPerson } from "@/lib/crm/match";
 import { composePersonName, isDegreeTitle } from "@/lib/crm/names";
 import { deceasedMark } from "@/lib/crm/person-status";
+import { rememberList } from "@/lib/nav/nav-store";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/people/")({ component: PeoplePage });
+export const Route = createFileRoute("/people/")({
+  validateSearch: (search: Record<string, unknown>): { role?: string; degree?: "1" } => ({
+    role: typeof search.role === "string" && search.role.length > 0 ? search.role : undefined,
+    degree: search.degree === "1" || search.degree === 1 ? "1" : undefined,
+  }),
+  component: PeoplePage,
+});
 
 const emptyName: PersonNameValue = {
   religiousTitle: "",
@@ -36,7 +43,10 @@ function PeoplePage() {
 }
 
 function PeopleInner() {
-  const [role, setRole] = useState<string | undefined>(undefined);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const role = search.role;
+  const degreeOn = search.degree === "1";
   const [rows, setRows] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
   const [allPeople, setAllPeople] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
   const [open, setOpen] = useState(false);
@@ -53,7 +63,6 @@ function PeopleInner() {
   const [website, setWebsite] = useState("");
   const [notes, setNotes] = useState("");
   const [newRole, setNewRole] = useState("academic_member");
-  const [degreeInTitle, setDegreeInTitle] = useState(false);
   const [partners, setPartners] = useState<Awaited<ReturnType<typeof listPartners>>>([]);
   const [attached, setAttached] = useState<PersonPartnerLink[]>([]);
 
@@ -63,9 +72,16 @@ function PeopleInner() {
     listPartners({ data: undefined }).then(setPartners).catch(() => setPartners([]));
   }
   useEffect(load, [role]);
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (role) params.set("role", role);
+    if (degreeOn) params.set("degree", "1");
+    const query = params.toString();
+    rememberList("people", query ? `/people?${query}` : "/people");
+  }, [role, degreeOn]);
 
   const listed = composePersonName({ ...name, postNominals: "" });
-  const visible = degreeInTitle ? rows.filter((row) => isDegreeTitle(row.academic_title)) : rows;
+  const visible = degreeOn ? rows.filter((row) => isDegreeTitle(row.academic_title)) : rows;
   const hit = useMemo(
     () => matchPerson(allPeople, listed || `${name.givenName} ${name.familyName}`, email),
     [allPeople, listed, name.givenName, name.familyName, email],
@@ -214,7 +230,11 @@ function PeopleInner() {
         </form>
       )}
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={`min-h-11 rounded-full px-3 py-1 text-sm ${!role ? "bg-ink text-paper" : "bg-paper-2"}`} onClick={() => setRole(undefined)}>
+        <button
+          type="button"
+          className={`min-h-11 rounded-full px-3 py-1 text-sm ${!role ? "bg-ink text-paper" : "bg-paper-2"}`}
+          onClick={() => void navigate({ search: { role: undefined, degree: degreeOn ? "1" : undefined }, replace: true })}
+        >
           All
         </button>
         {PERSON_ROLES.slice(0, 6).map((r) => (
@@ -222,15 +242,15 @@ function PeopleInner() {
             key={r.key}
             type="button"
             className={`min-h-11 rounded-full px-3 py-1 text-sm ${role === r.key ? "bg-ink text-paper" : "bg-paper-2"}`}
-            onClick={() => setRole(r.key)}
+            onClick={() => void navigate({ search: { role: r.key, degree: degreeOn ? "1" : undefined }, replace: true })}
           >
             {r.label}
           </button>
         ))}
         <button
           type="button"
-          className={`min-h-11 rounded-full px-3 py-1 text-sm ${degreeInTitle ? "bg-ink text-paper" : "bg-paper-2"}`}
-          onClick={() => setDegreeInTitle((on) => !on)}
+          className={`min-h-11 rounded-full px-3 py-1 text-sm ${degreeOn ? "bg-ink text-paper" : "bg-paper-2"}`}
+          onClick={() => void navigate({ search: { role, degree: degreeOn ? undefined : "1" }, replace: true })}
         >
           Degree in the title field
         </button>
@@ -255,7 +275,7 @@ function PeopleInner() {
         ))}
         {visible.length === 0 && (
           <li className="px-4 py-8 text-muted">
-            {degreeInTitle ? "No one has a degree in the title field." : "Add the pastor of your first host parish."}
+            {degreeOn ? "No one has a degree in the title field." : "Add the pastor of your first host parish."}
           </li>
         )}
       </ul>

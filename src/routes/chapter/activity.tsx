@@ -1,5 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
@@ -21,6 +23,12 @@ const GROUPS: { value: "" | AuditGroup; label: string }[] = [
 ];
 
 type ActivityRow = Awaited<ReturnType<typeof listActivity>>["rows"][number];
+type Applied = { group?: AuditGroup; from?: string; to?: string };
+
+function loadError(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return "Could not load activity.";
+}
 
 function ActivityPage() {
   return (
@@ -36,45 +44,76 @@ function ActivityInner() {
   const [group, setGroup] = useState<"" | AuditGroup>("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [applied, setApplied] = useState<Applied>({});
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  function filters() {
-    return {
+  useEffect(() => {
+    let gone = false;
+    getSessionContext()
+      .then((session) => {
+        if (gone) return;
+        setRole(session.role);
+        setTimezone(session.timezone);
+        if (session.role !== "admin") {
+          setReady(true);
+          return;
+        }
+        listActivity({ data: {} })
+          .then((page) => {
+            if (gone) return;
+            setRows(page.rows);
+            setHasMore(page.hasMore);
+            setFailed(false);
+          })
+          .catch((err) => {
+            if (gone) return;
+            toast.error(loadError(err));
+            setFailed(true);
+            setRows([]);
+            setHasMore(false);
+          })
+          .finally(() => {
+            if (!gone) setReady(true);
+          });
+      })
+      .catch((err) => {
+        if (gone) return;
+        toast.error(loadError(err));
+        setFailed(true);
+        setReady(true);
+      });
+    return () => {
+      gone = true;
+    };
+  }, []);
+
+  if (!ready) return <p className="text-muted">Loading…</p>;
+  if (role !== "admin") {
+    return <p>{role == null ? "Could not load activity." : "Only an admin can see activity."}</p>;
+  }
+
+  async function show() {
+    const next: Applied = {
       group: group || undefined,
       from: from || undefined,
       to: to || undefined,
     };
-  }
-
-  useEffect(() => {
-    getSessionContext().then((session) => {
-      setRole(session.role);
-      setTimezone(session.timezone);
-      if (session.role !== "admin") {
-        setReady(true);
-        return;
-      }
-      listActivity({ data: {} })
-        .then((page) => {
-          setRows(page.rows);
-          setHasMore(page.hasMore);
-        })
-        .finally(() => setReady(true));
-    });
-  }, []);
-
-  if (!ready || role == null) return <p className="text-muted">Loading…</p>;
-  if (role !== "admin") return <p>Only an admin can see activity.</p>;
-
-  async function show() {
     setBusy(true);
     try {
-      const page = await listActivity({ data: filters() });
+      const page = await listActivity({ data: next });
       setRows(page.rows);
       setHasMore(page.hasMore);
+      setApplied(next);
+      setFailed(false);
+    } catch (err) {
+      toast.error(loadError(err));
+      setFailed(true);
+      setRows([]);
+      setHasMore(false);
     } finally {
       setBusy(false);
     }
@@ -86,10 +125,12 @@ function ActivityInner() {
     setBusy(true);
     try {
       const page = await listActivity({
-        data: { ...filters(), before: { at: last.at, id: last.id } },
+        data: { ...applied, before: { at: last.at, id: last.id } },
       });
       setRows((current) => [...current, ...page.rows]);
       setHasMore(page.hasMore);
+    } catch (err) {
+      toast.error(loadError(err));
     } finally {
       setBusy(false);
     }
@@ -98,9 +139,7 @@ function ActivityInner() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <Link to="/chapter" className="text-sm text-bronze hover:underline">
-          Back to Chapter
-        </Link>
+        <Crumbs trail={[{ label: "Chapter", to: "/chapter" }, { label: "Activity" }]} />
         <h1 className="font-display text-3xl">Activity</h1>
       </div>
       <form
@@ -129,7 +168,9 @@ function ActivityInner() {
           Show
         </Button>
       </form>
-      {rows.length === 0 ? (
+      {failed && rows.length === 0 ? (
+        <p>Could not load activity.</p>
+      ) : rows.length === 0 ? (
         <p>No activity yet.</p>
       ) : (
         <div className="overflow-x-auto">

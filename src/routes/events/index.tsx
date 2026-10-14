@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listEvents } from "@/lib/crm/actions";
 import { formatWhen } from "@/lib/crm/format";
+import { rememberList } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/events/")({ component: EventsPage });
@@ -19,6 +20,7 @@ function EventsPage() {
 function EventsInner() {
   const [rows, setRows] = useState<Awaited<ReturnType<typeof listEvents>>>([]);
   useEffect(() => {
+    rememberList("events", "/events");
     listEvents().then(setRows);
   }, []);
   return (

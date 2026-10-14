@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { ListSelect } from "@/components/list-select";
 import { PartnerPeopleFields } from "@/components/partner-people-fields";
@@ -14,6 +15,7 @@ import {
   setAffiliationStart,
   updateOrganization,
 } from "@/lib/crm/actions";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -29,6 +31,7 @@ function OrgPage() {
 
 function OrgInner() {
   const { orgId } = Route.useParams();
+  const partnersHref = useListHref("partners", "/partners");
   const [data, setData] = useState<Awaited<ReturnType<typeof getOrganization>> | null>(null);
   const [form, setForm] = useState({
     name: "",
@@ -85,6 +88,12 @@ function OrgInner() {
     listPeople({ data: undefined }).then(setPeople);
   }
   useEffect(load, [orgId]);
+  useEffect(() => {
+    if (!data) return;
+    const label = String((data.org as { name?: string | null }).name ?? "").trim();
+    if (!label) return;
+    rememberVisit({ kind: "partner", id: orgId, label, href: `/partners/${orgId}` });
+  }, [data, orgId]);
   if (!data) return <p className="text-muted">Loading…</p>;
   const o = data.org as Record<string, string | number | null>;
   const typeKey = String(o.type_key);
@@ -94,6 +103,7 @@ function OrgInner() {
   return (
     <div className="space-y-8">
       <header>
+        <Crumbs trail={[{ label: "Partners", to: partnersHref }, { label: String(o.name) }]} />
         <p className="text-sm text-muted">
           {orgTypeLabel(typeKey)}
           {o.diocese_name ? ` · ${o.diocese_name}` : ""}

@@ -1,8 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { getAttendanceReport } from "@/lib/crm/actions";
 import { formatWhen } from "@/lib/crm/format";
+import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/events/$eventId/report")({ component: ReportPage });
@@ -17,21 +19,31 @@ function ReportPage() {
 
 function ReportInner() {
   const { eventId } = Route.useParams();
+  const eventsHref = useListHref("events", "/events");
   const [data, setData] = useState<Awaited<ReturnType<typeof getAttendanceReport>> | null>(null);
 
   useEffect(() => {
     getAttendanceReport({ data: eventId }).then(setData);
   }, [eventId]);
+  useEffect(() => {
+    const label = data?.event.title?.trim();
+    if (!label) return;
+    rememberVisit({ kind: "event", id: eventId, label, href: `/events/${eventId}` });
+  }, [data, eventId]);
   if (!data) return <p className="text-muted">Loading…</p>;
   const e = data.event;
   const t = data.totals;
 
   return (
     <div className="space-y-6 print:space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
-        <Link to="/events/$eventId" params={{ eventId }} className="text-sm text-bronze hover:underline">
-          Back to workspace
-        </Link>
+      <Crumbs
+        trail={[
+          { label: "Events", to: eventsHref },
+          { label: e.title, to: `/events/${eventId}` },
+          { label: "Report" },
+        ]}
+      />
+      <div className="flex justify-end print:hidden">
         <Button type="button" variant="secondary" onClick={() => window.print()}>
           Print
         </Button>

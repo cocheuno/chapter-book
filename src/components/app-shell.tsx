@@ -1,10 +1,13 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { BookOpen, Building2, Calendar, Globe, Home, Mail, Menu, Search, Settings2, Users, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen, Building2, Calendar, Clock, Globe, Home, Mail, Menu, Search, Settings2, Users, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { DeploymentBanner } from "@/components/deployment-banner";
+import { NavHref } from "@/components/crumbs";
 import { searchAll } from "@/lib/crm/actions";
+import { KIND_LABEL } from "@/lib/nav/nav-rules";
+import { useRecentItems } from "@/lib/nav/nav-store";
 
 const NAV = [
   { to: "/", label: "Home", icon: Home },
@@ -15,6 +18,66 @@ const NAV = [
   { to: "/mail", label: "Mail", icon: Mail },
   { to: "/chapter", label: "Chapter", icon: Settings2 },
 ] as const;
+
+function RecentMenu() {
+  const items = useRecentItems();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    function onClick(event: MouseEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("click", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("click", onClick);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={root}>
+      <button
+        type="button"
+        className="flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm hover:bg-paper-2"
+        aria-label="Recent"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Clock className="size-4" />
+        <span className="hidden md:inline">Recent</span>
+      </button>
+      {open ? (
+        <div className="absolute right-0 z-40 mt-1 w-72 overflow-hidden rounded-lg border border-line bg-surface shadow-sm">
+          {items.length === 0 ? (
+            <p className="px-3 py-3 text-sm text-muted">Pages you open will appear here.</p>
+          ) : (
+            <ul>
+              {items.map((item) => (
+                <li key={`${item.kind}:${item.id}`}>
+                  <NavHref
+                    href={item.href}
+                    className="block px-3 py-2.5 text-sm hover:bg-paper-2"
+                    title={item.label}
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="block truncate font-medium">{item.label}</span>
+                    <span className="text-muted">{KIND_LABEL[item.kind]}</span>
+                  </NavHref>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isPending } = useCurrentUserState();
@@ -41,11 +104,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (!user) return null;
 
-  function hrefFor(h: (typeof hits)[0]) {
-    if (h.kind === "person") return `/people/${h.id}`;
-    return `/partners/${h.id}`;
-  }
-
   return (
     <div className="min-h-dvh bg-paper text-ink">
       <DeploymentBanner />
@@ -70,23 +128,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <ul className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-line bg-surface shadow-sm">
                 {hits.map((h) => (
                   <li key={h.kind + h.id}>
-                    <a
-                      href={hrefFor(h)}
-                      className="block px-3 py-2.5 text-sm hover:bg-paper-2"
-                      onClick={() => {
-                        setQ("");
-                        setHits([]);
-                      }}
-                    >
-                      <span className="font-medium">{h.label}</span>
-                      <span className="ml-2 text-muted">{h.hint}</span>
-                    </a>
+                    {h.kind === "person" ? (
+                      <Link
+                        to="/people/$personId"
+                        params={{ personId: h.id }}
+                        className="block px-3 py-2.5 text-sm hover:bg-paper-2"
+                        onClick={() => {
+                          setQ("");
+                          setHits([]);
+                        }}
+                      >
+                        <span className="font-medium">{h.label}</span>
+                        <span className="ml-2 text-muted">{h.hint}</span>
+                      </Link>
+                    ) : (
+                      <Link
+                        to="/partners/$orgId"
+                        params={{ orgId: h.id }}
+                        className="block px-3 py-2.5 text-sm hover:bg-paper-2"
+                        onClick={() => {
+                          setQ("");
+                          setHits([]);
+                        }}
+                      >
+                        <span className="font-medium">{h.label}</span>
+                        <span className="ml-2 text-muted">{h.hint}</span>
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="chapter-user ml-2 flex shrink-0 items-center">
+          <div className="chapter-user ml-auto flex shrink-0 items-center gap-1 md:ml-2">
+            <RecentMenu />
             <UserButton />
           </div>
         </div>
