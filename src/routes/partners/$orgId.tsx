@@ -16,7 +16,7 @@ import {
   updateOrganization,
 } from "@/lib/crm/actions";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/partners/$orgId")({ component: OrgPage });
@@ -57,9 +57,17 @@ function OrgInner() {
   });
   const [touch, setTouch] = useState("");
   const [people, setPeople] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
+  const latestId = useRef(orgId);
+  if (latestId.current !== orgId) {
+    latestId.current = orgId;
+    setData(null);
+  }
 
   function load() {
-    getOrganization({ data: orgId }).then((d) => {
+    const id = orgId;
+    setData(null);
+    getOrganization({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
       setData(d);
       const o = d.org as Record<string, string | number | null>;
       setForm({
@@ -90,7 +98,9 @@ function OrgInner() {
   useEffect(load, [orgId]);
   useEffect(() => {
     if (!data) return;
-    const label = String((data.org as { name?: string | null }).name ?? "").trim();
+    const org = data.org as { id?: string; name?: string | null };
+    if (org.id !== orgId) return;
+    const label = String(org.name ?? "").trim();
     if (!label) return;
     rememberVisit({ kind: "partner", id: orgId, label, href: `/partners/${orgId}` });
   }, [data, orgId]);

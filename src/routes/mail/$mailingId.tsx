@@ -4,7 +4,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { getMailing } from "@/lib/crm/actions";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export const Route = createFileRoute("/mail/$mailingId")({ component: MailingPage });
 
@@ -20,12 +20,25 @@ function MailingInner() {
   const { mailingId } = Route.useParams();
   const mailHref = useListHref("mail", "/mail");
   const [data, setData] = useState<Awaited<ReturnType<typeof getMailing>> | null>(null);
-  useEffect(() => {
-    getMailing({ data: mailingId }).then(setData);
-  }, [mailingId]);
+  const latestId = useRef(mailingId);
+  if (latestId.current !== mailingId) {
+    latestId.current = mailingId;
+    setData(null);
+  }
+  function load() {
+    const id = mailingId;
+    setData(null);
+    getMailing({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
+      setData(d);
+    });
+  }
+  useEffect(load, [mailingId]);
   useEffect(() => {
     if (!data) return;
-    const subject = String((data.mailing as { subject_snapshot?: string | null }).subject_snapshot ?? "").trim();
+    const mailing = data.mailing as { id?: string; subject_snapshot?: string | null };
+    if (mailing.id !== mailingId) return;
+    const subject = String(mailing.subject_snapshot ?? "").trim();
     rememberVisit({
       kind: "letter",
       id: mailingId,

@@ -12,7 +12,7 @@ import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, s
 import { listedName } from "@/lib/crm/names";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { PERSON_STATUSES, deceasedMark } from "@/lib/crm/person-status";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/people/$personId")({ component: PersonPage });
@@ -58,9 +58,17 @@ function PersonInner() {
   });
   const [status, setStatus] = useState("active");
   const [deceasedOn, setDeceasedOn] = useState("");
+  const latestId = useRef(personId);
+  if (latestId.current !== personId) {
+    latestId.current = personId;
+    setData(null);
+  }
 
   function load() {
-    getPerson({ data: personId }).then((d) => {
+    const id = personId;
+    setData(null);
+    getPerson({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
       setData(d);
       const p = d.person as Record<string, string | null>;
       setName({
@@ -96,6 +104,7 @@ function PersonInner() {
   useEffect(() => {
     if (!data) return;
     const person = data.person as Record<string, string | null>;
+    if (person.id !== personId) return;
     const label = listedName({
       display_name: person.display_name,
       given_name: person.given_name,

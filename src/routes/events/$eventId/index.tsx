@@ -23,7 +23,7 @@ import {
   updateEvent,
 } from "@/lib/crm/actions";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/events/$eventId/")({ component: EventPage });
@@ -45,17 +45,34 @@ function EventInner() {
   const [pieceKind, setPieceKind] = useState("lecture");
   const [pieceTitle, setPieceTitle] = useState("");
   const [webPage, setWebPage] = useState<{ id: string; slug: string | null; published: boolean } | null>(null);
+  const latestId = useRef(eventId);
+  if (latestId.current !== eventId) {
+    latestId.current = eventId;
+    setData(null);
+    setWebPage(null);
+  }
 
   function load() {
-    getEvent({ data: eventId }).then(setData);
-    getEventWebPage({ data: eventId }).then(setWebPage);
+    const id = eventId;
+    setData(null);
+    setWebPage(null);
+    getEvent({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
+      setData(d);
+    });
+    getEventWebPage({ data: id }).then((page) => {
+      if (latestId.current !== id) return;
+      setWebPage(page);
+    });
     listClergy().then(setClergy);
     listParishes().then(setParishes);
   }
   useEffect(load, [eventId]);
   useEffect(() => {
     if (!data) return;
-    const label = String((data.event as { title?: string | null }).title ?? "").trim();
+    const event = data.event as { id?: string; title?: string | null };
+    if (event.id !== eventId) return;
+    const label = String(event.title ?? "").trim();
     if (!label) return;
     rememberVisit({ kind: "event", id: eventId, label, href: `/events/${eventId}` });
   }, [data, eventId]);
