@@ -3,6 +3,7 @@ import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { addListItem, addSuggestedListItems, deleteListItem, listAllLists, updateChapter } from "@/lib/crm/actions";
+import { exportChapter } from "@/lib/crm/chapter-backup";
 import { getSessionContext } from "@/lib/crm/member";
 import {
   createResetLink,
@@ -18,6 +19,19 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/chapter/")({ component: ChapterPage });
+
+function downloadZip(file: { base64: string; filename: string }) {
+  const binary = atob(file.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "application/zip" });
+  const link = document.createElement("a");
+  const href = URL.createObjectURL(blob);
+  link.href = href;
+  link.download = file.filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
 
 function ChapterPage() {
   return (
@@ -38,6 +52,7 @@ function ChapterInner() {
   const [inviteRole, setInviteRole] = useState<"admin" | "editor" | "viewer">("editor");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<{ email: string | null; url: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   function loadLists() {
     listAllLists().then(setLists);
@@ -418,6 +433,45 @@ function ChapterInner() {
           </form>
         ) : (
           <p className="text-sm text-muted">Only an admin can add or remove list values.</p>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="font-display text-xl">Export</h2>
+          <p className="text-sm text-ink-soft">
+            A zip of this chapter's people, affiliations, partners, events, participations, and touches. Website pages,
+            pictures, and sign-ins are not in it. It is the chapter's own copy. Keep the file private.
+          </p>
+        </div>
+        {isAdmin ? (
+          <Button
+            type="button"
+            disabled={exporting}
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  "Download this chapter's backup? The zip holds names, contact details, and notes. Keep it private.",
+                )
+              ) {
+                return;
+              }
+              setExporting(true);
+              try {
+                const file = await exportChapter();
+                downloadZip(file);
+                toast.success(`Export downloaded, ${file.rows} rows`);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not export");
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? "Preparing…" : "Download export"}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted">Only an admin can export the chapter.</p>
         )}
       </section>
 
