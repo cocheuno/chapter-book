@@ -3,7 +3,8 @@ import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { addListItem, addSuggestedListItems, deleteListItem, listAllLists, updateChapter } from "@/lib/crm/actions";
-import { exportChapter } from "@/lib/crm/chapter-backup";
+import { exportEverything } from "@/lib/crm/export";
+import { zipStore } from "@/lib/crm/zip-store";
 import { getSessionContext } from "@/lib/crm/member";
 import {
   createResetLink,
@@ -20,15 +21,32 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/chapter/")({ component: ChapterPage });
 
-function downloadZip(file: { base64: string; filename: string }) {
-  const binary = atob(file.base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: "application/zip" });
+function dataRows(csv: string): number {
+  let records = 0;
+  let quoted = false;
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    if (ch === '"') {
+      if (quoted && csv[i + 1] === '"') {
+        i += 1;
+        continue;
+      }
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && ch === "\n") records += 1;
+  }
+  return Math.max(0, records - 1);
+}
+
+function downloadZip(bytes: Uint8Array, filename: string) {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  const blob = new Blob([copy], { type: "application/zip" });
   const link = document.createElement("a");
   const href = URL.createObjectURL(blob);
   link.href = href;
-  link.download = file.filename;
+  link.download = filename;
   link.click();
   setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
@@ -436,31 +454,29 @@ function ChapterInner() {
         )}
       </section>
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="font-display text-xl">Export</h2>
+      {isAdmin && (
+        <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+          <h2 className="font-display text-xl">Export everything</h2>
           <p className="text-sm text-ink-soft">
-            A zip of this chapter's people, affiliations, partners, events, participations, and touches. Website pages,
-            pictures, and sign-ins are not in it. It is the chapter's own copy. Keep the file private.
+            Downloads one .zip of spreadsheets with every person, partner, event, RSVP, contact note, task, website
+            item, letter and registration. It is the chapter's own backup. It contains personal information: keep it
+            in the chapter's private storage and do not email it.
           </p>
-        </div>
-        {isAdmin ? (
           <Button
             type="button"
             disabled={exporting}
             onClick={async () => {
-              if (
-                !window.confirm(
-                  "Download this chapter's backup? The zip holds names, contact details, and notes. Keep it private.",
-                )
-              ) {
-                return;
-              }
               setExporting(true);
               try {
-                const file = await exportChapter();
-                downloadZip(file);
-                toast.success(`Export downloaded, ${file.rows} rows`);
+                const result = await exportEverything();
+                const encoder = new TextEncoder();
+                const packed = [
+                  ...result.files.map((file) => ({ name: file.file, data: encoder.encode(file.csv) })),
+                  { name: "README.txt", data: encoder.encode(result.readme) },
+                ];
+                downloadZip(zipStore(packed, new Date()), `chapter-book-export-${result.exportedOn}.zip`);
+                const rows = result.files.reduce((sum, file) => sum + dataRows(file.csv), 0);
+                toast.success(`Downloaded: ${result.files.length} files, ${rows} rows`);
               } catch (err) {
                 toast.error(err instanceof Error ? err.message : "Could not export");
               } finally {
@@ -468,12 +484,10 @@ function ChapterInner() {
               }
             }}
           >
-            {exporting ? "Preparing…" : "Download export"}
+            {exporting ? "Preparing…" : "Download full export"}
           </Button>
-        ) : (
-          <p className="text-sm text-muted">Only an admin can export the chapter.</p>
-        )}
-      </section>
+        </section>
+      )}
 
       <p className="text-sm text-muted">
         Letters are recorded in the chapter mailroom. Connect your real sending domain on the from-address when you

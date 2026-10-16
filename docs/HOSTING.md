@@ -137,22 +137,11 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - Deleting a copy does not touch production. An old preview that used it can no longer reach a database, which is fine once its pull request is merged.
    - History: the manual Neon branch named `preview`, made on 2026-10-02, was deleted on 2026-10-03. The nine copies left by pull requests 12 and 16–25 were deleted on 2026-10-04.
 
-## Restore to a Neon branch once a quarter
+## Backups (C17)
 
-The live database is Neon's `main` branch. Neon can restore that branch to an earlier moment, but the free plan's history window is short, so a restore that nobody has tried is not a backup. Once a quarter, restore onto a **new branch** and check it. Leave production on `main`.
+**Monthly.** An admin opens Chapter → Export everything → Download full export, and saves the zip in the chapter's private storage (a folder only officers can open). Delete exports older than a year.
 
-This drill is separate from the file the chapter keeps. An admin downloads that file from **Chapter → Export**: a zip of `people.csv`, `affiliations.csv`, `partners.csv`, `events.csv`, `participations.csv`, and `touches.csv`. Partners are the organizations table. Store the zip somewhere the chapter controls, and keep it private. It holds names, contact details, and notes. It does not include website pages, pictures, or operator sign-ins, and the book does not load the zip back in. Pressing Export writes one audit row and does not change people, partners, events, or pages.
-
-1. Open the Neon Console from Vercel → **Storage** → `chapter-book-db` → **Open in Neon**.
-2. Open **Branches** → `main` and read the restore window. On the free plan that window is short. Do the drill while a recent moment is still inside it.
-3. Create a branch from a moment inside that window. Name it `restore-YYYY-MM-DD`, using the day you run the drill.
-   - Do not reset `main`.
-   - Do not delete `main`.
-   - Do not change the Vercel project's database connection. Production must keep using `main`.
-4. On the new branch, confirm a record you already know (a person, a partner, or an event) and that its fields match what you remember from that moment.
-5. Delete `restore-YYYY-MM-DD` when the check is done. The free plan holds 10 branches, `main` included, so this branch has to go. In **Branches**, open that branch's **⋯** and choose **Delete**. Delete only a `restore-…` branch. Never delete `main`.
-
-Write down the date and what you checked. The next drill is three months later. Do not paste a connection string or password into the note.
+**Once a quarter, restore drill.** In the Neon console, open the project → Branches → Create branch from main, named `restore-drill-<yyyy-mm>`, not connected to Vercel. Open its SQL Editor and compare a few counts with the book (people, events, participations). Then delete that branch. The free Neon plan keeps only a short restore window, which is why the monthly export matters.
 
 ## Cloudflare (later)
 

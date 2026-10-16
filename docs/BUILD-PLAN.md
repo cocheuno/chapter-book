@@ -164,7 +164,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | 15 | Conference checklist and treasurer hat | — | Done (PR 35) | §4 |
 | 16 | Password reset links | 01 | Done (PR 36) | §8 |
 | 17 | Person statuses and dated affiliations | — | Done (PR 37) | §8 |
-| 18 | Breadcrumbs, Recent menu, lists that remember their filter | — | Ready | Usability |
+| 18 | Breadcrumbs, Recent menu, lists that remember their filter | — | Done (PR 42) | Usability |
 | **Phase 1–3: registration and payments (Oct–Dec)** | | | | |
 | 20 | Free registration and the mail outbox | 01, 05, 06, 09 | Done (PRs 38–40) | PAYMENTS Phase 1, MAIL seam |
 | 21 | Stripe in test mode | 20 | Needs H7, H8 | PAYMENTS Phase 2 |
@@ -175,7 +175,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | **Data quality and reach** | | | | |
 | 30 | Merge people | 23 | Ready | C15 |
 | 31 | CSV import with duplicate preview | 07, 34 | Ready | §8 |
-| 32 | Full export | 07, 23 | Done (PR 43) | §8, C17 |
+| 32 | Full export | 07, 23 | Ready | §8, C17 |
 | 33 | Tags and saved segments | — | Ready | §8 |
 | 34 | Secondary emails | — | Ready | §8 |
 | 35 | Task assignee and "My tasks" | — | Ready | §8 |

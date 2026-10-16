@@ -114,7 +114,6 @@ describe("auditSummary", () => {
     assert.equal(auditSummary("role_changed", { from: "editor", to: "admin" }), "editor → admin");
     assert.equal(auditSummary("site_item_saved", { changed: ["title", "summary"] }), "changed: title, summary");
     assert.equal(auditSummary("export", { kind: "nametags", rows: 12 }), "12 rows");
-    assert.equal(auditSummary("export", { kind: "full", rows: 40 }), "full export, 40 rows");
     assert.equal(auditSummary("mailing_sent", { recipients: 3, skipped: 1 }), "3 recipients, 1 skipped");
     assert.equal(auditSummary("password_reset_used", {}), "");
     assert.equal(auditSummary("not_a_real_action", { token: "nope" }), "");

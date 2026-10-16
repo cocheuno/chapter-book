@@ -94,7 +94,6 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "chapter_saved":
       return changedLine(row);
     case "export":
-      if (text(row.kind) === "full") return `full export, ${Number(row.rows ?? 0)} rows`;
       return `${Number(row.rows ?? 0)} rows`;
     case "mailing_sent":
       return `${Number(row.recipients ?? 0)} recipients, ${Number(row.skipped ?? 0)} skipped`;
