@@ -166,19 +166,22 @@ function combineNotes(keep: unknown, other: unknown): string | null {
   return a ? `${a}\n\n${b}` : b;
 }
 
-function withOtherEmail(
-  notes: string | null,
-  otherEmail: unknown,
-  chosenEmail: string | null,
-  today: string,
-): string | null {
-  const email = fieldText(otherEmail);
-  if (!email) return notes;
-  if (email.toLowerCase() === fieldText(chosenEmail).toLowerCase()) return notes;
-  const line = `Other email (merged ${today}): ${email}`;
-  if (!notes) return line;
-  if (notes === line || notes.endsWith(`\n${line}`)) return notes;
-  return `${notes}\n${line}`;
+/** Main emails that are not the chosen address, lower-cased and de-duplicated. */
+export function leftoverEmails(
+  keep: { email?: unknown },
+  other: { email?: unknown },
+  chosenEmail: unknown,
+): string[] {
+  const chosen = fieldText(chosenEmail).toLowerCase();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [keep.email, other.email]) {
+    const email = fieldText(raw).toLowerCase();
+    if (!email || email === chosen || seen.has(email)) continue;
+    seen.add(email);
+    out.push(email);
+  }
+  return out;
 }
 
 function newsConsent(keep: unknown, other: unknown): "yes" | "no" | "unknown" {
@@ -188,24 +191,19 @@ function newsConsent(keep: unknown, other: unknown): "yes" | "no" | "unknown" {
   return "unknown";
 }
 
-/** The kept record's new values. `today` is YYYY-MM-DD in the chapter's time zone. */
+/** The kept record's new values. Callers still pass the chapter's YYYY-MM-DD. */
 export function mergePersonFields(
   keep: Record<string, unknown>,
   other: Record<string, unknown>,
   picks: FieldPicks,
-  today: string,
+  _today: string,
 ): MergedPerson {
   const fields = {} as Record<MergeFieldName, string | null>;
   for (const field of MERGE_FIELDS) {
     const raw = picks[field.field] === "other" ? other[field.field] : keep[field.field];
     fields[field.field] = textOrNull(raw);
   }
-  const notes = withOtherEmail(
-    combineNotes(keep.notes, other.notes),
-    other.email,
-    fields.email,
-    today,
-  );
+  const notes = combineNotes(keep.notes, other.notes);
   return {
     ...fields,
     notes,

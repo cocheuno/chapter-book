@@ -4,7 +4,7 @@ import { getSql, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { todayIn } from "./dates";
-import { lowerEmail } from "./ids";
+import { lowerEmail, nid } from "./ids";
 import { composedHonorific } from "./lists";
 import { assertEditor, loadMember } from "./member";
 import { composePersonName, postNominalsText } from "./names";
@@ -14,6 +14,7 @@ import {
   defaultPicks,
   differingFields,
   mergeParticipation,
+  leftoverEmails,
   mergePersonFields,
   type AffiliationPlan,
   type MergeFieldName,
@@ -65,6 +66,7 @@ type MoveCounts = {
   attendees: number;
   celebrant: number;
   speakerSlots: number;
+  otherEmails: number;
 };
 
 type AffiliationMove = { id: string; plan: AffiliationPlan };
@@ -187,6 +189,7 @@ async function moveCounts(
     attendees,
     celebrant,
     speakerSlots,
+    otherEmails,
     affiliations,
   ] = await Promise.all([
     countOf(sql<{ n: number }>`
@@ -235,6 +238,10 @@ async function moveCounts(
             where e.chapter_id = ${chapterId} and sl.person_id = ${mergeId})
         )::int as n
       `),
+    countOf(sql<{ n: number }>`
+        select count(*)::int as n from person_emails
+        where person_id = ${mergeId} and chapter_id = ${chapterId}
+      `),
     affiliationMoves(sql, chapterId, keepId, mergeId),
   ]);
   return {
@@ -250,8 +257,34 @@ async function moveCounts(
       attendees,
       celebrant,
       speakerSlots,
+      otherEmails,
     },
   };
+}
+
+async function storeLeftoverEmails(
+  sql: Sql,
+  chapterId: string,
+  keepId: string,
+  actor: string,
+  keep: Record<string, unknown>,
+  other: Record<string, unknown>,
+  chosenEmail: string | null,
+  today: string,
+) {
+  if (chosenEmail) {
+    await sql`
+      delete from person_emails
+      where person_id = ${keepId} and chapter_id = ${chapterId} and lower(email) = ${chosenEmail}
+    `;
+  }
+  for (const address of leftoverEmails(keep, other, chosenEmail)) {
+    await sql`
+      insert into person_emails (id, chapter_id, person_id, email, label, created_by)
+      values (${nid()}, ${chapterId}, ${keepId}, ${address}, ${`merged ${today}`}, ${actor})
+      on conflict do nothing
+    `;
+  }
 }
 
 async function mergeRoles(sql: Sql, keepId: string, mergeId: string) {
@@ -594,9 +627,24 @@ export const mergePeople = createServerFn({ method: "POST" })
         removed: removedRow(other),
       },
     });
+    // Move these before the person delete. The foreign key would otherwise remove them.
+    await sql`
+      update person_emails set person_id = ${data.keepId}
+      where person_id = ${data.mergeId} and chapter_id = ${member.chapterId}
+    `;
     await sql`
       delete from persons where id = ${data.mergeId} and chapter_id = ${member.chapterId}
     `;
     await saveKeptPerson(sql, member.chapterId, data.keepId, keep, merged);
+    await storeLeftoverEmails(
+      sql,
+      member.chapterId,
+      data.keepId,
+      member.userId,
+      keep,
+      other,
+      lowerEmail(merged.email),
+      today,
+    );
     return { id: data.keepId };
   });

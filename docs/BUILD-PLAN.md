@@ -173,7 +173,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | 24 | Two-factor for admins | 01 | Ready | C9 |
 | 25 | Go live | 21–24 | Needs D3, H6–H8 | PAYMENTS Phase 4 |
 | **Data quality and reach** | | | | |
-| 30 | Merge people | 23 | Ready | C15 |
+| 30 | Merge people | 23 | Done (PR 44) | C15 |
 | 31 | CSV import with duplicate preview | 07, 34 | Ready | §8 |
 | 32 | Full export | 07, 23 | Done (PR 43) | §8, C17 |
 | 33 | Tags and saved segments | — | Ready | §8 |

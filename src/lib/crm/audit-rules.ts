@@ -1,4 +1,4 @@
-export const AUDIT_GROUPS = ["operators", "website", "registration", "exports", "mail", "chapter"] as const;
+export const AUDIT_GROUPS = ["operators", "website", "registration", "exports", "mail", "chapter", "people"] as const;
 
 export type AuditGroup = (typeof AUDIT_GROUPS)[number];
 
@@ -38,7 +38,10 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   mailing_sent: { label: "Mail sent", group: "mail" },
   chapter_saved: { label: "Chapter saved", group: "chapter" },
   list_item_removed: { label: "List item removed", group: "chapter" },
-  person_merged: { label: "People merged", group: "chapter" },
+  person_merged: { label: "People merged", group: "people" },
+  email_added: { label: "Other email added", group: "people" },
+  email_removed: { label: "Other email removed", group: "people" },
+  email_made_main: { label: "Main email changed", group: "people" },
 };
 
 const SECRET_KEY = /token|hash|password|secret|html|body|link|url/i;
@@ -87,6 +90,7 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
   switch (action) {
     case "role_changed":
     case "attendee_renamed":
+    case "email_made_main":
       return `${text(row.from)} → ${text(row.to)}`;
     case "site_item_published":
     case "site_item_unpublished":
@@ -106,6 +110,8 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "operator_restored":
     case "reset_link_created":
     case "account_removed":
+    case "email_added":
+    case "email_removed":
       return text(row.email);
     case "site_item_created":
       return row.published === true || row.published === "true" ? "published" : "draft";

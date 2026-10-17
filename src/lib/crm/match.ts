@@ -11,6 +11,7 @@ export function matchPerson(
     email: string | null;
     given_name?: string | null;
     family_name?: string | null;
+    other_emails?: readonly string[] | null;
   }[],
   name: string,
   email: string,
@@ -24,6 +25,17 @@ export function matchPerson(
     if (byEmail) {
       return {
         hard: { id: byEmail.id, name: byEmail.display_name, email: byEmail.email, reason: "email" },
+        soft: null,
+      };
+    }
+    const byOther = pool.find((p) =>
+      (p.other_emails ?? []).some((address) => address.toLowerCase() === em),
+    );
+    if (byOther) {
+      const matched =
+        (byOther.other_emails ?? []).find((address) => address.toLowerCase() === em) ?? em;
+      return {
+        hard: { id: byOther.id, name: byOther.display_name, email: matched, reason: "email" },
         soft: null,
       };
     }

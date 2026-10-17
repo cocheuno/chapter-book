@@ -11,6 +11,7 @@ import { roleLabel } from "@/lib/crm/constants";
 import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, searchAll, setPersonStatus, updatePerson } from "@/lib/crm/actions";
 import { getSessionContext } from "@/lib/crm/member";
 import { MERGE_FIELDS } from "@/lib/crm/person-merge";
+import { addPersonEmail, listPersonEmails, makeMainEmail, removePersonEmail } from "@/lib/crm/person-emails";
 import { getMergePreview, mergePeople } from "@/lib/crm/person-merge-server";
 import { listedName } from "@/lib/crm/names";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
@@ -281,6 +282,9 @@ function PersonInner() {
         <Field label="Email">
           <Input type="email" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} autoComplete="email" />
         </Field>
+        <div className="sm:col-span-2">
+          <OtherEmails personId={personId} canEdit={canMerge} onMadeMain={load} />
+        </div>
         <Field label="Phone">
           <Input value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} autoComplete="tel" />
         </Field>
@@ -434,6 +438,148 @@ function PersonInner() {
   );
 }
 
+function OtherEmails({
+  personId,
+  canEdit,
+  onMadeMain,
+}: {
+  personId: string;
+  canEdit: boolean;
+  onMadeMain: () => void;
+}) {
+  const [rows, setRows] = useState<{ id: string; email: string; label: string | null }[]>([]);
+  const [email, setEmail] = useState("");
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function reload() {
+    listPersonEmails({ data: personId })
+      .then((list) => setRows(list))
+      .catch(() => setRows([]));
+  }
+
+  useEffect(() => {
+    let current = true;
+    listPersonEmails({ data: personId })
+      .then((list) => {
+        if (current) setRows(list);
+      })
+      .catch(() => {
+        if (current) setRows([]);
+      });
+    return () => {
+      current = false;
+    };
+  }, [personId]);
+
+  async function add() {
+    const next = email.trim();
+    if (!next || busy) return;
+    setBusy(true);
+    try {
+      await addPersonEmail({ data: { personId, email: next, label: label.trim() || undefined } });
+      toast.success("Email added");
+      setEmail("");
+      setLabel("");
+      reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add that email");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function makeMain(emailId: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await makeMainEmail({ data: { personId, emailId } });
+      toast.success("Main email updated");
+      onMadeMain();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change the main email");
+      setBusy(false);
+    }
+  }
+
+  async function remove(row: { id: string; email: string }) {
+    if (busy) return;
+    if (!window.confirm(`Remove ${row.email}?`)) return;
+    setBusy(true);
+    try {
+      await removePersonEmail({ data: { personId, emailId: row.id } });
+      toast.success("Email removed");
+      reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not remove that email");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-ink-soft">Other emails</p>
+      {rows.length > 0 && (
+        <ul className="space-y-1">
+          {rows.map((row) => (
+            <li key={row.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+              <span>{row.email}</span>
+              {row.label ? <span className="text-muted">{row.label}</span> : null}
+              {canEdit && (
+                <>
+                  <button type="button" className="text-sm text-bronze hover:underline" onClick={() => void makeMain(row.id)}>
+                    Make main
+                  </button>
+                  <button type="button" className="text-sm text-danger hover:underline" onClick={() => void remove(row)}>
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-ink-soft">Add another email</span>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void add();
+              }
+            }}
+            aria-label="Add another email"
+            autoComplete="off"
+            className="w-full sm:w-64"
+          />
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void add();
+              }
+            }}
+            placeholder="Label (optional)"
+            aria-label="Label (optional)"
+            className="w-full sm:w-40"
+          />
+          <button type="button" className="text-sm text-bronze hover:underline" disabled={busy} onClick={() => void add()}>
+            Add
+          </button>
+        </div>
+      )}
+      <p className="text-sm text-muted">Letters go to the main email only.</p>
+    </div>
+  );
+}
+
 const MOVE_LINES: {
   key: keyof Awaited<ReturnType<typeof getMergePreview>>["counts"];
   label: string;
@@ -448,6 +594,7 @@ const MOVE_LINES: {
   { key: "attendees", label: "Attendees" },
   { key: "celebrant", label: "Events as celebrant" },
   { key: "speakerSlots", label: "Speaker slots" },
+  { key: "otherEmails", label: "Other emails" },
 ];
 
 const FIELD_LABEL = new Map(MERGE_FIELDS.map((field) => [field.field, field.label]));
@@ -659,7 +806,7 @@ function MergePanel({
           )}
           <p className="text-sm text-ink-soft">{sameCount} other fields are the same.</p>
           <p className="text-sm text-ink-soft">
-            Notes from both records are kept. If the other record has a different email, it is added to the notes.
+            Notes from both records are kept. The email you don't choose is kept as an other email.
           </p>
           <div>
             <h2 className="mb-1 text-sm font-medium">What moves to the kept record</h2>

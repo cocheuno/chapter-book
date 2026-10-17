@@ -8,6 +8,7 @@ import { todayIn } from "./dates";
 import { lowerEmail, nid } from "./ids";
 import { loadMember } from "./member";
 import { composePersonName, splitWalkupName } from "./names";
+import { findPersonByEmail } from "./person-emails";
 import { hashInviteToken, newInviteToken } from "./operator-rules";
 import { publicOrigin } from "./page-head";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
@@ -453,10 +454,12 @@ async function createWebPerson(
 }
 
 async function personByEmail(sql: Sql, chapterId: string, email: string): Promise<PersonSnap | null> {
+  const found = await findPersonByEmail(sql, chapterId, email);
+  if (!found) return null;
   const rows = await sql<PersonSnap>`
     select id, display_name, given_name, family_name, dietary
     from persons
-    where chapter_id = ${chapterId} and lower(email) = ${email}
+    where id = ${found.id} and chapter_id = ${chapterId}
     limit 1
   `;
   return rows[0] ?? null;

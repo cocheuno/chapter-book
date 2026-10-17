@@ -14,6 +14,7 @@ import {
 const EXPECTED: { file: string; table: string; scope: string }[] = [
   ["chapter.csv", "chapters", "self"],
   ["people.csv", "persons", "chapter"],
+  ["person_emails.csv", "person_emails", "chapter"],
   ["person_roles.csv", "person_roles", "persons/person_id"],
   ["person_relationships.csv", "person_relationships", "persons/person_id"],
   ["affiliations.csv", "affiliations", "chapter"],

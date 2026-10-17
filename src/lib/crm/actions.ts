@@ -16,6 +16,7 @@ import {
 } from "./person-status";
 import { composedHonorific, LIST_KEYS, LIST_SEEDS, type ListKey } from "./lists";
 import { foldName } from "./match";
+import { findPersonByEmail } from "./person-emails";
 import { composePersonName, listedName, postNominalsText, salutation, splitMiddle, splitWalkupName } from "./names";
 import { toHonorificGreeting, toSalutationGreeting } from "./templates";
 import { ensureEventWebPage } from "./event-page";
@@ -34,6 +35,17 @@ function isUniqueViolation(err: unknown): boolean {
 
 async function ctx(userId: string) {
   return loadMember(userId);
+}
+
+function asEmailList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value !== "string" || !value.trim()) return [];
+  const text = value.trim();
+  const inner = text.startsWith("{") && text.endsWith("}") ? text.slice(1, -1) : text;
+  return inner
+    .split(/[\n,]/)
+    .map((part) => part.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
 }
 
 function addDays(isoDate: string, days: number): string {
@@ -236,15 +248,26 @@ export const searchAll = createServerFn({ method: "GET" })
     if (q.length < 2) return [] as { kind: string; id: string; label: string; hint: string }[];
     const sql = await getSql();
     const like = `%${q}%`;
-    const people = await sql<{ id: string; display_name: string; email: string | null; given_name: string | null; family_name: string | null; honorific: string | null; religious_title: string | null; academic_title: string | null; middle_name: string | null; suffix: string | null }>`
-      select id, display_name, email, given_name, family_name, honorific, religious_title, academic_title,
-             coalesce(middle_name, middle_initial) as middle_name, suffix from persons
-      where chapter_id = ${m.chapterId}
+    const people = await sql<{ id: string; display_name: string; email: string | null; matched_email: string | null; given_name: string | null; family_name: string | null; honorific: string | null; religious_title: string | null; academic_title: string | null; middle_name: string | null; suffix: string | null }>`
+      select p.id, p.display_name, p.email, p.given_name, p.family_name, p.honorific, p.religious_title,
+             p.academic_title, coalesce(p.middle_name, p.middle_initial) as middle_name, p.suffix,
+             (
+               select e.email from person_emails e
+               where e.person_id = p.id and e.chapter_id = p.chapter_id and e.email ilike ${like}
+               order by e.created_at
+               limit 1
+             ) as matched_email
+      from persons p
+      where p.chapter_id = ${m.chapterId}
         and (
-          display_name ilike ${like}
-          or coalesce(given_name,'') ilike ${like}
-          or coalesce(family_name,'') ilike ${like}
-          or coalesce(email,'') ilike ${like}
+          p.display_name ilike ${like}
+          or coalesce(p.given_name,'') ilike ${like}
+          or coalesce(p.family_name,'') ilike ${like}
+          or coalesce(p.email,'') ilike ${like}
+          or exists (
+            select 1 from person_emails e
+            where e.person_id = p.id and e.chapter_id = p.chapter_id and e.email ilike ${like}
+          )
         )
       limit 6
     `;
@@ -258,7 +281,7 @@ export const searchAll = createServerFn({ method: "GET" })
         kind: "person" as const,
         id: p.id,
         label: listedName(p),
-        hint: p.email ?? "Person",
+        hint: p.matched_email ?? p.email ?? "Person",
       })),
       ...orgs.map((o) => ({
         kind: "org" as const,
@@ -340,11 +363,19 @@ export const listPeople = createServerFn({ method: "GET" })
       left join organizations o on o.id = a.organization_id
       where a.chapter_id = ${m.chapterId} and a.is_current and a.is_primary
     `;
+    const extraEmails = await sql<{ person_id: string; emails: unknown }>`
+      select person_id, array_agg(email order by created_at) as emails
+      from person_emails
+      where chapter_id = ${m.chapterId}
+      group by person_id
+    `;
+    const otherByPerson = new Map(extraEmails.map((row) => [row.person_id, asEmailList(row.emails)]));
     return rows.map((p) => ({
       ...p,
       display_name: listedName(p),
       roles: roles.filter((r) => r.person_id === p.id).map((r) => r.role_key),
       primary: aff.find((a) => a.person_id === p.id) ?? null,
+      other_emails: otherByPerson.get(p.id) ?? [],
     }));
   });
 
@@ -450,11 +481,9 @@ export const createPerson = createServerFn({ method: "POST" })
       postNominals,
     });
     if (email) {
-      const dup = await sql<{ id: string; display_name: string }>`
-        select id, display_name from persons where chapter_id = ${m.chapterId} and lower(email) = ${email}
-      `;
-      if (dup[0]) {
-        return { id: dup[0].id, duplicate: true, name: dup[0].display_name, reason: "email" as const };
+      const dup = await findPersonByEmail(sql, m.chapterId, email);
+      if (dup) {
+        return { id: dup.id, duplicate: true, name: dup.display_name, reason: "email" as const };
       }
     } else {
       const dup = await sql<{ id: string; display_name: string }>`
@@ -490,17 +519,19 @@ export const createPerson = createServerFn({ method: "POST" })
       `;
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
-      const again = email
-        ? await sql<{ id: string; display_name: string }>`
-            select id, display_name from persons
-            where chapter_id = ${m.chapterId} and lower(email) = ${email}
-          `
-        : await sql<{ id: string; display_name: string }>`
-            select id, display_name from persons
-            where chapter_id = ${m.chapterId} and lower(display_name) = ${foldName(name)}
-          `;
-      if (again[0]) {
-        return { id: again[0].id, duplicate: true, name: again[0].display_name, reason: email ? "email" : "name" };
+      if (email) {
+        const again = await findPersonByEmail(sql, m.chapterId, email);
+        if (again) {
+          return { id: again.id, duplicate: true, name: again.display_name, reason: "email" as const };
+        }
+      } else {
+        const again = await sql<{ id: string; display_name: string }>`
+          select id, display_name from persons
+          where chapter_id = ${m.chapterId} and lower(display_name) = ${foldName(name)}
+        `;
+        if (again[0]) {
+          return { id: again[0].id, duplicate: true, name: again[0].display_name, reason: "name" as const };
+        }
       }
       throw new Error("That person is already in the book.");
     }
@@ -566,11 +597,16 @@ export const updatePerson = createServerFn({ method: "POST" })
       postNominals,
     });
     if (email) {
-      const taken = await sql<{ id: string; display_name: string }>`
-        select id, display_name from persons
-        where chapter_id = ${m.chapterId} and lower(email) = ${email} and id <> ${data.id}
-      `;
-      if (taken[0]) throw new Error(`That email already belongs to ${taken[0].display_name}.`);
+      const taken = await findPersonByEmail(sql, m.chapterId, email);
+      if (taken && taken.id !== data.id) {
+        throw new Error(`That email already belongs to ${taken.display_name}.`);
+      }
+      if (taken && taken.id === data.id && taken.via === "other") {
+        await sql`
+          delete from person_emails
+          where person_id = ${data.id} and chapter_id = ${m.chapterId} and lower(email) = ${email}
+        `;
+      }
     } else {
       const taken = await sql<{ id: string; display_name: string }>`
         select id, display_name from persons
@@ -1782,10 +1818,8 @@ export const walkUpCheckIn = createServerFn({ method: "POST" })
     const parts = splitWalkupName(name);
     let personId: string | null = null;
     if (email) {
-      const found = await sql<{ id: string }>`
-        select id from persons where chapter_id = ${m.chapterId} and lower(email) = ${email}
-      `;
-      personId = found[0]?.id ?? null;
+      const found = await findPersonByEmail(sql, m.chapterId, email);
+      personId = found?.id ?? null;
     }
     if (!personId) {
       const found = await sql<{ id: string; email: string | null }>`
