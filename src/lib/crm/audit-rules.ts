@@ -34,6 +34,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   attendee_cancelled: { label: "Attendee cancelled", group: "registration" },
   attendee_renamed: { label: "Attendee renamed", group: "registration" },
   confirmation_viewed: { label: "Confirmation viewed", group: "registration" },
+  consent_received: { label: "Consent received", group: "registration" },
+  consent_details_purged: { label: "Consent details deleted", group: "registration" },
   export: { label: "Export", group: "exports" },
   mailing_sent: { label: "Mail sent", group: "mail" },
   chapter_saved: { label: "Chapter saved", group: "chapter" },
@@ -137,6 +139,10 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "attendee_cancelled":
     case "confirmation_viewed":
       return text(row.code);
+    case "consent_received":
+      return [text(row.code), text(row.method)].filter(Boolean).join(", ");
+    case "consent_details_purged":
+      return `${Number(row.rows ?? 0)} rows`;
     case "list_item_removed":
       return [text(row.list), text(row.value)].filter(Boolean).join(": ");
     case "person_merged":

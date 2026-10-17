@@ -61,6 +61,25 @@ describe("deskFilter", () => {
     assert.equal(deskFilter(reg({ review: true }), "needs_look"), true);
     assert.equal(deskFilter(reg(), "needs_look"), false);
   });
+
+  it("keeps a registration that still has a minor without consent", () => {
+    const missing = {
+      ...reg(),
+      attendees: [{ review: false, isMinor: true, consentOnFile: false, cancelled: false }],
+    };
+    const filed = {
+      ...reg(),
+      attendees: [{ review: false, isMinor: true, consentOnFile: true, cancelled: false }],
+    };
+    const cancelledMinor = {
+      ...reg(),
+      attendees: [{ review: false, isMinor: true, consentOnFile: false, cancelled: true }],
+    };
+    assert.equal(deskFilter(missing, "consent_missing"), true);
+    assert.equal(deskFilter(filed, "consent_missing"), false);
+    assert.equal(deskFilter(cancelledMinor, "consent_missing"), false);
+    assert.equal(deskFilter(reg(), "consent_missing"), false);
+  });
 });
 
 describe("deskSearch", () => {

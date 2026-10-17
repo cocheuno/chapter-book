@@ -1,4 +1,14 @@
 import { z } from "zod";
+import {
+  EMERGENCY_NAME_MAX,
+  EMERGENCY_PHONE_MAX,
+  GUARDIAN_EMAIL_MAX,
+  GUARDIAN_NAME_MAX,
+  GUARDIAN_PHONE_MAX,
+  MEDICAL_NOTES_MAX,
+  RELATIONSHIP_MAX,
+  SIGNATURE_MAX,
+} from "../payments/consent-rules.ts";
 
 const attendeeInput = z.object({
   givenName: z.string().max(100),
@@ -10,6 +20,17 @@ const attendeeInput = z.object({
   badgeAffiliation: z.string().max(200).optional(),
   dietary: z.string().max(500).optional(),
   accessibility: z.string().max(500).optional(),
+  consent: z.enum(["now", "later"]).optional(),
+  guardianName: z.string().max(GUARDIAN_NAME_MAX).optional(),
+  guardianPhone: z.string().max(GUARDIAN_PHONE_MAX).optional(),
+  guardianEmail: z.string().max(GUARDIAN_EMAIL_MAX).optional(),
+  relationship: z.string().max(RELATIONSHIP_MAX).optional(),
+  emergencyName: z.string().max(EMERGENCY_NAME_MAX).optional(),
+  emergencyPhone: z.string().max(EMERGENCY_PHONE_MAX).optional(),
+  medicalNotes: z.string().max(MEDICAL_NOTES_MAX).optional(),
+  photoRelease: z.boolean().optional(),
+  agreed: z.boolean().optional(),
+  signature: z.string().max(SIGNATURE_MAX).optional(),
 });
 
 export const registrationInput = z.object({

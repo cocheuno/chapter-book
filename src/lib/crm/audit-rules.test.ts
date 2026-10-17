@@ -58,6 +58,8 @@ describe("AUDIT_ACTIONS", () => {
       "attendee_cancelled",
       "attendee_renamed",
       "confirmation_viewed",
+      "consent_received",
+      "consent_details_purged",
       "export",
       "mailing_sent",
       "chapter_saved",
@@ -155,6 +157,11 @@ describe("auditSummary", () => {
       auditSummary("email_made_main", { from: "ada@example.com", to: "ada.work@example.com" }),
       "ada@example.com → ada.work@example.com",
     );
+  });
+
+  it("names the registration code and how consent was received", () => {
+    assert.equal(auditSummary("consent_received", { code: "R27-ABCD", method: "paper" }), "R27-ABCD, paper");
+    assert.equal(auditSummary("consent_details_purged", { rows: 4 }), "4 rows");
   });
 });
 

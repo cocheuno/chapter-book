@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiPublicSiteRouteImport } from './routes/api/public-site'
+import { Route as CTokenRouteImport } from './routes/c/$token'
 import { Route as ChapterIndexRouteImport } from './routes/chapter/index'
 import { Route as ChapterActivityRouteImport } from './routes/chapter/activity'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
@@ -55,6 +56,11 @@ const LoginRoute = LoginRouteImport.update({
 const ApiPublicSiteRoute = ApiPublicSiteRouteImport.update({
   id: '/api/public-site',
   path: '/api/public-site',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CTokenRoute = CTokenRouteImport.update({
+  id: '/c/$token',
+  path: '/c/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChapterIndexRoute = ChapterIndexRouteImport.update({
@@ -209,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/public-site': typeof ApiPublicSiteRoute
+  '/c/$token': typeof CTokenRoute
   '/chapter/activity': typeof ChapterActivityRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
@@ -243,6 +250,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/public-site': typeof ApiPublicSiteRoute
+  '/c/$token': typeof CTokenRoute
   '/chapter/activity': typeof ChapterActivityRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
@@ -277,6 +285,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/public-site': typeof ApiPublicSiteRoute
+  '/c/$token': typeof CTokenRoute
   '/chapter/activity': typeof ChapterActivityRoute
   '/events/new': typeof EventsNewRoute
   '/mail/$mailingId': typeof MailMailingIdRoute
@@ -313,6 +322,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/public-site'
+    | '/c/$token'
     | '/chapter/activity'
     | '/events/new'
     | '/mail/$mailingId'
@@ -347,6 +357,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/public-site'
+    | '/c/$token'
     | '/chapter/activity'
     | '/events/new'
     | '/mail/$mailingId'
@@ -380,6 +391,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/public-site'
+    | '/c/$token'
     | '/chapter/activity'
     | '/events/new'
     | '/mail/$mailingId'
@@ -415,6 +427,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   ApiPublicSiteRoute: typeof ApiPublicSiteRoute
+  CTokenRoute: typeof CTokenRoute
   ChapterActivityRoute: typeof ChapterActivityRoute
   EventsNewRoute: typeof EventsNewRoute
   MailMailingIdRoute: typeof MailMailingIdRoute
@@ -463,6 +476,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public-site'
       fullPath: '/api/public-site'
       preLoaderRoute: typeof ApiPublicSiteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/c/$token': {
+      id: '/c/$token'
+      path: '/c/$token'
+      fullPath: '/c/$token'
+      preLoaderRoute: typeof CTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chapter/': {
@@ -691,6 +711,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   ApiPublicSiteRoute: ApiPublicSiteRoute,
+  CTokenRoute: CTokenRoute,
   ChapterActivityRoute: ChapterActivityRoute,
   EventsNewRoute: EventsNewRoute,
   MailMailingIdRoute: MailMailingIdRoute,

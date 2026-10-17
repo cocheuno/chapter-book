@@ -11,6 +11,7 @@ import { composePersonName, splitWalkupName } from "./names";
 import { findPersonByEmail } from "./person-emails";
 import { hashInviteToken, newInviteToken } from "./operator-rules";
 import { publicOrigin } from "./page-head";
+import { guardianConsentErrors, type GuardianConsentInput } from "@/lib/payments/consent-rules";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
   THROTTLE_LIMIT,
@@ -22,6 +23,7 @@ import {
   turnstileMode,
   type RegistrationCatalog,
 } from "@/lib/payments/registration-rules";
+import { latestGuardianText, writeOnlineConsent } from "./consent";
 import { registrationInput } from "./registration-input";
 
 export { registrationInput };
@@ -330,6 +332,7 @@ function registerPayload(
   event: RegistrationEvent,
   catalog: Awaited<ReturnType<typeof loadCatalog>>,
   agreements: { id: string; kind: string; html: string }[],
+  guardian: { id: string; html: string } | null,
 ) {
   return {
     enabled: event.enabled,
@@ -344,8 +347,35 @@ function registerPayload(
     tickets: catalog.pageTickets,
     parts: catalog.pageParts,
     agreements,
+    guardianConsent: guardian ? { id: guardian.id, html: guardian.html } : null,
     turnstileSiteKey: readEnv("TURNSTILE_SITE_KEY") ?? null,
     public_title: event.publicTitle,
+  };
+}
+
+function consentInput(person: {
+  guardianName?: string;
+  guardianPhone?: string;
+  guardianEmail?: string;
+  relationship?: string;
+  emergencyName?: string;
+  emergencyPhone?: string;
+  medicalNotes?: string;
+  photoRelease?: boolean;
+  agreed?: boolean;
+  signature?: string;
+}): GuardianConsentInput {
+  return {
+    guardianName: person.guardianName ?? "",
+    guardianPhone: person.guardianPhone ?? "",
+    guardianEmail: person.guardianEmail,
+    relationship: person.relationship ?? "",
+    emergencyName: person.emergencyName ?? "",
+    emergencyPhone: person.emergencyPhone ?? "",
+    medicalNotes: person.medicalNotes,
+    photoRelease: person.photoRelease === true,
+    agreed: person.agreed === true,
+    signature: person.signature ?? "",
   };
 }
 
@@ -520,11 +550,12 @@ export const getRegisterPage = createServerFn({ method: "GET" })
     const event = await findRegistrationEvent(sql, chapterId, slug);
     if (!event?.enabled) return null;
     const now = new Date();
-    const [catalog, agreements] = await Promise.all([
+    const [catalog, agreements, guardian] = await Promise.all([
       loadCatalog(sql, chapterId, event.eventId, now),
       latestAgreements(sql, chapterId, event.eventId),
+      latestGuardianText(sql, chapterId, event.eventId),
     ]);
-    return registerPayload(event, catalog, agreements);
+    return registerPayload(event, catalog, agreements, guardian);
   });
 
 /** Same page for an editor or a viewer, including while the switch is off. */
@@ -537,11 +568,12 @@ export const getRegisterPreview = createServerFn({ method: "GET" })
     const event = await findRegistrationEvent(sql, member.chapterId, slug);
     if (!event) return null;
     const now = new Date();
-    const [catalog, agreements] = await Promise.all([
+    const [catalog, agreements, guardian] = await Promise.all([
       loadCatalog(sql, member.chapterId, event.eventId, now),
       latestAgreements(sql, member.chapterId, event.eventId),
+      latestGuardianText(sql, member.chapterId, event.eventId),
     ]);
-    return registerPayload(event, catalog, agreements);
+    return registerPayload(event, catalog, agreements, guardian);
   });
 
 export const createRegistration = createServerFn({ method: "POST" })
@@ -575,9 +607,10 @@ export const createRegistration = createServerFn({ method: "POST" })
     if (!chapterId || !event?.enabled) throw new Error("Registration is not open.");
 
     const now = new Date();
-    const [catalog, agreements] = await Promise.all([
+    const [catalog, agreements, guardianText] = await Promise.all([
       loadCatalog(sql, chapterId, event.eventId, now),
       latestAgreements(sql, chapterId, event.eventId),
+      latestGuardianText(sql, chapterId, event.eventId),
     ]);
     if (!agreementsAccepted(agreements.map((row) => row.id), data.acceptedAgreementIds)) {
       throw new Error("The terms changed while you were registering. Please review them and agree again.");
@@ -596,8 +629,17 @@ export const createRegistration = createServerFn({ method: "POST" })
       },
       catalog,
       now,
+      { guardianConsent: Boolean(guardianText) },
     );
     if (!plan.ok) throw new Error(plan.error);
+    for (const person of data.attendees) {
+      if (!person.under18 || person.consent === "later") continue;
+      if (!guardianText) throw new Error("Registration for students under 18 is not open yet.");
+      const message = guardianConsentErrors(consentInput(person))[0];
+      if (message) throw new Error(message);
+    }
+    // Same hash the throttle stores. The address itself is not saved on the consent.
+    const signedIp = hashInviteToken(ip);
 
     const titles = new Map(catalog.parts.map((part) => [part.id, part.title]));
     const taken = await takeSeats(sql, chapterId, plan.partNeeds, titles);
@@ -752,13 +794,25 @@ export const createRegistration = createServerFn({ method: "POST" })
         await sql`
           insert into registration_attendees (
             id, chapter_id, registration_id, given_name, family_name, email,
-            badge_affiliation, dietary, accessibility, person_id, review_changes
+            badge_affiliation, dietary, accessibility, person_id, review_changes, is_minor
           ) values (
             ${attendeeId}, ${chapterId}, ${registrationId}, ${given}, ${family}, ${email},
             ${blankToNull(typed.badgeAffiliation)}, ${blankToNull(typed.dietary)}, ${blankToNull(typed.accessibility)},
-            ${person.id}, ${reviewJson}::jsonb
+            ${person.id}, ${reviewJson}::jsonb, ${typed.under18}
           )
         `;
+        if (typed.under18 && typed.consent !== "later") {
+          if (!guardianText) throw new Error("Registration for students under 18 is not open yet.");
+          await writeOnlineConsent(sql, {
+            chapterId,
+            attendeeId,
+            studentPersonId: person.id,
+            textId: guardianText.id,
+            signedIp,
+            consent: consentInput(typed),
+            undos,
+          });
+        }
         for (const line of plan.lines.filter((item) => item.attendeeIndex === index)) {
           await sql`
             insert into attendee_items (attendee_id, ticket_type_id, price_cents)
@@ -967,20 +1021,33 @@ export const getManagePage = createServerFn({ method: "GET" })
     `;
     const row = rows[0];
     if (!row) return null;
-    const people = await sql<{ id: string; given_name: string; family_name: string; ticket_name: string | null }>`
-      select a.id, a.given_name, a.family_name, t.name as ticket_name
+    const people = await sql<{
+      id: string;
+      given_name: string;
+      family_name: string;
+      is_minor: boolean;
+      consent_on_file: boolean;
+      ticket_name: string | null;
+    }>`
+      select a.id, a.given_name, a.family_name, a.is_minor,
+        exists (
+          select 1 from guardian_consents g
+          where g.attendee_id = a.id and g.chapter_id = a.chapter_id
+        ) as consent_on_file,
+        t.name as ticket_name
       from registration_attendees a
       left join attendee_items ai on ai.attendee_id = a.id
       left join ticket_types t on t.id = ai.ticket_type_id
       where a.registration_id = ${row.id} and a.chapter_id = ${chapterId} and a.cancelled_at is null
       order by a.given_name, a.family_name, a.id, t.sort_order, t.name
     `;
-    const grouped = new Map<string, { id: string; name: string; tickets: string[] }>();
+    const grouped = new Map<string, { id: string; name: string; tickets: string[]; needsConsent: boolean }>();
     for (const person of people) {
       const current = grouped.get(person.id) ?? {
         id: person.id,
         name: `${person.given_name} ${person.family_name}`.trim(),
         tickets: [],
+        needsConsent: Boolean(person.is_minor) && person.consent_on_file !== true,
       };
       if (person.ticket_name) current.tickets.push(person.ticket_name);
       grouped.set(person.id, current);

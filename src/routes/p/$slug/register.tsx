@@ -3,6 +3,7 @@ import { PublicCopy } from "@/components/public-copy";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { createRegistration, getRegisterPage, getRegisterPreview } from "@/lib/crm/registration-public";
+import { guardianConsentErrors } from "@/lib/payments/consent-rules";
 import { MAX_ATTENDEES } from "@/lib/payments/registration-rules";
 import { formatCents } from "@/lib/payments/pricing";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -41,6 +42,17 @@ type AttendeeDraft = {
   admissionId: string;
   addOnIds: string[];
   under18: boolean;
+  consent: "now" | "later";
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  relationship: string;
+  emergencyName: string;
+  emergencyPhone: string;
+  medicalNotes: string;
+  photoRelease: boolean;
+  agreed: boolean;
+  signature: string;
 };
 
 export const Route = createFileRoute("/p/$slug/register")({
@@ -87,6 +99,17 @@ function emptyAttendee(key = "person-1"): AttendeeDraft {
     admissionId: "",
     addOnIds: [],
     under18: false,
+    consent: "now",
+    guardianName: "",
+    guardianPhone: "",
+    guardianEmail: "",
+    relationship: "",
+    emergencyName: "",
+    emergencyPhone: "",
+    medicalNotes: "",
+    photoRelease: false,
+    agreed: false,
+    signature: "",
   };
 }
 
@@ -95,16 +118,148 @@ function splitName(name: string): { givenName: string; familyName: string } {
   return { givenName: parts[0] ?? "", familyName: parts.slice(1).join(" ") };
 }
 
-function ticketBlocked(ticket: Ticket): boolean {
-  return ticket.price_cents > 0 || ticket.full || !ticket.onSale || ticket.needs_code || ticket.for_minors;
+function ticketBlocked(ticket: Ticket, guardianOpen: boolean): boolean {
+  if (ticket.price_cents > 0 || ticket.full || !ticket.onSale || ticket.needs_code) return true;
+  return ticket.for_minors && !guardianOpen;
 }
 
-function ticketNote(ticket: Ticket): string | null {
+function ticketNote(ticket: Ticket, guardianOpen: boolean): string | null {
   if (ticket.price_cents > 0) return `${formatCents(ticket.price_cents)} · Online payment opens soon`;
   if (ticket.full) return "Full";
   if (!ticket.onSale) return "Not on sale";
-  if (ticket.needs_code || ticket.for_minors) return "Not available";
+  if (ticket.needs_code || (ticket.for_minors && !guardianOpen)) return "Not available";
   return formatCents(ticket.price_cents);
+}
+
+function GuardianFields({
+  person,
+  html,
+  onChange,
+}: {
+  person: AttendeeDraft;
+  html: string;
+  onChange: (patch: Partial<AttendeeDraft>) => void;
+}) {
+  const now = person.consent !== "later";
+  return (
+    <div className="space-y-3">
+      <fieldset className="space-y-2">
+        <legend className="sr-only">Who is completing consent</legend>
+        <label className="flex min-h-11 items-start gap-2 text-sm">
+          <input
+            type="radio"
+            className="mt-1 size-5"
+            name={`consent-${person.key}`}
+            checked={now}
+            onChange={() => onChange({ consent: "now" })}
+          />
+          A parent or guardian is completing this now
+        </label>
+        <label className="flex min-h-11 items-start gap-2 text-sm">
+          <input
+            type="radio"
+            className="mt-1 size-5"
+            name={`consent-${person.key}`}
+            checked={!now}
+            onChange={() => onChange({ consent: "later" })}
+          />
+          A teacher is registering; the parent will sign a consent link later
+        </label>
+      </fieldset>
+      {now ? (
+        <div className="space-y-3">
+          <Field label="Guardian name">
+            <Input
+              value={person.guardianName}
+              autoComplete="name"
+              required
+              onChange={(event) => onChange({ guardianName: event.target.value })}
+            />
+          </Field>
+          <Field label="Guardian phone">
+            <Input
+              value={person.guardianPhone}
+              autoComplete="tel"
+              required
+              onChange={(event) => onChange({ guardianPhone: event.target.value })}
+            />
+          </Field>
+          <Field label="Guardian email (optional)">
+            <Input
+              type="email"
+              value={person.guardianEmail}
+              autoComplete="email"
+              onChange={(event) => onChange({ guardianEmail: event.target.value })}
+            />
+          </Field>
+          <Field label="Relationship to the student">
+            <Input
+              value={person.relationship}
+              required
+              onChange={(event) => onChange({ relationship: event.target.value })}
+            />
+          </Field>
+          <Field label="Emergency contact name">
+            <Input
+              value={person.emergencyName}
+              required
+              onChange={(event) => onChange({ emergencyName: event.target.value })}
+            />
+          </Field>
+          <Field label="Emergency contact phone">
+            <Input
+              value={person.emergencyPhone}
+              autoComplete="tel"
+              required
+              onChange={(event) => onChange({ emergencyPhone: event.target.value })}
+            />
+          </Field>
+          <Field label="Medical notes (optional)">
+            <Textarea value={person.medicalNotes} onChange={(event) => onChange({ medicalNotes: event.target.value })} />
+          </Field>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-ink-soft">Photo release</legend>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="radio"
+                className="size-5"
+                name={`photo-${person.key}`}
+                checked={person.photoRelease}
+                onChange={() => onChange({ photoRelease: true })}
+              />
+              Yes
+            </label>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="radio"
+                className="size-5"
+                name={`photo-${person.key}`}
+                checked={!person.photoRelease}
+                onChange={() => onChange({ photoRelease: false })}
+              />
+              No
+            </label>
+          </fieldset>
+          <div className="max-h-48 overflow-auto rounded-md border border-line bg-surface p-3">
+            <PublicCopy text={html} className="text-sm text-ink-soft" />
+          </div>
+          <label className="flex min-h-11 items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1 size-5"
+              required
+              checked={person.agreed}
+              onChange={(event) => onChange({ agreed: event.target.checked })}
+            />
+            I am this student's parent or legal guardian and I agree
+          </label>
+          <Field label="Type your full name to sign">
+            <Input value={person.signature} required onChange={(event) => onChange({ signature: event.target.value })} />
+          </Field>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function RegisterPage() {
@@ -123,7 +278,8 @@ function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const turnstileRef = useRef<HTMLDivElement>(null);
-  const minor = attendees.some((person) => person.under18);
+  const guardianOpen = Boolean(page.guardianConsent);
+  const minorBlocked = attendees.some((person) => person.under18) && !guardianOpen;
 
   useEffect(() => {
     const sitekey = page.turnstileSiteKey;
@@ -178,9 +334,28 @@ function RegisterPage() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
-    if (attendees.some((person) => person.under18)) {
-      setError("Registration for students under 18 opens soon.");
+    if (attendees.some((person) => person.under18) && !page.guardianConsent) {
+      setError("Registration for students under 18 is not open yet.");
       return;
+    }
+    for (const person of attendees) {
+      if (!person.under18 || person.consent === "later") continue;
+      const message = guardianConsentErrors({
+        guardianName: person.guardianName,
+        guardianPhone: person.guardianPhone,
+        guardianEmail: person.guardianEmail,
+        relationship: person.relationship,
+        emergencyName: person.emergencyName,
+        emergencyPhone: person.emergencyPhone,
+        medicalNotes: person.medicalNotes,
+        photoRelease: person.photoRelease,
+        agreed: person.agreed,
+        signature: person.signature,
+      })[0];
+      if (message) {
+        setError(message);
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -200,6 +375,23 @@ function RegisterPage() {
             under18: person.under18,
             admissionId: person.admissionId,
             addOnIds: person.addOnIds,
+            ...(person.under18
+              ? person.consent === "later"
+                ? { consent: "later" as const }
+                : {
+                    consent: "now" as const,
+                    guardianName: person.guardianName.trim(),
+                    guardianPhone: person.guardianPhone.trim(),
+                    ...(person.guardianEmail.trim() ? { guardianEmail: person.guardianEmail.trim() } : {}),
+                    relationship: person.relationship.trim(),
+                    emergencyName: person.emergencyName.trim(),
+                    emergencyPhone: person.emergencyPhone.trim(),
+                    ...(person.medicalNotes.trim() ? { medicalNotes: person.medicalNotes.trim() } : {}),
+                    photoRelease: person.photoRelease,
+                    agreed: person.agreed,
+                    signature: person.signature.trim(),
+                  }
+              : {}),
             ...(person.badgeAffiliation.trim() ? { badgeAffiliation: person.badgeAffiliation.trim() } : {}),
             ...(person.dietary.trim() ? { dietary: person.dietary.trim() } : {}),
             ...(person.accessibility.trim() ? { accessibility: person.accessibility.trim() } : {}),
@@ -343,8 +535,8 @@ function RegisterPage() {
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium text-ink-soft">Admission</legend>
                 {admissions.map((ticket) => {
-                  const blocked = ticketBlocked(ticket);
-                  const note = ticketNote(ticket);
+                  const blocked = ticketBlocked(ticket, guardianOpen);
+                  const note = ticketNote(ticket, guardianOpen);
                   return (
                     <label key={ticket.id} className="block">
                       <span className="flex min-h-11 items-start gap-2 text-sm">
@@ -355,7 +547,12 @@ function RegisterPage() {
                           checked={person.admissionId === ticket.id}
                           disabled={blocked}
                           required
-                          onChange={() => updateAttendee(person.key, { admissionId: ticket.id })}
+                          onChange={() =>
+                            updateAttendee(person.key, {
+                              admissionId: ticket.id,
+                              ...(ticket.for_minors ? { under18: true } : {}),
+                            })
+                          }
                         />
                         <span>
                           {ticket.name}
@@ -373,8 +570,8 @@ function RegisterPage() {
                 <fieldset className="space-y-2">
                   <legend className="text-sm font-medium text-ink-soft">Add-ons</legend>
                   {addOns.map((ticket) => {
-                    const blocked = ticketBlocked(ticket);
-                    const note = ticketNote(ticket);
+                    const blocked = ticketBlocked(ticket, guardianOpen);
+                    const note = ticketNote(ticket, guardianOpen);
                     const checked = person.addOnIds.includes(ticket.id);
                     return (
                       <label key={ticket.id} className="block">
@@ -389,6 +586,7 @@ function RegisterPage() {
                                 addOnIds: checked
                                   ? person.addOnIds.filter((id) => id !== ticket.id)
                                   : [...person.addOnIds, ticket.id],
+                                ...(!checked && ticket.for_minors ? { under18: true } : {}),
                               })
                             }
                           />
@@ -410,12 +608,33 @@ function RegisterPage() {
                   type="checkbox"
                   className="size-5"
                   checked={person.under18}
-                  onChange={(event) => updateAttendee(person.key, { under18: event.target.checked })}
+                  onChange={(event) => {
+                    const under18 = event.target.checked;
+                    if (under18) {
+                      updateAttendee(person.key, { under18: true });
+                      return;
+                    }
+                    const admission = page.tickets.find((ticket) => ticket.id === person.admissionId);
+                    updateAttendee(person.key, {
+                      under18: false,
+                      consent: "now",
+                      admissionId: admission?.for_minors ? "" : person.admissionId,
+                      addOnIds: person.addOnIds.filter((id) => !page.tickets.find((ticket) => ticket.id === id)?.for_minors),
+                    });
+                  }}
                 />
                 Under 18
               </label>
               {person.under18 ? (
-                <p className="text-sm text-ink-soft">Registration for students under 18 opens soon.</p>
+                page.guardianConsent ? (
+                  <GuardianFields
+                    person={person}
+                    html={page.guardianConsent.html}
+                    onChange={(patch) => updateAttendee(person.key, patch)}
+                  />
+                ) : (
+                  <p className="text-sm text-ink-soft">Registration for students under 18 is not open yet.</p>
+                )
               ) : null}
             </section>
           ))}
@@ -461,7 +680,7 @@ function RegisterPage() {
           </div>
           {page.turnstileSiteKey ? <div ref={turnstileRef} /> : null}
           {error ? <p className="text-sm text-danger">{error}</p> : null}
-          <Button type="submit" disabled={busy || minor}>
+          <Button type="submit" disabled={busy || minorBlocked}>
             Register
           </Button>
         </form>
