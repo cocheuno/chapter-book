@@ -137,6 +137,12 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
    - Deleting a copy does not touch production. An old preview that used it can no longer reach a database, which is fine once its pull request is merged.
    - History: the manual Neon branch named `preview`, made on 2026-10-02, was deleted on 2026-10-03. The nine copies left by pull requests 12 and 16–25 were deleted on 2026-10-04.
 
+## Backups (C17)
+
+**Monthly.** An admin opens Chapter → Export everything → Download full export, and saves the zip in the chapter's private storage (a folder only officers can open). Delete exports older than a year.
+
+**Once a quarter, restore drill.** In the Neon console, open the project → Branches → Create branch from main, named `restore-drill-<yyyy-mm>`, not connected to Vercel. Open its SQL Editor and compare a few counts with the book (people, events, participations). Then delete that branch. The free Neon plan keeps only a short restore window, which is why the monthly export matters.
+
 ## Cloudflare (later)
 
 Point **For Members** at the Vercel URL. Do not put Postgres on Cloudflare.

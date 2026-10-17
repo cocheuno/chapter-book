@@ -3,6 +3,8 @@ import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { addListItem, addSuggestedListItems, deleteListItem, listAllLists, updateChapter } from "@/lib/crm/actions";
+import { exportEverything } from "@/lib/crm/export";
+import { zipStore } from "@/lib/crm/zip-store";
 import { getSessionContext } from "@/lib/crm/member";
 import {
   createResetLink,
@@ -18,6 +20,36 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/chapter/")({ component: ChapterPage });
+
+function dataRows(csv: string): number {
+  let records = 0;
+  let quoted = false;
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    if (ch === '"') {
+      if (quoted && csv[i + 1] === '"') {
+        i += 1;
+        continue;
+      }
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && ch === "\n") records += 1;
+  }
+  return Math.max(0, records - 1);
+}
+
+function downloadZip(bytes: Uint8Array, filename: string) {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  const blob = new Blob([copy], { type: "application/zip" });
+  const link = document.createElement("a");
+  const href = URL.createObjectURL(blob);
+  link.href = href;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
 
 function ChapterPage() {
   return (
@@ -38,6 +70,7 @@ function ChapterInner() {
   const [inviteRole, setInviteRole] = useState<"admin" | "editor" | "viewer">("editor");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<{ email: string | null; url: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   function loadLists() {
     listAllLists().then(setLists);
@@ -420,6 +453,41 @@ function ChapterInner() {
           <p className="text-sm text-muted">Only an admin can add or remove list values.</p>
         )}
       </section>
+
+      {isAdmin && (
+        <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+          <h2 className="font-display text-xl">Export everything</h2>
+          <p className="text-sm text-ink-soft">
+            Downloads one .zip of spreadsheets with every person, partner, event, RSVP, contact note, task, website
+            item, letter and registration. It is the chapter's own backup. It contains personal information: keep it
+            in the chapter's private storage and do not email it.
+          </p>
+          <Button
+            type="button"
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                const result = await exportEverything();
+                const encoder = new TextEncoder();
+                const packed = [
+                  ...result.files.map((file) => ({ name: file.file, data: encoder.encode(file.csv) })),
+                  { name: "README.txt", data: encoder.encode(result.readme) },
+                ];
+                downloadZip(zipStore(packed, new Date()), `chapter-book-export-${result.exportedOn}.zip`);
+                const rows = result.files.reduce((sum, file) => sum + dataRows(file.csv), 0);
+                toast.success(`Downloaded: ${result.files.length} files, ${rows} rows`);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not export");
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? "Preparing…" : "Download full export"}
+          </Button>
+        </section>
+      )}
 
       <p className="text-sm text-muted">
         Letters are recorded in the chapter mailroom. Connect your real sending domain on the from-address when you
