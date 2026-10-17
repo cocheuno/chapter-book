@@ -65,6 +65,7 @@ export function planRegistration(
   input: RegistrationPlanInput,
   catalog: RegistrationCatalog,
   now: Date,
+  options?: { guardianConsent?: boolean },
 ): RegistrationPlan {
   const attendees = input.attendees ?? [];
   if (attendees.length < 1 || attendees.length > MAX_ATTENDEES) {
@@ -73,8 +74,9 @@ export function planRegistration(
   if (attendees.some((person) => blank(person.givenName) || blank(person.familyName))) {
     return { ok: false, error: "Enter each person's first and last name." };
   }
-  if (attendees.some((person) => person.under18)) {
-    return { ok: false, error: "Registration for students under 18 opens soon." };
+  const guardianConsent = options?.guardianConsent === true;
+  if (attendees.some((person) => person.under18) && !guardianConsent) {
+    return { ok: false, error: "Registration for students under 18 is not open yet." };
   }
 
   const tickets = new Map(catalog.tickets.map((ticket) => [ticket.id, ticket]));
@@ -83,20 +85,30 @@ export function planRegistration(
     return { ok: false, error: "Choose a ticket for each person." };
   }
 
-  const unavailable = (ticket: CatalogTicket): boolean =>
-    !ticket.active || !ticketOnSale(ticket, now) || ticket.needs_code || ticket.for_minors;
+  const notOnSale = (ticket: CatalogTicket): boolean =>
+    !ticket.active || !ticketOnSale(ticket, now) || ticket.needs_code;
 
-  if (admissions.some((ticket) => ticket && unavailable(ticket))) {
-    return { ok: false, error: "That ticket is not available." };
+  for (let index = 0; index < attendees.length; index += 1) {
+    const ticket = admissions[index];
+    const person = attendees[index];
+    if (!ticket || !person) continue;
+    if (ticket.for_minors && !person.under18) {
+      return { ok: false, error: "That ticket is for students under 18." };
+    }
+    if (notOnSale(ticket)) return { ok: false, error: "That ticket is not available." };
   }
 
   for (const person of attendees) {
     const seen = new Set<string>();
     for (const addOnId of person.addOnIds) {
       const addOn = tickets.get(addOnId);
-      if (!addOn || addOn.kind !== "add_on" || seen.has(addOnId) || unavailable(addOn)) {
+      if (!addOn || addOn.kind !== "add_on" || seen.has(addOnId)) {
         return { ok: false, error: "That ticket is not available." };
       }
+      if (addOn.for_minors && !person.under18) {
+        return { ok: false, error: "That ticket is for students under 18." };
+      }
+      if (notOnSale(addOn)) return { ok: false, error: "That ticket is not available." };
       seen.add(addOnId);
     }
   }

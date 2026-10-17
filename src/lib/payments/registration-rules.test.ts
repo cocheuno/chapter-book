@@ -96,13 +96,79 @@ describe("planRegistration", () => {
     });
   });
 
-  it("refuses a student under 18", () => {
+  it("refuses a student under 18 when the event has no guardian consent text", () => {
     const plan = planRegistration(
       { attendees: [person({ under18: true })] },
       { tickets: [ticket({ id: "general" })], parts: [] },
       now,
     );
-    assert.deepEqual(plan, { ok: false, error: "Registration for students under 18 opens soon." });
+    assert.deepEqual(plan, {
+      ok: false,
+      error: "Registration for students under 18 is not open yet.",
+    });
+  });
+
+  it("accepts a student under 18 when guardian consent is on file for the event", () => {
+    const plan = planRegistration(
+      { attendees: [person({ under18: true, admissionId: "youth" })] },
+      {
+        tickets: [ticket({ id: "general" }), ticket({ id: "youth", for_minors: true })],
+        parts: [],
+      },
+      now,
+      { guardianConsent: true },
+    );
+    assert.equal(plan.ok, true);
+  });
+
+  it("lets a student under 18 take an ordinary free ticket", () => {
+    const plan = planRegistration(
+      { attendees: [person({ under18: true })] },
+      { tickets: [ticket({ id: "general" })], parts: [] },
+      now,
+      { guardianConsent: true },
+    );
+    assert.equal(plan.ok, true);
+  });
+
+  it("requires under 18 for a minor ticket, including an add-on", () => {
+    const admission = planRegistration(
+      { attendees: [person({ admissionId: "youth" })] },
+      { tickets: [ticket({ id: "youth", for_minors: true })], parts: [] },
+      now,
+      { guardianConsent: true },
+    );
+    assert.deepEqual(admission, { ok: false, error: "That ticket is for students under 18." });
+    const addOn = planRegistration(
+      { attendees: [person({ addOnIds: ["youth-lunch"] })] },
+      {
+        tickets: [ticket({ id: "general" }), ticket({ id: "youth-lunch", kind: "add_on", for_minors: true })],
+        parts: [],
+      },
+      now,
+      { guardianConsent: true },
+    );
+    assert.deepEqual(addOn, { ok: false, error: "That ticket is for students under 18." });
+  });
+
+  it("still refuses a paid ticket and a code ticket for a student under 18", () => {
+    const paid = planRegistration(
+      { attendees: [person({ under18: true })] },
+      { tickets: [ticket({ id: "general", price_cents: 2500 })], parts: [] },
+      now,
+      { guardianConsent: true },
+    );
+    assert.deepEqual(paid, {
+      ok: false,
+      error: "Online payment opens soon. Choose a free ticket for now.",
+    });
+    const coded = planRegistration(
+      { attendees: [person({ under18: true, admissionId: "youth" })] },
+      { tickets: [ticket({ id: "youth", for_minors: true, needs_code: true })], parts: [] },
+      now,
+      { guardianConsent: true },
+    );
+    assert.deepEqual(coded, { ok: false, error: "That ticket is not available." });
   });
 
   it("refuses more than 10 people", () => {

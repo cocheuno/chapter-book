@@ -1,6 +1,6 @@
 export const ACTIVE_REGISTRATION_STATUSES = ["free", "paid", "pending"] as const;
 
-export type DeskFilter = "all" | "active" | "cancelled" | "needs_look";
+export type DeskFilter = "all" | "active" | "cancelled" | "needs_look" | "consent_missing";
 
 const CANCELLED_STATUSES = new Set(["cancelled", "expired", "refunded"]);
 
@@ -9,12 +9,19 @@ export function isActiveRegistration(status: string): boolean {
 }
 
 export function deskFilter(
-  reg: { status: string; needsReview: string | null; attendees: { review: boolean }[] },
+  reg: {
+    status: string;
+    needsReview: string | null;
+    attendees: { review: boolean; isMinor?: boolean; consentOnFile?: boolean; cancelled?: boolean }[];
+  },
   filter: DeskFilter,
 ): boolean {
   if (filter === "all") return true;
   if (filter === "active") return isActiveRegistration(reg.status);
   if (filter === "cancelled") return CANCELLED_STATUSES.has(reg.status);
+  if (filter === "consent_missing") {
+    return reg.attendees.some((attendee) => attendee.isMinor && !attendee.consentOnFile && !attendee.cancelled);
+  }
   return reg.needsReview != null || reg.attendees.some((attendee) => attendee.review);
 }
 

@@ -1604,11 +1604,27 @@ export const listInvites = createServerFn({ method: "GET" })
     const titled = await sql<{ title: string | null }>`
       select title from events where id = ${eventId} and chapter_id = ${m.chapterId}
     `;
+    // Separate select. Another event join here would fail the chapter-scope count.
+    const missingConsent = await sql<{ id: string }>`
+      select p.id
+      from participations p
+      join registration_attendees a
+        on a.id = p.registration_attendee_id and a.chapter_id = p.chapter_id
+      left join guardian_consents g
+        on g.attendee_id = a.id and g.chapter_id = a.chapter_id
+      where p.event_id = ${eventId}
+        and p.chapter_id = ${m.chapterId}
+        and a.is_minor
+        and a.cancelled_at is null
+        and g.id is null
+    `;
+    const missingConsentIds = new Set(missingConsent.map((row) => row.id));
     return {
       title: titled[0]?.title ?? "",
       people: people.map((p) => ({
         ...p,
         display_name: p.person_id ? listedName(p) : p.guest_name || p.display_name,
+        consentMissing: missingConsentIds.has(p.id),
       })),
       partners,
     };
@@ -1783,6 +1799,22 @@ export const updateParticipation = createServerFn({ method: "POST" })
     const m = await ctx(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
+    if (data.guestStatus === "attended") {
+      const blocked = await sql<{ id: string }>`
+        select p.id
+        from participations p
+        join registration_attendees a
+          on a.id = p.registration_attendee_id and a.chapter_id = p.chapter_id
+        left join guardian_consents g
+          on g.attendee_id = a.id and g.chapter_id = a.chapter_id
+        where p.id = ${data.id}
+          and p.chapter_id = ${m.chapterId}
+          and a.is_minor
+          and a.cancelled_at is null
+          and g.id is null
+      `;
+      if (blocked[0]) throw new Error("Do not admit: consent missing");
+    }
     await sql`
       update participations set
         guest_status = coalesce(${data.guestStatus ?? null}, guest_status),

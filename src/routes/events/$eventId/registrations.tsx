@@ -11,7 +11,11 @@ import {
   exportCatererCounts,
   exportRegistrationAttendees,
   getConfirmationEmail,
+  getConsentDetail,
   getRegistrationDesk,
+  markPaperConsent,
+  mintConsentLink,
+  purgeConsentDetails,
   renameAttendee,
 } from "@/lib/crm/registration-desk";
 import { formatWhen } from "@/lib/crm/format";
@@ -37,7 +41,10 @@ const FILTERS: { id: DeskFilter; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "cancelled", label: "Cancelled" },
   { id: "needs_look", label: "Needs a look" },
+  { id: "consent_missing", label: "Consent missing" },
 ];
+
+type ConsentDetail = NonNullable<Awaited<ReturnType<typeof getConsentDetail>>>;
 
 function downloadCsv(file: { csv: string; filename: string }) {
   const blob = new Blob([file.csv], { type: "text/csv" });
@@ -267,11 +274,31 @@ function RegistrationsInner() {
         </div>
       ) : null}
 
+      {data.role === "admin" ? (
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!data.event.purgeReady || busy}
+            onClick={() => {
+              if (!window.confirm("Delete medical notes and emergency contacts for this event?")) return;
+              void run(() => purgeConsentDetails({ data: { eventId } }), "Medical and emergency details deleted");
+            }}
+          >
+            Delete medical and emergency details
+          </Button>
+          {!data.event.purgeReady ? (
+            <p className="text-sm text-muted">Available 30 days after the event's last day.</p>
+          ) : null}
+        </div>
+      ) : null}
+
       {visible.length === 0 ? <p className="text-muted">No registrations match.</p> : null}
       <div className="space-y-4">
         {visible.map((registration) => (
           <RegistrationCard
             key={registration.id}
+            eventId={eventId}
             registration={registration}
             canEdit={canEdit}
             busy={busy}
@@ -309,6 +336,9 @@ function RegistrationsInner() {
                 () => cancelRegistration({ data: { eventId, registrationId: registration.id } }),
                 "Registration cancelled",
               );
+            }}
+            onRefresh={() => {
+              void load();
             }}
             onCopyEmail={() => {
               void run(async () => {
@@ -362,6 +392,7 @@ function CountTable({ headers, rows, empty }: { headers: string[]; rows: (string
 }
 
 function RegistrationCard({
+  eventId,
   registration,
   canEdit,
   busy,
@@ -376,6 +407,7 @@ function RegistrationCard({
   onCancelAttendee,
   onCancelRegistration,
   onCopyEmail,
+  onRefresh,
 }: {
   registration: Registration;
   canEdit: boolean;
@@ -391,7 +423,17 @@ function RegistrationCard({
   onCancelAttendee: (attendee: Attendee) => void;
   onCancelRegistration: () => void;
   onCopyEmail: () => void;
+  onRefresh: () => void;
+  eventId: string;
 }) {
+  const [linkFor, setLinkFor] = useState<string | null>(null);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [paperFor, setPaperFor] = useState<string | null>(null);
+  const [paperName, setPaperName] = useState("");
+  const [paperPhone, setPaperPhone] = useState("");
+  const [detailFor, setDetailFor] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ConsentDetail | null>(null);
+
   return (
     <article className="space-y-3 rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -466,6 +508,130 @@ function RegistrationCard({
                 ) : null}
               </div>
             )}
+            {attendee.isMinor ? (
+              <p className={attendee.consentOnFile ? "text-sm font-medium text-ok" : "text-sm font-medium text-danger"}>
+                {attendee.consentOnFile ? "Consent on file" : "Consent missing"}
+              </p>
+            ) : null}
+            {canEdit && attendee.isMinor && !attendee.cancelled ? (
+              <div className="flex flex-wrap gap-2">
+                {attendee.consentOnFile ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      void getConsentDetail({ data: { eventId, attendeeId: attendee.id } })
+                        .then((row) => {
+                          if (!row) {
+                            toast.error("No consent on file.");
+                            return;
+                          }
+                          setDetail(row);
+                          setDetailFor(attendee.id);
+                        })
+                        .catch((err) => toast.error(err instanceof Error ? err.message : "Could not load consent"));
+                    }}
+                  >
+                    View consent
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        void mintConsentLink({ data: { eventId, attendeeId: attendee.id } })
+                          .then(async (result) => {
+                            const url = `${window.location.origin}${result.path}`;
+                            setLinkFor(attendee.id);
+                            setLinkUrl(url);
+                            try {
+                              await navigator.clipboard.writeText(url);
+                            } catch {
+                              // The field below still shows the link.
+                            }
+                            toast.success("Consent link copied");
+                          })
+                          .catch((err) => toast.error(err instanceof Error ? err.message : "Could not make a consent link"));
+                      }}
+                    >
+                      Copy consent link
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        setPaperFor(attendee.id);
+                        setPaperName("");
+                        setPaperPhone("");
+                      }}
+                    >
+                      Mark paper consent received
+                    </Button>
+                  </>
+                )}
+              </div>
+            ) : null}
+            {linkFor === attendee.id ? <Input readOnly value={linkUrl} aria-label="Consent link" /> : null}
+            {paperFor === attendee.id ? (
+              <form
+                className="flex flex-wrap items-center gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void markPaperConsent({
+                    data: {
+                      eventId,
+                      attendeeId: attendee.id,
+                      guardianName: paperName,
+                      guardianPhone: paperPhone,
+                    },
+                  })
+                    .then(() => {
+                      setPaperFor(null);
+                      toast.success("Paper consent received");
+                      onRefresh();
+                    })
+                    .catch((err) => toast.error(err instanceof Error ? err.message : "Could not save consent"));
+                }}
+              >
+                <Input
+                  value={paperName}
+                  onChange={(event) => setPaperName(event.target.value)}
+                  aria-label="Guardian name"
+                  placeholder="Guardian name"
+                  required
+                />
+                <Input
+                  value={paperPhone}
+                  onChange={(event) => setPaperPhone(event.target.value)}
+                  aria-label="Guardian phone"
+                  placeholder="Guardian phone"
+                  required
+                />
+                <Button type="submit" disabled={busy}>
+                  Save paper consent
+                </Button>
+              </form>
+            ) : null}
+            {detailFor === attendee.id && detail ? (
+              <dl className="space-y-1 text-sm">
+                <div>Guardian: {detail.guardianName}</div>
+                <div>Phone: {detail.guardianPhone}</div>
+                {detail.guardianEmail ? <div>Email: {detail.guardianEmail}</div> : null}
+                {detail.relationship ? <div>Relationship: {detail.relationship}</div> : null}
+                {detail.emergencyName || detail.emergencyPhone ? (
+                  <div>
+                    Emergency: {[detail.emergencyName, detail.emergencyPhone].filter(Boolean).join(" · ")}
+                  </div>
+                ) : null}
+                {detail.medicalNotes ? <div>Medical notes: {detail.medicalNotes}</div> : null}
+                <div>Photo release: {detail.photoRelease ? "Yes" : "No"}</div>
+                <div>Method: {detail.method}</div>
+              </dl>
+            ) : null}
           </li>
         ))}
       </ul>
