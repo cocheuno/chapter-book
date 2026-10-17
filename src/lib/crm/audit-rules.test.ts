@@ -118,6 +118,13 @@ describe("auditSummary", () => {
     assert.equal(auditSummary("password_reset_used", {}), "");
     assert.equal(auditSummary("not_a_real_action", { token: "nope" }), "");
   });
+
+  it("names both people when two records are merged", () => {
+    assert.equal(
+      auditSummary("person_merged", { mergedName: "Ben Example", keptName: "Ada Example" }),
+      "Ben Example → Ada Example",
+    );
+  });
 });
 
 describe("auditHref", () => {
@@ -133,6 +140,6 @@ describe("auditHref", () => {
     assert.equal(auditHref("mailing", "mail-1", {}), "/mail/mail-1");
     assert.equal(auditHref("operator", "user-1", {}), "/chapter");
     assert.equal(auditHref("chapter", "chapter-1", {}), "/chapter");
-    assert.equal(auditHref("person", "per-1", {}), null);
+    assert.equal(auditHref("person", "per-1", {}), "/people/per-1");
   });
 });

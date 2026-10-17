@@ -8,7 +8,10 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ListSelect } from "@/components/list-select";
 import { PersonPartnersFields } from "@/components/person-partners-fields";
 import { roleLabel } from "@/lib/crm/constants";
-import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, setPersonStatus, updatePerson } from "@/lib/crm/actions";
+import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, searchAll, setPersonStatus, updatePerson } from "@/lib/crm/actions";
+import { getSessionContext } from "@/lib/crm/member";
+import { MERGE_FIELDS } from "@/lib/crm/person-merge";
+import { getMergePreview, mergePeople } from "@/lib/crm/person-merge-server";
 import { listedName } from "@/lib/crm/names";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { PERSON_STATUSES, deceasedMark } from "@/lib/crm/person-status";
@@ -58,10 +61,14 @@ function PersonInner() {
   });
   const [status, setStatus] = useState("active");
   const [deceasedOn, setDeceasedOn] = useState("");
+  const [role, setRole] = useState<"admin" | "editor" | "viewer" | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const navigate = Route.useNavigate();
   const latestId = useRef(personId);
   if (latestId.current !== personId) {
     latestId.current = personId;
     setData(null);
+    setMergeOpen(false);
   }
 
   function load() {
@@ -102,6 +109,11 @@ function PersonInner() {
   }
   useEffect(load, [personId]);
   useEffect(() => {
+    getSessionContext()
+      .then((session) => setRole(session.role))
+      .catch(() => setRole(null));
+  }, []);
+  useEffect(() => {
     if (!data) return;
     const person = data.person as Record<string, string | null>;
     if (person.id !== personId) return;
@@ -130,6 +142,18 @@ function PersonInner() {
       toast.error(err instanceof Error ? err.message : "Could not save");
     }
     load();
+  }
+
+  const canMerge = role === "admin" || role === "editor";
+
+  function onMerged(keepId: string, keptName: string) {
+    toast.success(`Merged into ${keptName}`);
+    setMergeOpen(false);
+    if (keepId === personId) {
+      load();
+      return;
+    }
+    void navigate({ to: "/people/$personId", params: { personId: keepId }, replace: true });
   }
 
   if (!data) return <p className="text-muted">Loading…</p>;
@@ -215,7 +239,16 @@ function PersonInner() {
             />
           </Field>
         )}
+        {canMerge && (
+          <Button type="button" variant="secondary" onClick={() => setMergeOpen(true)}>
+            Merge with…
+          </Button>
+        )}
       </div>
+
+      {mergeOpen && canMerge && (
+        <MergePanel personId={personId} heading={heading} onCancel={() => setMergeOpen(false)} onMerged={onMerged} />
+      )}
 
       <form
         className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"
@@ -398,5 +431,277 @@ function PersonInner() {
         </ul>
       </section>
     </div>
+  );
+}
+
+const MOVE_LINES: {
+  key: keyof Awaited<ReturnType<typeof getMergePreview>>["counts"];
+  label: string;
+}[] = [
+  { key: "participations", label: "Participations" },
+  { key: "affiliations", label: "Affiliations" },
+  { key: "roles", label: "Roles" },
+  { key: "tasks", label: "Tasks" },
+  { key: "touches", label: "Contact notes" },
+  { key: "letters", label: "Letters" },
+  { key: "registrations", label: "Registrations" },
+  { key: "attendees", label: "Attendees" },
+  { key: "celebrant", label: "Events as celebrant" },
+  { key: "speakerSlots", label: "Speaker slots" },
+];
+
+const FIELD_LABEL = new Map(MERGE_FIELDS.map((field) => [field.field, field.label]));
+
+function MergePanel({
+  personId,
+  heading,
+  onCancel,
+  onMerged,
+}: {
+  personId: string;
+  heading: string;
+  onCancel: () => void;
+  onMerged: (keepId: string, keptName: string) => void;
+}) {
+  type Preview = Awaited<ReturnType<typeof getMergePreview>>;
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<{ id: string; label: string; hint: string }[]>([]);
+  const [chosen, setChosen] = useState<{ id: string; label: string } | null>(null);
+  const [side, setSide] = useState<"this" | "other">("this");
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [picks, setPicks] = useState<Preview["defaultPicks"] | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const request = useRef(0);
+  const sending = useRef(false);
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setHits([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      searchAll({ data: query })
+        .then((rows) => {
+          setHits(
+            rows
+              .filter((row) => row.kind === "person" && row.id !== personId)
+              .map((row) => ({ id: row.id, label: row.label, hint: row.hint })),
+          );
+        })
+        .catch(() => setHits([]));
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [query, personId]);
+
+  async function loadPreview(keepId: string, mergeId: string) {
+    const ticket = ++request.current;
+    setLoading(true);
+    setPreview(null);
+    try {
+      const next = await getMergePreview({ data: { keepId, mergeId } });
+      if (request.current !== ticket) return;
+      setPreview(next);
+      setPicks(next.defaultPicks);
+    } catch (err) {
+      if (request.current !== ticket) return;
+      toast.error(err instanceof Error ? err.message : "Could not load the merge");
+    } finally {
+      if (request.current === ticket) setLoading(false);
+    }
+  }
+
+  function choose(hit: { id: string; label: string }) {
+    setChosen(hit);
+    setQuery("");
+    setHits([]);
+    setSide("this");
+    setConfirmText("");
+    void loadPreview(personId, hit.id);
+  }
+
+  function chooseSide(next: "this" | "other") {
+    if (!chosen || next === side) return;
+    setSide(next);
+    setConfirmText("");
+    const keepId = next === "this" ? personId : chosen.id;
+    const mergeId = next === "this" ? chosen.id : personId;
+    void loadPreview(keepId, mergeId);
+  }
+
+  async function submit() {
+    if (!preview || !picks || confirmText.trim() !== "MERGE" || sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    try {
+      const result = await mergePeople({
+        data: {
+          keepId: preview.keep.id,
+          mergeId: preview.other.id,
+          picks,
+          confirm: "MERGE",
+        },
+      });
+      onMerged(result.id, preview.keep.display_name || "the kept record");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not merge");
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+  }
+
+  const otherName =
+    preview == null
+      ? (chosen?.label ?? "")
+      : side === "this"
+        ? preview.other.display_name || chosen?.label || ""
+        : preview.keep.display_name || chosen?.label || "";
+  const sameCount = preview ? MERGE_FIELDS.length - preview.differingFields.length : 0;
+  const moveLines = preview ? MOVE_LINES.filter((line) => preview.counts[line.key] > 0) : [];
+
+  return (
+    <section className="space-y-4 rounded-xl border border-line bg-surface p-4">
+      <Field label="Find the other record">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Name or email"
+          autoComplete="off"
+          autoFocus
+        />
+      </Field>
+      {hits.length > 0 && (
+        <ul className="overflow-hidden rounded-lg border border-line">
+          {hits.map((hit) => (
+            <li key={hit.id}>
+              <button
+                type="button"
+                className="block w-full px-3 py-2.5 text-left text-sm hover:bg-paper-2"
+                onClick={() => choose(hit)}
+              >
+                <span className="font-medium">{hit.label}</span>
+                <span className="ml-2 text-muted">{hit.hint}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {chosen && (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-ink-soft">Keep which record?</legend>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="merge-keep"
+              checked={side === "this"}
+              onChange={() => chooseSide("this")}
+            />
+            This record — {heading}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="merge-keep"
+              checked={side === "other"}
+              onChange={() => chooseSide("other")}
+            />
+            The other record — {otherName}
+          </label>
+        </fieldset>
+      )}
+
+      {loading && <p className="text-sm text-muted">Loading…</p>}
+
+      {preview && picks && (
+        <>
+          {preview.differingFields.length > 0 && (
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-line text-left">
+                  <th className="py-2 pr-3 font-medium">Field</th>
+                  <th className="py-2 pr-3 font-medium">{preview.keep.display_name || "Kept record"}</th>
+                  <th className="py-2 font-medium">{preview.other.display_name || "Other record"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.differingFields.map((field) => (
+                  <tr key={field} className="border-b border-line">
+                    <td className="py-2 pr-3">{FIELD_LABEL.get(field) ?? field}</td>
+                    <td className="py-2 pr-3">
+                      <label className="flex items-start gap-2">
+                        <input
+                          type="radio"
+                          name={`merge-field-${field}`}
+                          checked={picks[field] === "keep"}
+                          onChange={() => setPicks({ ...picks, [field]: "keep" })}
+                        />
+                        <span className="break-words">{preview.keep[field] || "—"}</span>
+                      </label>
+                    </td>
+                    <td className="py-2">
+                      <label className="flex items-start gap-2">
+                        <input
+                          type="radio"
+                          name={`merge-field-${field}`}
+                          checked={picks[field] === "other"}
+                          onChange={() => setPicks({ ...picks, [field]: "other" })}
+                        />
+                        <span className="break-words">{preview.other[field] || "—"}</span>
+                      </label>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="text-sm text-ink-soft">{sameCount} other fields are the same.</p>
+          <p className="text-sm text-ink-soft">
+            Notes from both records are kept. If the other record has a different email, it is added to the notes.
+          </p>
+          <div>
+            <h2 className="mb-1 text-sm font-medium">What moves to the kept record</h2>
+            {moveLines.length === 0 ? (
+              <p className="text-sm text-ink-soft">Nothing else moves.</p>
+            ) : (
+              <ul className="text-sm">
+                {moveLines.map((line) => (
+                  <li key={line.key}>
+                    {line.label}: {preview.counts[line.key]}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <Field label="Type MERGE to confirm">
+            <Input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              autoComplete="off"
+            />
+          </Field>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy || confirmText.trim() !== "MERGE"}
+              onClick={() => void submit()}
+            >
+              Merge records
+            </Button>
+            <Button type="button" variant="secondary" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      )}
+      {!(preview && picks) && (
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+      )}
+    </section>
   );
 }

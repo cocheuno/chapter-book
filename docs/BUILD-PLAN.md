@@ -175,7 +175,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | **Data quality and reach** | | | | |
 | 30 | Merge people | 23 | Ready | C15 |
 | 31 | CSV import with duplicate preview | 07, 34 | Ready | §8 |
-| 32 | Full export | 07, 23 | Ready | §8, C17 |
+| 32 | Full export | 07, 23 | Done (PR 43) | §8, C17 |
 | 33 | Tags and saved segments | — | Ready | §8 |
 | 34 | Secondary emails | — | Ready | §8 |
 | 35 | Task assignee and "My tasks" | — | Ready | §8 |
