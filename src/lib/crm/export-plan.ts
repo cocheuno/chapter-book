@@ -17,6 +17,7 @@ export type ExportEntry = {
 export const EXPORT_PLAN: readonly ExportEntry[] = [
   { file: "chapter.csv", table: "chapters", scope: "self" },
   { file: "people.csv", table: "persons", scope: "chapter" },
+  { file: "person_emails.csv", table: "person_emails", scope: "chapter" },
   { file: "person_roles.csv", table: "person_roles", scope: { via: "persons", fk: "person_id" } },
   {
     file: "person_relationships.csv",

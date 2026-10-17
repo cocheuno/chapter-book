@@ -20,6 +20,7 @@ const GROUPS: { value: "" | AuditGroup; label: string }[] = [
   { value: "exports", label: "Exports" },
   { value: "mail", label: "Mail" },
   { value: "chapter", label: "Chapter" },
+  { value: "people", label: "People" },
 ];
 
 type ActivityRow = Awaited<ReturnType<typeof listActivity>>["rows"][number];

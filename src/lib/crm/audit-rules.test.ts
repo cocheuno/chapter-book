@@ -11,8 +11,16 @@ import {
 } from "./audit-rules.ts";
 
 describe("AUDIT_GROUPS", () => {
-  it("names the six activity filters", () => {
-    assert.deepEqual(AUDIT_GROUPS, ["operators", "website", "registration", "exports", "mail", "chapter"]);
+  it("names the activity filters", () => {
+    assert.deepEqual(AUDIT_GROUPS, [
+      "operators",
+      "website",
+      "registration",
+      "exports",
+      "mail",
+      "chapter",
+      "people",
+    ]);
   });
 });
 
@@ -54,6 +62,10 @@ describe("AUDIT_ACTIONS", () => {
       "mailing_sent",
       "chapter_saved",
       "list_item_removed",
+      "person_merged",
+      "email_added",
+      "email_removed",
+      "email_made_main",
     ];
     for (const action of required) {
       const meta = AUDIT_ACTIONS[action];
@@ -64,6 +76,13 @@ describe("AUDIT_ACTIONS", () => {
     assert.deepEqual(actionsInGroup("exports"), ["export"]);
     assert.equal(actionsInGroup("operators").includes("role_changed"), true);
     assert.equal(actionsInGroup("mail").includes("export"), false);
+    assert.deepEqual(actionsInGroup("people"), [
+      "person_merged",
+      "email_added",
+      "email_removed",
+      "email_made_main",
+    ]);
+    assert.equal(actionsInGroup("chapter").includes("person_merged"), false);
   });
 });
 
@@ -123,6 +142,18 @@ describe("auditSummary", () => {
     assert.equal(
       auditSummary("person_merged", { mergedName: "Ben Example", keptName: "Ada Example" }),
       "Ben Example → Ada Example",
+    );
+  });
+
+  it("shows the address when an other email is added or removed", () => {
+    assert.equal(
+      auditSummary("email_added", { email: "ada.work@example.com", label: "work" }),
+      "ada.work@example.com",
+    );
+    assert.equal(auditSummary("email_removed", { email: "ada.work@example.com" }), "ada.work@example.com");
+    assert.equal(
+      auditSummary("email_made_main", { from: "ada@example.com", to: "ada.work@example.com" }),
+      "ada@example.com → ada.work@example.com",
     );
   });
 });

@@ -5,6 +5,7 @@ import {
   affiliationPlan,
   defaultPicks,
   differingFields,
+  leftoverEmails,
   mergeParticipation,
   mergePersonFields,
 } from "./person-merge.ts";
@@ -176,15 +177,12 @@ describe("mergePersonFields", () => {
     assert.equal(merged.created_by, "keeper");
   });
 
-  it("keeps both notes and adds the other email on its own line", () => {
+  it("keeps both notes without adding an email line", () => {
     const merged = mergePersonFields(keep, other, defaultPicks(keep, other), TODAY);
-    assert.equal(
-      merged.notes,
-      "Called in March\n\nMet at the lecture\nOther email (merged 2026-10-16): Ben@Example.com",
-    );
+    assert.equal(merged.notes, "Called in March\n\nMet at the lecture");
   });
 
-  it("skips the email line when that email is the one being kept", () => {
+  it("keeps both notes when the other email is chosen", () => {
     const picks = defaultPicks(keep, other);
     picks.email = "other";
     const merged = mergePersonFields(keep, other, picks, TODAY);
@@ -192,7 +190,7 @@ describe("mergePersonFields", () => {
     assert.equal(merged.notes, "Called in March\n\nMet at the lecture");
   });
 
-  it("skips the email line when the addresses differ only by case", () => {
+  it("keeps the shared notes when the emails differ only by case", () => {
     const merged = mergePersonFields(
       person({ email: "ada@example.com", notes: "Called in March" }),
       person({ email: " Ada@Example.com ", notes: "Called in March" }),
@@ -202,17 +200,17 @@ describe("mergePersonFields", () => {
     assert.equal(merged.notes, "Called in March");
   });
 
-  it("adds only the email line when the other notes are blank", () => {
+  it("leaves notes empty when both notes are blank", () => {
     const merged = mergePersonFields(
       person({ email: "ada@example.com", notes: "" }),
       person({ email: "ben@example.com", notes: " " }),
       {},
       TODAY,
     );
-    assert.equal(merged.notes, "Other email (merged 2026-10-16): ben@example.com");
+    assert.equal(merged.notes, null);
   });
 
-  it("does not append the same notes or email line on a second pass", () => {
+  it("does not append the same notes on a second pass", () => {
     const once = mergePersonFields(keep, other, {}, TODAY);
     const twice = mergePersonFields({ ...keep, notes: once.notes }, other, {}, TODAY);
     assert.equal(twice.notes, once.notes);
@@ -260,6 +258,30 @@ describe("mergePersonFields", () => {
     );
     assert.equal(tie.created_at, "2024-06-01T00:00:00.000Z");
     assert.equal(tie.last_touch_at, "2024-02-01T00:00:00Z");
+  });
+});
+
+describe("leftoverEmails", () => {
+  it("keeps both main emails when neither is the chosen address", () => {
+    assert.deepEqual(
+      leftoverEmails({ email: "Ada@Example.com" }, { email: "ben@example.com" }, ""),
+      ["ada@example.com", "ben@example.com"],
+    );
+  });
+
+  it("drops blanks, the chosen address, and duplicates", () => {
+    assert.deepEqual(
+      leftoverEmails({ email: "  " }, { email: "Ada@Example.com" }, "ada@example.com"),
+      [],
+    );
+    assert.deepEqual(
+      leftoverEmails({ email: "ada@example.com" }, { email: " Ada@Example.com " }, "ben@example.com"),
+      ["ada@example.com"],
+    );
+    assert.deepEqual(
+      leftoverEmails({ email: null }, { email: "ben@example.com" }, "ada@example.com"),
+      ["ben@example.com"],
+    );
   });
 });
 
