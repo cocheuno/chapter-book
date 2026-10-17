@@ -38,6 +38,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   mailing_sent: { label: "Mail sent", group: "mail" },
   chapter_saved: { label: "Chapter saved", group: "chapter" },
   list_item_removed: { label: "List item removed", group: "chapter" },
+  person_merged: { label: "People merged", group: "chapter" },
 };
 
 const SECRET_KEY = /token|hash|password|secret|html|body|link|url/i;
@@ -132,6 +133,8 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
       return text(row.code);
     case "list_item_removed":
       return [text(row.list), text(row.value)].filter(Boolean).join(": ");
+    case "person_merged":
+      return `${text(row.mergedName)} → ${text(row.keptName)}`;
     default:
       return "";
   }
@@ -152,5 +155,6 @@ export function auditHref(
   if (entity === "site_item" && id && action !== "site_item_removed") return `/website?item=${id}`;
   if (entity === "mailing" && id) return `/mail/${id}`;
   if (entity === "operator" || entity === "chapter") return "/chapter";
+  if (entity === "person" && id) return `/people/${id}`;
   return null;
 }
