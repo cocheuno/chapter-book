@@ -15,7 +15,7 @@ const defaults = {
 };
 
 const baseSql =
-  "where p.chapter_id = $1 and p.email_unsubscribed = false and p.status <> 'do_not_contact' and p.status <> 'deceased'";
+  "where p.chapter_id = $1 and p.forgotten_at is null and p.email_unsubscribed = false and p.status <> 'do_not_contact' and p.status <> 'deceased'";
 
 describe("parseSegmentFilter", () => {
   it("fills empty lists and turns the three excludes on", () => {
@@ -55,7 +55,7 @@ describe("segmentWhere", () => {
     const roles = segmentWhere(parseSegmentFilter({ roles: ["educator", "student"] }));
     assert.equal(
       roles.sql,
-      "where p.chapter_id = $1 and exists (select 1 from person_roles r where r.person_id = p.id and r.role_key = any($2::text[])) and p.email_unsubscribed = false and p.status <> 'do_not_contact' and p.status <> 'deceased'",
+      "where p.chapter_id = $1 and p.forgotten_at is null and exists (select 1 from person_roles r where r.person_id = p.id and r.role_key = any($2::text[])) and p.email_unsubscribed = false and p.status <> 'do_not_contact' and p.status <> 'deceased'",
     );
     assert.deepEqual(roles.params, [["educator", "student"]]);
 
@@ -121,7 +121,7 @@ describe("segmentWhere", () => {
         excludeDeceased: false,
       }),
     );
-    assert.equal(open.sql, "where p.chapter_id = $1");
+    assert.equal(open.sql, "where p.chapter_id = $1 and p.forgotten_at is null");
     assert.deepEqual(open.params, []);
   });
 

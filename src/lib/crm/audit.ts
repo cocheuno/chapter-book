@@ -28,15 +28,17 @@ export async function recordAudit(
     entityId: string | null;
     detail: Record<string, unknown>;
   },
-) {
+): Promise<string> {
   const detail = safeDetail(entry.detail);
+  const id = nid();
   await sql`
     insert into audit_log (id, chapter_id, actor, action, entity, entity_id, detail)
     values (
-      ${nid()}, ${entry.chapterId}, ${entry.actor}, ${entry.action}, ${entry.entity}, ${entry.entityId},
+      ${id}, ${entry.chapterId}, ${entry.actor}, ${entry.action}, ${entry.entity}, ${entry.entityId},
       ${JSON.stringify(detail)}::jsonb
     )
   `;
+  return id;
 }
 
 function asDetail(value: unknown): Record<string, unknown> {
