@@ -6,6 +6,7 @@ import { PartnerPeopleFields } from "@/components/partner-people-fields";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { isSchoolType, orgTypeLabel } from "@/lib/crm/constants";
+import { houseAttendanceLine } from "@/lib/crm/engagement";
 import {
   addAffiliation,
   getOrganization,
@@ -119,6 +120,7 @@ function OrgInner() {
           {o.diocese_name ? ` · ${o.diocese_name}` : ""}
         </p>
         <h1 className="font-display text-3xl">{String(o.name)}</h1>
+        <p className="mt-1 text-sm text-ink-soft">{houseAttendanceLine(data.peopleCount)}</p>
         <p className="text-ink-soft">
           {[o.street, o.street2, o.city, o.state, o.postal_code, o.country].filter(Boolean).join(", ")}
         </p>
