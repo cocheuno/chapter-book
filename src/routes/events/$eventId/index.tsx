@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Crumbs } from "@/components/crumbs";
+import { TaskAssigneeSelect } from "@/components/task-assignee";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   setTaskStatus,
   updateEvent,
 } from "@/lib/crm/actions";
+import { listAssignees, setTaskAssignee } from "@/lib/crm/task-assign";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -45,11 +47,13 @@ function EventInner() {
   const [pieceKind, setPieceKind] = useState("lecture");
   const [pieceTitle, setPieceTitle] = useState("");
   const [webPage, setWebPage] = useState<{ id: string; slug: string | null; published: boolean } | null>(null);
+  const [assignees, setAssignees] = useState<{ userId: string; name: string }[]>([]);
   const latestId = useRef(eventId);
   if (latestId.current !== eventId) {
     latestId.current = eventId;
     setData(null);
     setWebPage(null);
+    setAssignees([]);
   }
 
   function load() {
@@ -59,6 +63,18 @@ function EventInner() {
     getEvent({ data: id }).then((d) => {
       if (latestId.current !== id) return;
       setData(d);
+      if (d.role === "viewer") {
+        setAssignees([]);
+        return;
+      }
+      listAssignees()
+        .then((rows) => {
+          if (latestId.current !== id) return;
+          setAssignees(rows);
+        })
+        .catch(() => {
+          if (latestId.current === id) setAssignees([]);
+        });
     });
     getEventWebPage({ data: id }).then((page) => {
       if (latestId.current !== id) return;
@@ -291,10 +307,11 @@ function EventInner() {
                   />
                   <span className={t.status === "done" ? "text-muted line-through" : ""}>
                     {t.title}
-                    {(t.due_on || t.hat) && (
+                    {(t.due_on || t.hat || t.assignee_name) && (
                       <span className="block text-xs text-muted tabular-nums">
                         {t.due_on}
                         {t.hat ? ` · ${hatLabel(t.hat)}` : ""}
+                        {t.assignee_name ? ` · ${t.assignee_name}` : ""}
                       </span>
                     )}
                     {offerDate && planned && (
@@ -310,6 +327,18 @@ function EventInner() {
                       </span>
                     )}
                   </span>
+                  {data.role !== "viewer" ? (
+                    <TaskAssigneeSelect
+                      assigneeId={t.assignee_user_id}
+                      assigneeName={t.assignee_name}
+                      assignees={assignees}
+                      onChange={(userId) =>
+                        setTaskAssignee({ data: { taskId: t.id, userId } })
+                          .then(load)
+                          .catch((error) => toast.error(error instanceof Error ? error.message : "Could not assign"))
+                      }
+                    />
+                  ) : null}
                 </li>
               );
             })}
