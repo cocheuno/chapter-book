@@ -71,6 +71,7 @@ describe("AUDIT_ACTIONS", () => {
       "segment_saved",
       "segment_deleted",
       "person_forgotten",
+      "people_imported",
     ];
     for (const action of required) {
       const meta = AUDIT_ACTIONS[action];
@@ -89,6 +90,7 @@ describe("AUDIT_ACTIONS", () => {
       "segment_saved",
       "segment_deleted",
       "person_forgotten",
+      "people_imported",
     ]);
     assert.equal(actionsInGroup("chapter").includes("person_merged"), false);
   });
@@ -154,6 +156,10 @@ describe("auditSummary", () => {
     assert.equal(auditSummary("segment_saved", { name: "Teachers" }), "Teachers");
     assert.equal(auditSummary("segment_deleted", { name: "Teachers" }), "Teachers");
     assert.equal(auditSummary("person_forgotten", { on: "2026-10-18" }), "2026-10-18");
+    assert.equal(
+      auditSummary("people_imported", { created: 2, tasks: 1, skipped: 3 }),
+      "2 created, 1 tasks",
+    );
   });
 
   it("shows the address when an other email is added or removed", () => {
