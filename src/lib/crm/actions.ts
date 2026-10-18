@@ -24,6 +24,7 @@ import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./mem
 import { csvRow } from "./csv";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
+import { parseSegmentFilter, segmentWhere } from "./segment-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
 import { withAssignee } from "./task-assign-rules";
 
@@ -348,10 +349,26 @@ const personInput = z.object({
   roles: z.array(z.string()).min(1),
 });
 
+function readPeopleQuery(input: unknown): { role: string | null; tagId: string | null } {
+  if (typeof input === "string") {
+    const role = input.trim();
+    return { role: role || null, tagId: null };
+  }
+  if (input && typeof input === "object") {
+    const row = input as { role?: unknown; tagId?: unknown };
+    const role = typeof row.role === "string" ? row.role.trim() : "";
+    const tagId = typeof row.tagId === "string" ? row.tagId.trim() : "";
+    return { role: role || null, tagId: tagId || null };
+  }
+  return { role: null, tagId: null };
+}
+
 export const listPeople = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .validator((role: string | undefined) => role)
-  .handler(async ({ context, data: role }) => {
+  .validator(readPeopleQuery)
+  .handler(async ({ context, data }) => {
+    const role = data.role;
+    const tagId = data.tagId;
     const m = await ctx(context.userId);
     const sql = await getSql();
     const rows = await sql<{
@@ -377,6 +394,11 @@ export const listPeople = createServerFn({ method: "GET" })
       where p.chapter_id = ${m.chapterId}
         and (${role ?? null}::text is null or exists (
           select 1 from person_roles r where r.person_id = p.id and r.role_key = ${role ?? ""}
+        ))
+        and (${tagId ?? null}::text is null or exists (
+          select 1 from person_tags pt
+          join tags tg on tg.id = pt.tag_id and tg.chapter_id = ${m.chapterId}
+          where pt.person_id = p.id and pt.tag_id = ${tagId ?? ""}
         ))
       order by coalesce(p.family_name, p.display_name), p.given_name, p.display_name
     `;
@@ -487,6 +509,13 @@ export const getPerson = createServerFn({ method: "GET" })
       count: Number(attendanceRows[0]?.count ?? 0),
       lastDate: attendanceRows[0]?.last_date ?? null,
     };
+    const tags = await sql<{ id: string; name: string }>`
+      select t.id, t.name
+      from person_tags pt
+      join tags t on t.id = pt.tag_id and t.chapter_id = ${m.chapterId}
+      where pt.person_id = ${id}
+      order by lower(t.name), t.name
+    `;
     return {
       person: rows[0],
       roles: roles.map((r) => r.role_key),
@@ -496,6 +525,7 @@ export const getPerson = createServerFn({ method: "GET" })
       celebrated,
       touches,
       attendance,
+      tags,
     };
   });
 
@@ -2274,6 +2304,37 @@ async function resolveAudience(
       where p.chapter_id = ${m.chapterId}
     `;
     for (const p of people) pushPerson(p);
+  } else if (source.startsWith("segment:")) {
+    const segmentId = source.slice("segment:".length);
+    const saved = await sql<{ filter: unknown }>`
+      select filter from segments where id = ${segmentId} and chapter_id = ${m.chapterId}
+    `;
+    if (!saved[0]) throw new Error("Saved list not found.");
+    const filter = parseSegmentFilter(saved[0].filter);
+    const where = segmentWhere(filter, 1);
+    const matched = await sql.query<{
+      id: string;
+      display_name: string;
+      honorific: string | null;
+      given_name: string | null;
+      family_name: string | null;
+      religious_title: string | null;
+      academic_title: string | null;
+      post_nominals: string | null;
+      salutation_override: string | null;
+      email: string | null;
+      email_unsubscribed: boolean;
+      news_consent: string | null;
+      status: string;
+    }>(
+      `select p.id, p.display_name, p.honorific, p.given_name, p.family_name,
+              p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
+              p.email, p.email_unsubscribed, p.news_consent, p.status
+       from persons p
+       ${where.sql}`,
+      [m.chapterId, ...where.params],
+    );
+    for (const person of matched) pushPerson(person);
   }
   return { recipients, skips };
 }
