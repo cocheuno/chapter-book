@@ -25,6 +25,7 @@ import { csvRow } from "./csv";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
+import { withAssignee } from "./task-assign-rules";
 
 type Row = Record<string, string | number | boolean | null>;
 
@@ -111,19 +112,48 @@ export const getHome = createServerFn({ method: "GET" })
       `;
       openChecklist = t[0]?.n ?? 0;
     }
-    const tasks = await sql<{
+    const taskRows = await sql<{
       id: string;
       title: string;
       due_on: string | null;
       event_id: string | null;
       hat: string | null;
+      assignee_user_id: string | null;
+      assignee_user_name: string | null;
+      assignee_email: string | null;
     }>`
-      select id, title, due_on, event_id, hat
-      from tasks
-      where chapter_id = ${m.chapterId} and status = 'open'
-      order by due_on nulls last
+      select t.id, t.title, t.due_on, t.event_id, t.hat, t.assignee_user_id,
+        u.name as assignee_user_name, u.email as assignee_email
+      from tasks t
+      left join "user" u on u.id = t.assignee_user_id
+      where t.chapter_id = ${m.chapterId} and t.status = 'open'
+      order by t.due_on nulls last
       limit 6
     `;
+    const tasks = taskRows.map(withAssignee);
+    const myTaskRows = await sql<{
+      id: string;
+      title: string;
+      due_on: string | null;
+      hat: string | null;
+      event_id: string | null;
+      event_title: string | null;
+      assignee_user_id: string | null;
+      assignee_user_name: string | null;
+      assignee_email: string | null;
+    }>`
+      select t.id, t.title, t.due_on, t.hat, t.event_id, e.title as event_title,
+        t.assignee_user_id, u.name as assignee_user_name, u.email as assignee_email
+      from tasks t
+      left join events e on e.id = t.event_id and e.chapter_id = t.chapter_id
+      left join "user" u on u.id = t.assignee_user_id
+      where t.chapter_id = ${m.chapterId}
+        and t.status = 'open'
+        and t.assignee_user_id = ${m.userId}
+      order by t.due_on nulls last
+      limit 20
+    `;
+    const myTasks = myTaskRows.map(withAssignee);
     const quiet = await sql<{
       id: string;
       name: string;
@@ -211,6 +241,7 @@ export const getHome = createServerFn({ method: "GET" })
       rsvp,
       openChecklist,
       tasks,
+      myTasks,
       quietSchools: quiet,
       clergyReminder: clergyReminderDue(today),
       clergyTaskExists: Boolean(clergyTask[0]),
@@ -1162,16 +1193,25 @@ export const getEvent = createServerFn({ method: "GET" })
     const sessions = await sql<{ id: string; title: string; room: string | null; speaker_person_id: string | null }>`
       select id, title, room, speaker_person_id from event_sessions where event_id = ${id} order by sort_order
     `;
-    const tasks = await sql<{
+    const taskRows = await sql<{
       id: string;
       title: string;
       due_on: string | null;
       status: string;
       checklist_key: string | null;
       hat: string | null;
+      assignee_user_id: string | null;
+      assignee_user_name: string | null;
+      assignee_email: string | null;
     }>`
-      select id, title, due_on, status, checklist_key, hat from tasks where event_id = ${id} order by due_on nulls last
+      select t.id, t.title, t.due_on, t.status, t.checklist_key, t.hat, t.assignee_user_id,
+        u.name as assignee_user_name, u.email as assignee_email
+      from tasks t
+      left join "user" u on u.id = t.assignee_user_id
+      where t.event_id = ${id} and t.chapter_id = ${m.chapterId}
+      order by t.due_on nulls last
     `;
+    const tasks = taskRows.map(withAssignee);
     const counts = await sql<{ guest_status: string | null; n: number }>`
       select guest_status, coalesce(sum(party_size), 0)::int as n from participations
       where event_id = ${id} and party_type = 'person' and guest_status is not null
@@ -1193,6 +1233,7 @@ export const getEvent = createServerFn({ method: "GET" })
       pieces,
       sessions,
       tasks,
+      role: m.role,
       counts,
       companion: companion[0] ?? null,
       checklistStart: start[0]?.d ?? null,

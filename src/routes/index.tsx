@@ -2,10 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { addClergyCheckTask, getHome } from "@/lib/crm/actions";
+import { TaskAssigneeSelect } from "@/components/task-assignee";
+import { addClergyCheckTask, getHome, setTaskStatus } from "@/lib/crm/actions";
 import { hatLabel } from "@/lib/crm/constants";
 import { formatWhen } from "@/lib/crm/format";
 import { CLERGY_CHECK_TITLE } from "@/lib/crm/person-status";
+import { listAssignees, setTaskAssignee } from "@/lib/crm/task-assign";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -21,10 +23,20 @@ function HomePage() {
 
 function HomeInner() {
   const [data, setData] = useState<Awaited<ReturnType<typeof getHome>> | null>(null);
+  const [assignees, setAssignees] = useState<{ userId: string; name: string }[]>([]);
   const [err, setErr] = useState<string | null>(null);
   function load() {
     getHome()
-      .then(setData)
+      .then((home) => {
+        setData(home);
+        if (home.member.role === "viewer") {
+          setAssignees([]);
+          return;
+        }
+        listAssignees()
+          .then(setAssignees)
+          .catch(() => setAssignees([]));
+      })
       .catch((e) => setErr(e instanceof Error ? e.message : "Could not load"));
   }
   useEffect(load, []);
@@ -119,6 +131,43 @@ function HomeInner() {
         </section>
       ) : null}
 
+      {data.myTasks.length > 0 ? (
+        <section>
+          <h2 className="mb-3 font-display text-xl">My tasks</h2>
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+            {data.myTasks.map((t) => (
+              <li key={t.id} className="flex min-h-11 items-center justify-between gap-3 px-4 py-2">
+                <label className="flex min-w-0 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="size-5 shrink-0"
+                    checked={false}
+                    onChange={() =>
+                      setTaskStatus({ data: { id: t.id, status: "done" } })
+                        .then(load)
+                        .catch((error) => toast.error(error instanceof Error ? error.message : "Could not update"))
+                    }
+                  />
+                  <span>{t.title}</span>
+                </label>
+                <span className="text-sm text-muted tabular-nums">
+                  {t.due_on ?? ""}
+                  {t.event_id ? (
+                    <>
+                      {" "}
+                      <Link to="/events/$eventId" params={{ eventId: t.event_id }} className="text-bronze hover:underline">
+                        {t.event_title || "Event"}
+                      </Link>
+                    </>
+                  ) : null}
+                  {t.hat ? ` · ${hatLabel(t.hat)}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section>
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-display text-xl">Due this week</h2>
@@ -128,11 +177,26 @@ function HomeInner() {
         ) : (
           <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
             {data.tasks.map((t) => (
-              <li key={t.id} className="flex min-h-11 items-center justify-between gap-3 px-4 py-2">
+              <li key={t.id} className="flex min-h-11 flex-wrap items-center justify-between gap-3 px-4 py-2">
                 <span>{t.title}</span>
-                <span className="text-sm text-muted tabular-nums">
-                  {t.due_on ?? ""}
-                  {t.hat ? ` · ${hatLabel(t.hat)}` : ""}
+                <span className="flex flex-wrap items-center gap-2 text-sm text-muted tabular-nums">
+                  <span>
+                    {t.due_on ?? ""}
+                    {t.hat ? ` · ${hatLabel(t.hat)}` : ""}
+                    {t.assignee_name ? ` · ${t.assignee_name}` : ""}
+                  </span>
+                  {data.member.role !== "viewer" ? (
+                    <TaskAssigneeSelect
+                      assigneeId={t.assignee_user_id}
+                      assigneeName={t.assignee_name}
+                      assignees={assignees}
+                      onChange={(userId) =>
+                        setTaskAssignee({ data: { taskId: t.id, userId } })
+                          .then(load)
+                          .catch((error) => toast.error(error instanceof Error ? error.message : "Could not assign"))
+                      }
+                    />
+                  ) : null}
                 </span>
               </li>
             ))}
