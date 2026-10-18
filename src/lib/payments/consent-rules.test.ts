@@ -28,8 +28,8 @@ function form(over: Partial<GuardianConsentInput> = {}): GuardianConsentInput {
 }
 
 describe("guardianConsentErrors", () => {
-  it("accepts a complete form, including a blank email and no photo release", () => {
-    assert.deepEqual(guardianConsentErrors(form({ guardianEmail: "  ", photoRelease: false })), []);
+  it("accepts a complete form, including no photo release", () => {
+    assert.deepEqual(guardianConsentErrors(form({ photoRelease: false })), []);
     assert.deepEqual(guardianConsentErrors(form({ signature: "  ada example  " })), []);
   });
 
@@ -38,6 +38,7 @@ describe("guardianConsentErrors", () => {
       form({
         guardianName: " ",
         guardianPhone: "",
+        guardianEmail: " ",
         relationship: "",
         emergencyName: "",
         emergencyPhone: "",
@@ -48,6 +49,7 @@ describe("guardianConsentErrors", () => {
     assert.deepEqual(errors, [
       "Enter the guardian's name.",
       "Enter the guardian's phone.",
+      "Enter the guardian's email.",
       "Enter the guardian's relationship to the student.",
       "Enter an emergency contact name.",
       "Enter an emergency contact phone.",
@@ -64,7 +66,7 @@ describe("guardianConsentErrors", () => {
 
   it("rejects an email that is not an address, and fields over their caps", () => {
     assert.deepEqual(guardianConsentErrors(form({ guardianEmail: "not-an-email" })), [
-      "Enter a valid guardian email, or leave it blank.",
+      "Enter a valid guardian email.",
     ]);
     const long = guardianConsentErrors(
       form({

@@ -56,11 +56,12 @@ export function guardianConsentErrors(input: GuardianConsentInput): string[] {
     if (message) errors.push(message);
   }
 
-  if (email) {
+  if (!email) errors.push("Enter the guardian's email.");
+  else {
     const message = tooLong("Guardian email", email, GUARDIAN_EMAIL_MAX);
     if (message) errors.push(message);
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.push("Enter a valid guardian email, or leave it blank.");
+      errors.push("Enter a valid guardian email.");
     }
   }
 

@@ -184,11 +184,12 @@ function GuardianFields({
               onChange={(event) => onChange({ guardianPhone: event.target.value })}
             />
           </Field>
-          <Field label="Guardian email (optional)">
+          <Field label="Guardian email">
             <Input
               type="email"
               value={person.guardianEmail}
               autoComplete="email"
+              required
               onChange={(event) => onChange({ guardianEmail: event.target.value })}
             />
           </Field>

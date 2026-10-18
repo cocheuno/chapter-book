@@ -158,8 +158,14 @@ function ConsentPage() {
         <Field label="Guardian phone">
           <Input value={guardianPhone} autoComplete="tel" required onChange={(event) => setGuardianPhone(event.target.value)} />
         </Field>
-        <Field label="Guardian email (optional)">
-          <Input type="email" value={guardianEmail} autoComplete="email" onChange={(event) => setGuardianEmail(event.target.value)} />
+        <Field label="Guardian email">
+          <Input
+            type="email"
+            value={guardianEmail}
+            autoComplete="email"
+            required
+            onChange={(event) => setGuardianEmail(event.target.value)}
+          />
         </Field>
         <Field label="Relationship to the student">
           <Input value={relationship} required onChange={(event) => setRelationship(event.target.value)} />

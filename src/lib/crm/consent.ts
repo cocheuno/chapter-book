@@ -137,12 +137,10 @@ export async function latestGuardianText(
 async function matchOrCreateGuardian(
   sql: Sql,
   chapterId: string,
-  input: { name: string; email: string | null; phone: string },
+  input: { name: string; email: string; phone: string },
 ): Promise<{ id: string; created: boolean }> {
-  if (input.email) {
-    const found = await findPersonByEmail(sql, chapterId, input.email);
-    if (found) return { id: found.id, created: false };
-  }
+  const found = await findPersonByEmail(sql, chapterId, input.email);
+  if (found) return { id: found.id, created: false };
   const split = splitWalkupName(input.name);
   const givenName = split.givenName.trim();
   const familyName = (split.familyName ?? "").trim();
@@ -159,7 +157,7 @@ async function matchOrCreateGuardian(
       )
     `;
   } catch (err) {
-    if (!isUniqueViolation(err) || !input.email) throw err;
+    if (!isUniqueViolation(err)) throw err;
     const again = await findPersonByEmail(sql, chapterId, input.email);
     if (!again) throw err;
     return { id: again.id, created: false };
@@ -191,6 +189,7 @@ export async function writeOnlineConsent(
   const name = input.consent.guardianName.trim();
   const phone = input.consent.guardianPhone.trim();
   const email = lowerEmail(input.consent.guardianEmail);
+  if (!email) throw new Error("Enter the guardian's email.");
   const guardian = await matchOrCreateGuardian(sql, input.chapterId, { name, email, phone });
   if (guardian.created) {
     const guardianId = guardian.id;
