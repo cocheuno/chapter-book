@@ -13,6 +13,7 @@ import { getSessionContext } from "@/lib/crm/member";
 import { MERGE_FIELDS } from "@/lib/crm/person-merge";
 import { addPersonEmail, listPersonEmails, makeMainEmail, removePersonEmail } from "@/lib/crm/person-emails";
 import { getMergePreview, mergePeople } from "@/lib/crm/person-merge-server";
+import { attendanceLine } from "@/lib/crm/engagement";
 import { listedName } from "@/lib/crm/names";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { PERSON_STATUSES, deceasedMark } from "@/lib/crm/person-status";
@@ -188,6 +189,9 @@ function PersonInner() {
           {heading}
           {deceasedMark(p.status)}
         </h1>
+        <p className="mt-1 text-sm text-ink-soft">
+          {attendanceLine(data.attendance.count, data.attendance.lastDate)}
+        </p>
         <div className="mt-2 flex flex-wrap gap-2">
           {data.roles.map((r) => (
             <Badge key={r} tone="bronze">

@@ -472,6 +472,21 @@ export const getPerson = createServerFn({ method: "GET" })
       select id, kind, happened_at, summary from touches
       where person_id = ${id} order by happened_at desc limit 12
     `;
+    // countsAsAttended: guest_status attended, or a check-in time.
+    const attendanceRows = await sql<{ count: number; last_date: string | null }>`
+      select count(distinct p.event_id)::int as count,
+        max(to_char(e.starts_at at time zone ${m.timezone}, 'YYYY-MM-DD')) as last_date
+      from participations p
+      join events e on e.id = p.event_id and e.chapter_id = p.chapter_id
+      where p.chapter_id = ${m.chapterId}
+        and p.person_id = ${id}
+        and p.party_type = 'person'
+        and (p.guest_status = 'attended' or p.checked_in_at is not null)
+    `;
+    const attendance = {
+      count: Number(attendanceRows[0]?.count ?? 0),
+      lastDate: attendanceRows[0]?.last_date ?? null,
+    };
     return {
       person: rows[0],
       roles: roles.map((r) => r.role_key),
@@ -480,6 +495,7 @@ export const getPerson = createServerFn({ method: "GET" })
       gatherings,
       celebrated,
       touches,
+      attendance,
     };
   });
 
@@ -922,12 +938,30 @@ export const getOrganization = createServerFn({ method: "GET" })
       where p.organization_id = ${id} and p.kind_key = 'group_lead'
       order by e.starts_at desc nulls last
     `;
+    // countsAsAttended, for anyone with a current or past affiliation here.
+    const cameRows = await sql<{ count: number }>`
+      select count(distinct a.person_id)::int as count
+      from affiliations a
+      join persons pe on pe.id = a.person_id and pe.chapter_id = a.chapter_id
+      where a.chapter_id = ${m.chapterId}
+        and a.organization_id = ${id}
+        and exists (
+          select 1
+          from participations p
+          join events e on e.id = p.event_id and e.chapter_id = p.chapter_id
+          where p.chapter_id = a.chapter_id
+            and p.person_id = a.person_id
+            and p.party_type = 'person'
+            and (p.guest_status = 'attended' or p.checked_in_at is not null)
+        )
+    `;
     return {
       org: rows[0],
       contacts: contacts.map((c) => ({ ...c, display_name: listedName(c) })),
       hosted,
       children,
       groups,
+      peopleCount: Number(cameRows[0]?.count ?? 0),
     };
   });
 
