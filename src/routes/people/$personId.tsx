@@ -9,6 +9,8 @@ import { ListSelect } from "@/components/list-select";
 import { PersonPartnersFields } from "@/components/person-partners-fields";
 import { roleLabel } from "@/lib/crm/constants";
 import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, searchAll, setPersonStatus, updatePerson } from "@/lib/crm/actions";
+import { forgetPerson } from "@/lib/crm/forget";
+import { nameMatches } from "@/lib/crm/forget-rules";
 import { addPersonTag, listTags, removePersonTag } from "@/lib/crm/tags";
 import { getSessionContext } from "@/lib/crm/member";
 import { MERGE_FIELDS } from "@/lib/crm/person-merge";
@@ -68,6 +70,8 @@ function PersonInner() {
   const [allTags, setAllTags] = useState<{ id: string; name: string }[]>([]);
   const [tagName, setTagName] = useState("");
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [forgetName, setForgetName] = useState("");
+  const [forgetBusy, setForgetBusy] = useState(false);
   const navigate = Route.useNavigate();
   const latestId = useRef(personId);
   if (latestId.current !== personId) {
@@ -498,6 +502,45 @@ function PersonInner() {
           ))}
         </ul>
       </section>
+
+      {role === "admin" && (
+        <section className="rounded-xl border border-danger bg-surface p-4">
+          <h2 className="font-display text-xl">Forget this person</h2>
+          <p className="mt-2 text-sm text-ink-soft">
+            Removes their name, contact details, notes and dietary needs, other emails, tags, relationships and
+            offices. Their attendance stays in event counts as &apos;Removed person&apos;. This cannot be undone.
+          </p>
+          <form
+            className="mt-3 flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const displayName = p.display_name ?? "";
+              if (!nameMatches(forgetName, displayName) || forgetBusy) return;
+              setForgetBusy(true);
+              void forgetPerson({ data: { personId, typedName: forgetName } })
+                .then(() => {
+                  toast.success("Forgotten");
+                  void navigate({ to: "/people" });
+                })
+                .catch((err) => {
+                  toast.error(err instanceof Error ? err.message : "Could not forget this person");
+                  setForgetBusy(false);
+                });
+            }}
+          >
+            <Field label={`Type ${p.display_name ?? ""} to confirm`}>
+              <Input value={forgetName} onChange={(e) => setForgetName(e.target.value)} autoComplete="off" />
+            </Field>
+            <Button
+              type="submit"
+              variant="danger"
+              disabled={!nameMatches(forgetName, p.display_name ?? "") || forgetBusy}
+            >
+              Forget
+            </Button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

@@ -46,6 +46,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   email_made_main: { label: "Main email changed", group: "people" },
   segment_saved: { label: "Saved list saved", group: "people" },
   segment_deleted: { label: "Saved list deleted", group: "people" },
+  person_forgotten: { label: "Person forgotten", group: "people" },
 };
 
 const SECRET_KEY = /token|hash|password|secret|html|body|link|url/i;
@@ -152,6 +153,8 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "segment_saved":
     case "segment_deleted":
       return text(row.name);
+    case "person_forgotten":
+      return text(row.on);
     default:
       return "";
   }

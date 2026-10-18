@@ -28,12 +28,12 @@ export async function findPersonByEmail(
     select id, display_name, via from (
       select id, display_name, 'main'::text as via, 0 as rank
       from persons
-      where chapter_id = ${chapterId} and lower(email) = ${normalized}
+      where chapter_id = ${chapterId} and forgotten_at is null and lower(email) = ${normalized}
       union all
       select p.id, p.display_name, 'other'::text as via, 1 as rank
       from person_emails e
       join persons p on p.id = e.person_id and p.chapter_id = e.chapter_id
-      where e.chapter_id = ${chapterId} and lower(e.email) = ${normalized}
+      where e.chapter_id = ${chapterId} and p.forgotten_at is null and lower(e.email) = ${normalized}
     ) matches
     order by rank
     limit 1

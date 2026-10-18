@@ -291,6 +291,7 @@ export const searchAll = createServerFn({ method: "GET" })
              ) as matched_email
       from persons p
       where p.chapter_id = ${m.chapterId}
+        and p.forgotten_at is null
         and (
           p.display_name ilike ${like}
           or coalesce(p.given_name,'') ilike ${like}
@@ -392,6 +393,7 @@ export const listPeople = createServerFn({ method: "GET" })
              p.honorific, p.religious_title, p.academic_title, p.post_nominals, p.status
       from persons p
       where p.chapter_id = ${m.chapterId}
+        and p.forgotten_at is null
         and (${role ?? null}::text is null or exists (
           select 1 from person_roles r where r.person_id = p.id and r.role_key = ${role ?? ""}
         ))
@@ -566,6 +568,7 @@ export const createPerson = createServerFn({ method: "POST" })
       const dup = await sql<{ id: string; display_name: string }>`
         select id, display_name from persons
         where chapter_id = ${m.chapterId}
+          and forgotten_at is null
           and (
             lower(display_name) = ${foldName(name)}
             or (
@@ -604,7 +607,9 @@ export const createPerson = createServerFn({ method: "POST" })
       } else {
         const again = await sql<{ id: string; display_name: string }>`
           select id, display_name from persons
-          where chapter_id = ${m.chapterId} and lower(display_name) = ${foldName(name)}
+          where chapter_id = ${m.chapterId}
+            and forgotten_at is null
+            and lower(display_name) = ${foldName(name)}
         `;
         if (again[0]) {
           return { id: again[0].id, duplicate: true, name: again[0].display_name, reason: "name" as const };
@@ -688,6 +693,7 @@ export const updatePerson = createServerFn({ method: "POST" })
       const taken = await sql<{ id: string; display_name: string }>`
         select id, display_name from persons
         where chapter_id = ${m.chapterId}
+          and forgotten_at is null
           and id <> ${data.id}
           and (
             lower(display_name) = ${foldName(name)}
@@ -2184,7 +2190,7 @@ async function resolveAudience(
                p.email, p.email_unsubscribed, p.news_consent, p.status, a.role_key
         from affiliations a
         join persons p on p.id = a.person_id
-        where a.organization_id = ${s.id} and a.is_current
+        where a.organization_id = ${s.id} and a.is_current and p.forgotten_at is null
       `;
       const preferred = s.preferred_door || "science_chair";
       const order = [preferred, "science_chair", "campus_minister", "principal"];
@@ -2234,7 +2240,7 @@ async function resolveAudience(
                p.religious_title, p.academic_title, p.post_nominals, p.salutation_override,
                p.email, p.email_unsubscribed, p.news_consent, p.status, a.role_key
         from affiliations a join persons p on p.id = a.person_id
-        where a.organization_id = ${o.id} and a.is_current
+        where a.organization_id = ${o.id} and a.is_current and p.forgotten_at is null
       `;
       const found =
         people.find((d) => d.role_key === "parish_secretary" && isContactable(d)) ||
@@ -2278,6 +2284,7 @@ async function resolveAudience(
              pe.email, pe.email_unsubscribed, pe.news_consent, pe.status
       from participations p join persons pe on pe.id = p.person_id
       where p.event_id = ${eventId} and p.party_type = 'person' and p.chapter_id = ${m.chapterId}
+        and pe.forgotten_at is null
     `;
     for (const p of people) pushPerson(p);
   } else if (source === "members") {
@@ -2301,7 +2308,7 @@ async function resolveAudience(
              p.email, p.email_unsubscribed, p.news_consent, p.status
       from persons p
       join person_roles r on r.person_id = p.id and r.role_key = 'academic_member'
-      where p.chapter_id = ${m.chapterId}
+      where p.chapter_id = ${m.chapterId} and p.forgotten_at is null
     `;
     for (const p of people) pushPerson(p);
   } else if (source.startsWith("segment:")) {

@@ -56,7 +56,7 @@ export function segmentWhere(
   const chapter = chapterSlot(chapterParam);
   const params: unknown[] = [];
   let next = chapter + 1;
-  const parts = ["p.chapter_id = " + slot(chapter)];
+  const parts = ["p.chapter_id = " + slot(chapter), "p.forgotten_at is null"];
 
   if (filter.roles.length > 0) {
     params.push(filter.roles);
