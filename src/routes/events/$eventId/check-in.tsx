@@ -93,7 +93,9 @@ function CheckInInner() {
                 {p.party_size > 1 ? ` · group of ${p.party_size}` : ""}
               </p>
             </div>
-            {p.guest_status === "attended" ? (
+            {p.consentMissing ? (
+              <span className="text-sm font-medium text-danger">Do not admit: consent missing</span>
+            ) : p.guest_status === "attended" ? (
               <span className="text-sm font-medium text-ok">Attended</span>
             ) : (
               <Button

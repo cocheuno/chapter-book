@@ -5,8 +5,10 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { csvRow } from "./csv";
 import { todayIn } from "./dates";
 import { recordAudit } from "./audit";
+import { issueConsentLink, readConsentDetail, recordPaperConsent } from "./consent";
 import { nid } from "./ids";
-import { assertEditor, loadMember } from "./member";
+import { assertAdmin, assertEditor, loadMember } from "./member";
+import { consentDetailsPurgeOpen, eventLastDay } from "@/lib/payments/consent-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
 import { mealCounts, partReleases, seatDrift } from "@/lib/payments/registration-desk";
 
@@ -128,8 +130,17 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
   .handler(async ({ context, data: eventId }) => {
     const member = await loadMember(context.userId);
     const sql = await getSql();
-    const events = await sql<{ id: string; title: string; slug: string | null; switch_on: boolean }>`
-      select e.id, e.title, i.slug, coalesce(rp.use_book_registration, false) as switch_on
+    const events = await sql<{
+      id: string;
+      title: string;
+      slug: string | null;
+      switch_on: boolean;
+      starts_at: Date | string | null;
+      ends_at: Date | string | null;
+      timezone: string;
+    }>`
+      select e.id, e.title, i.slug, coalesce(rp.use_book_registration, false) as switch_on,
+        e.starts_at, e.ends_at, e.timezone
       from events e
       left join site_items i on i.id = e.public_item_id and i.chapter_id = e.chapter_id
       left join registration_pages rp on rp.event_id = e.id and rp.chapter_id = e.chapter_id
@@ -242,10 +253,17 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       accessibility: string | null;
       cancelled_at: Date | string | null;
       review_changes: unknown;
+      is_minor: boolean;
+      consent_on_file: boolean;
       ticket_name: string | null;
     }>`
       select a.id, a.registration_id, a.given_name, a.family_name, a.email, a.badge_affiliation,
-        a.dietary, a.accessibility, a.cancelled_at, a.review_changes, t.name as ticket_name
+        a.dietary, a.accessibility, a.cancelled_at, a.review_changes, a.is_minor,
+        exists (
+          select 1 from guardian_consents g
+          where g.attendee_id = a.id and g.chapter_id = a.chapter_id
+        ) as consent_on_file,
+        t.name as ticket_name
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
       left join attendee_items ai on ai.attendee_id = a.id
@@ -278,6 +296,8 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         tickets: string[];
         cancelled: boolean;
         review: boolean;
+        isMinor: boolean;
+        consentOnFile: boolean;
       }[]
     >();
     for (const row of attendeeRows) {
@@ -295,6 +315,8 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
           tickets: [],
           cancelled: row.cancelled_at != null,
           review: row.review_changes != null,
+          isMinor: Boolean(row.is_minor),
+          consentOnFile: row.consent_on_file === true,
         };
         list.push(attendee);
         attendeesByRegistration.set(row.registration_id, list);
@@ -327,6 +349,16 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         title: event.title,
         slug: event.slug,
         switchOn: Boolean(event.switch_on),
+        purgeReady: consentDetailsPurgeOpen(
+          eventLastDay(event.starts_at, event.ends_at, event.timezone),
+          (() => {
+            try {
+              return todayIn(event.timezone);
+            } catch {
+              return "";
+            }
+          })(),
+        ),
       },
       role: member.role,
       parts,
@@ -696,4 +728,106 @@ export const exportBadges = createServerFn({ method: "POST" })
     );
     await exportAudit(sql, member.chapterId, member.userId, eventId, "badges", rows.length);
     return { csv, filename: "registrations-badges.csv" };
+  });
+
+export const mintConsentLink = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string().min(1), attendeeId: z.string().min(1).max(64) }).parse)
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    const sql = await getSql();
+    const rows = await sql<{ id: string }>`
+      select a.id
+      from registration_attendees a
+      join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      where a.id = ${data.attendeeId} and a.chapter_id = ${member.chapterId} and r.event_id = ${data.eventId}
+    `;
+    if (!rows[0]) throw new Error("Attendee not found.");
+    const path = await issueConsentLink(sql, member.chapterId, data.attendeeId);
+    return { path };
+  });
+
+export const markPaperConsent = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      eventId: z.string().min(1),
+      attendeeId: z.string().min(1).max(64),
+      guardianName: z.string().max(200),
+      guardianPhone: z.string().max(40),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    const sql = await getSql();
+    const saved = await recordPaperConsent(sql, {
+      chapterId: member.chapterId,
+      eventId: data.eventId,
+      attendeeId: data.attendeeId,
+      guardianName: data.guardianName,
+      guardianPhone: data.guardianPhone,
+      receivedBy: member.userId,
+    });
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "consent_received",
+      entity: "registration_attendee",
+      entityId: data.attendeeId,
+      detail: { code: saved.code, method: "paper", eventId: data.eventId },
+    });
+    return { ok: true };
+  });
+
+export const getConsentDetail = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string().min(1), attendeeId: z.string().min(1).max(64) }).parse)
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    const sql = await getSql();
+    return readConsentDetail(sql, member.chapterId, data.eventId, data.attendeeId);
+  });
+
+export const purgeConsentDetails = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string().min(1) }).parse)
+  .handler(async ({ context, data }) => {
+    const member = await loadMember(context.userId);
+    assertAdmin(member.role);
+    const sql = await getSql();
+    const events = await sql<{ starts_at: Date | string | null; ends_at: Date | string | null; timezone: string }>`
+      select starts_at, ends_at, timezone from events
+      where id = ${data.eventId} and chapter_id = ${member.chapterId}
+    `;
+    const event = events[0];
+    if (!event) throw new Error("Event not found");
+    let today = "";
+    try {
+      today = todayIn(event.timezone);
+    } catch {
+      today = "";
+    }
+    if (!consentDetailsPurgeOpen(eventLastDay(event.starts_at, event.ends_at, event.timezone), today)) {
+      throw new Error("Medical and emergency details stay until 30 days after the event.");
+    }
+    const cleared = await sql<{ id: string }>`
+      update guardian_consents
+      set medical_notes = null, emergency_name = null, emergency_phone = null
+      where chapter_id = ${member.chapterId}
+        and attendee_id in (
+          select a.id from registration_attendees a
+          join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+          where r.event_id = ${data.eventId} and a.chapter_id = ${member.chapterId}
+        )
+      returning id
+    `;
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "consent_details_purged",
+      entity: "event",
+      entityId: data.eventId,
+      detail: { rows: cleared.length, eventId: data.eventId },
+    });
+    return { rows: cleared.length };
   });
