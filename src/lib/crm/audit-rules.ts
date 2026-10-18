@@ -44,6 +44,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   email_added: { label: "Other email added", group: "people" },
   email_removed: { label: "Other email removed", group: "people" },
   email_made_main: { label: "Main email changed", group: "people" },
+  segment_saved: { label: "Saved list saved", group: "people" },
+  segment_deleted: { label: "Saved list deleted", group: "people" },
 };
 
 const SECRET_KEY = /token|hash|password|secret|html|body|link|url/i;
@@ -147,6 +149,9 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
       return [text(row.list), text(row.value)].filter(Boolean).join(": ");
     case "person_merged":
       return `${text(row.mergedName)} → ${text(row.keptName)}`;
+    case "segment_saved":
+    case "segment_deleted":
+      return text(row.name);
     default:
       return "";
   }

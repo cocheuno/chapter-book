@@ -25,6 +25,7 @@ import { Route as PartnersIndexRouteImport } from './routes/partners/index'
 import { Route as PartnersOrgIdRouteImport } from './routes/partners/$orgId'
 import { Route as PeopleIndexRouteImport } from './routes/people/index'
 import { Route as PeoplePersonIdRouteImport } from './routes/people/$personId'
+import { Route as PeopleListsRouteImport } from './routes/people/lists'
 import { Route as RTokenRouteImport } from './routes/r/$token'
 import { Route as SchoolsIndexRouteImport } from './routes/schools/index'
 import { Route as SchoolsSchoolIdRouteImport } from './routes/schools/$schoolId'
@@ -121,6 +122,11 @@ const PeopleIndexRoute = PeopleIndexRouteImport.update({
 const PeoplePersonIdRoute = PeoplePersonIdRouteImport.update({
   id: '/people/$personId',
   path: '/people/$personId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PeopleListsRoute = PeopleListsRouteImport.update({
+  id: '/people/lists',
+  path: '/people/lists',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RTokenRoute = RTokenRouteImport.update({
@@ -223,6 +229,7 @@ export interface FileRoutesByFullPath {
   '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/people/lists': typeof PeopleListsRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
@@ -257,6 +264,7 @@ export interface FileRoutesByTo {
   '/mail/compose': typeof MailComposeRoute
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/people/lists': typeof PeopleListsRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter': typeof ChapterIndexRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/people/lists': typeof PeopleListsRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
@@ -330,6 +339,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/people/lists'
     | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter/'
@@ -364,6 +374,7 @@ export interface FileRouteTypes {
     | '/mail/compose'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/people/lists'
     | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter'
@@ -399,6 +410,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/people/lists'
     | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter/'
@@ -435,6 +447,7 @@ export interface RootRouteChildren {
   PSlugRoute: typeof PSlugRouteWithChildren
   PartnersOrgIdRoute: typeof PartnersOrgIdRoute
   PeoplePersonIdRoute: typeof PeoplePersonIdRoute
+  PeopleListsRoute: typeof PeopleListsRoute
   RTokenRoute: typeof RTokenRoute
   SchoolsSchoolIdRoute: typeof SchoolsSchoolIdRoute
   ChapterIndexRoute: typeof ChapterIndexRoute
@@ -567,6 +580,13 @@ declare module '@tanstack/react-router' {
       path: '/people/$personId'
       fullPath: '/people/$personId'
       preLoaderRoute: typeof PeoplePersonIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/people/lists': {
+      id: '/people/lists'
+      path: '/people/lists'
+      fullPath: '/people/lists'
+      preLoaderRoute: typeof PeopleListsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/r/$token': {
@@ -719,6 +739,7 @@ const rootRouteChildren: RootRouteChildren = {
   PSlugRoute: PSlugRouteWithChildren,
   PartnersOrgIdRoute: PartnersOrgIdRoute,
   PeoplePersonIdRoute: PeoplePersonIdRoute,
+  PeopleListsRoute: PeopleListsRoute,
   RTokenRoute: RTokenRoute,
   SchoolsSchoolIdRoute: SchoolsSchoolIdRoute,
   ChapterIndexRoute: ChapterIndexRoute,

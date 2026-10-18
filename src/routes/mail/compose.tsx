@@ -4,6 +4,7 @@ import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { listEvents, listMail, markNotifySchools, previewMail, sendMail } from "@/lib/crm/actions";
+import { listSegments } from "@/lib/crm/segments";
 import { useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -33,6 +34,8 @@ function ComposeInner() {
   const [templateId, setTemplateId] = useState("");
   const [eventId, setEventId] = useState(search.eventId ?? "");
   const [source, setSource] = useState("school_doors");
+  const [segments, setSegments] = useState<{ id: string; name: string }[]>([]);
+  const [segmentId, setSegmentId] = useState("");
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof previewMail>> | null>(null);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,10 +47,17 @@ function ComposeInner() {
       if (school) setTemplateId(school.id);
     });
     listEvents().then(setEvents);
+    listSegments()
+      .then((rows) => setSegments(rows.map((row) => ({ id: row.id, name: row.name }))))
+      .catch(() => setSegments([]));
   }, []);
 
+  const audienceSource = source === "segment" ? `segment:${segmentId}` : source;
+
   async function runPreview() {
-    const p = await previewMail({ data: { templateId, eventId: eventId || undefined, audienceSource: source } });
+    const p = await previewMail({
+      data: { templateId, eventId: eventId || undefined, audienceSource },
+    });
     setPreview(p);
     setTyped("");
   }
@@ -88,14 +98,44 @@ function ComposeInner() {
         </Select>
       </Field>
       <Field label="To">
-        <Select value={source} onChange={(e) => setSource(e.target.value)}>
+        <Select
+          value={source}
+          onChange={(e) => {
+            setSource(e.target.value);
+            setPreview(null);
+          }}
+        >
           <option value="school_doors">School preferred doors</option>
           <option value="parish_secretaries">Parish secretaries</option>
           <option value="event_guests">Event guests</option>
           <option value="members">Members</option>
+          <option value="segment">Saved list</option>
         </Select>
       </Field>
-      <Button type="button" variant="secondary" onClick={runPreview} disabled={!templateId}>
+      {source === "segment" && (
+        <Field label="Saved list">
+          <Select
+            value={segmentId}
+            onChange={(e) => {
+              setSegmentId(e.target.value);
+              setPreview(null);
+            }}
+          >
+            <option value="">Choose a list</option>
+            {segments.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={runPreview}
+        disabled={!templateId || (source === "segment" && !segmentId)}
+      >
         Preview
       </Button>
       {preview && (
@@ -136,7 +176,7 @@ function ComposeInner() {
                   data: {
                     templateId,
                     eventId: eventId || undefined,
-                    audienceSource: source,
+                    audienceSource,
                     typedCount: Number(typed),
                   },
                 });

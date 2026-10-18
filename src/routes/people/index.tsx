@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { PERSON_ROLES, roleLabel } from "@/lib/crm/constants";
 import { createPerson, listPartners, listPeople } from "@/lib/crm/actions";
+import { getSessionContext } from "@/lib/crm/member";
+import { addPersonTag, listTags, tagPeople } from "@/lib/crm/tags";
 import { matchPerson } from "@/lib/crm/match";
 import { composePersonName, isDegreeTitle } from "@/lib/crm/names";
 import { deceasedMark } from "@/lib/crm/person-status";
@@ -16,9 +18,10 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/people/")({
-  validateSearch: (search: Record<string, unknown>): { role?: string; degree?: "1" } => ({
+  validateSearch: (search: Record<string, unknown>): { role?: string; degree?: "1"; tag?: string } => ({
     role: typeof search.role === "string" && search.role.length > 0 ? search.role : undefined,
     degree: search.degree === "1" || search.degree === 1 ? "1" : undefined,
+    tag: typeof search.tag === "string" && search.tag.length > 0 ? search.tag : undefined,
   }),
   component: PeoplePage,
 });
@@ -46,8 +49,12 @@ function PeopleInner() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const role = search.role;
+  const tag = search.tag;
   const degreeOn = search.degree === "1";
   const [rows, setRows] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
+  const [tagOptions, setTagOptions] = useState<{ id: string; name: string }[]>([]);
+  const [canEdit, setCanEdit] = useState(false);
+  const [bulkName, setBulkName] = useState("");
   const [allPeople, setAllPeople] = useState<Awaited<ReturnType<typeof listPeople>>>([]);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState<PersonNameValue>(emptyName);
@@ -67,18 +74,25 @@ function PeopleInner() {
   const [attached, setAttached] = useState<PersonPartnerLink[]>([]);
 
   function load() {
-    listPeople({ data: role }).then(setRows).catch(() => setRows([]));
+    listPeople({ data: { role, tagId: tag } }).then(setRows).catch(() => setRows([]));
     listPeople({ data: undefined }).then(setAllPeople).catch(() => setAllPeople([]));
     listPartners({ data: undefined }).then(setPartners).catch(() => setPartners([]));
+    listTags().then(setTagOptions).catch(() => setTagOptions([]));
   }
-  useEffect(load, [role]);
+  useEffect(load, [role, tag]);
+  useEffect(() => {
+    getSessionContext()
+      .then((session) => setCanEdit(session.role === "admin" || session.role === "editor"))
+      .catch(() => setCanEdit(false));
+  }, []);
   useEffect(() => {
     const params = new URLSearchParams();
     if (role) params.set("role", role);
+    if (tag) params.set("tag", tag);
     if (degreeOn) params.set("degree", "1");
     const query = params.toString();
     rememberList("people", query ? `/people?${query}` : "/people");
-  }, [role, degreeOn]);
+  }, [role, tag, degreeOn]);
 
   const listed = composePersonName({ ...name, postNominals: "" });
   const visible = degreeOn ? rows.filter((row) => isDegreeTitle(row.academic_title)) : rows;
@@ -145,7 +159,12 @@ function PeopleInner() {
           <h1 className="font-display text-3xl">People</h1>
           <p className="text-ink-soft">Scientists, teachers, clergy, students, friends.</p>
         </div>
-        <Button onClick={() => setOpen((v) => !v)}>Add person</Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link to="/people/lists" className="text-sm font-medium text-bronze underline-offset-2 hover:underline">
+            Saved lists
+          </Link>
+          <Button onClick={() => setOpen((v) => !v)}>Add person</Button>
+        </div>
       </div>
       {open && (
         <form onSubmit={add} className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2">
@@ -233,7 +252,12 @@ function PeopleInner() {
         <button
           type="button"
           className={`min-h-11 rounded-full px-3 py-1 text-sm ${!role ? "bg-ink text-paper" : "bg-paper-2"}`}
-          onClick={() => void navigate({ search: { role: undefined, degree: degreeOn ? "1" : undefined }, replace: true })}
+          onClick={() =>
+            void navigate({
+              search: { role: undefined, degree: degreeOn ? "1" : undefined, tag },
+              replace: true,
+            })
+          }
         >
           All
         </button>
@@ -242,7 +266,12 @@ function PeopleInner() {
             key={r.key}
             type="button"
             className={`min-h-11 rounded-full px-3 py-1 text-sm ${role === r.key ? "bg-ink text-paper" : "bg-paper-2"}`}
-            onClick={() => void navigate({ search: { role: r.key, degree: degreeOn ? "1" : undefined }, replace: true })}
+            onClick={() =>
+              void navigate({
+                search: { role: r.key, degree: degreeOn ? "1" : undefined, tag },
+                replace: true,
+              })
+            }
           >
             {r.label}
           </button>
@@ -250,11 +279,76 @@ function PeopleInner() {
         <button
           type="button"
           className={`min-h-11 rounded-full px-3 py-1 text-sm ${degreeOn ? "bg-ink text-paper" : "bg-paper-2"}`}
-          onClick={() => void navigate({ search: { role, degree: degreeOn ? undefined : "1" }, replace: true })}
+          onClick={() =>
+            void navigate({
+              search: { role, degree: degreeOn ? undefined : "1", tag },
+              replace: true,
+            })
+          }
         >
           Degree in the title field
         </button>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <span className="text-ink-soft">Tag</span>
+          <Select
+            className="w-auto min-w-40"
+            value={tag ?? ""}
+            onChange={(e) =>
+              void navigate({
+                search: { role, degree: degreeOn ? "1" : undefined, tag: e.target.value || undefined },
+                replace: true,
+              })
+            }
+          >
+            <option value="">Any</option>
+            {tagOptions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+        </label>
       </div>
+      {(role || degreeOn || tag) && canEdit && (
+        <form
+          className="flex flex-wrap items-end gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = bulkName.trim();
+            if (!name || visible.length < 1) return;
+            if (visible.length > 2000) {
+              toast.error("Tag up to 2000 people at a time.");
+              return;
+            }
+            const ids = visible.map((person) => person.id);
+            const existing = tagOptions.find((item) => item.name.toLowerCase() === name.toLowerCase());
+            const run = existing
+              ? tagPeople({ data: { tagId: existing.id, personIds: ids } })
+              : addPersonTag({ data: { personId: ids[0], name } }).then((created) =>
+                  tagPeople({ data: { tagId: created.id, personIds: ids } }),
+                );
+            void run
+              .then(() => {
+                toast.success(`Tagged ${ids.length} people.`);
+                setBulkName("");
+                load();
+              })
+              .catch((err) => toast.error(err instanceof Error ? err.message : "Could not tag"));
+          }}
+        >
+          <Field label={`Tag these ${visible.length} people…`}>
+            <Input value={bulkName} onChange={(e) => setBulkName(e.target.value)} list="people-tag-names" />
+          </Field>
+          <datalist id="people-tag-names">
+            {tagOptions.map((item) => (
+              <option key={item.id} value={item.name} />
+            ))}
+          </datalist>
+          <Button type="submit" variant="secondary" disabled={visible.length < 1}>
+            Tag
+          </Button>
+        </form>
+      )}
       <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
         {visible.map((p) => (
           <li key={p.id}>
@@ -275,7 +369,11 @@ function PeopleInner() {
         ))}
         {visible.length === 0 && (
           <li className="px-4 py-8 text-muted">
-            {degreeOn ? "No one has a degree in the title field." : "Add the pastor of your first host parish."}
+            {role || tag
+              ? "No one matches this filter."
+              : degreeOn
+                ? "No one has a degree in the title field."
+                : "Add the pastor of your first host parish."}
           </li>
         )}
       </ul>

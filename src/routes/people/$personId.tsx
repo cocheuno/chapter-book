@@ -9,6 +9,7 @@ import { ListSelect } from "@/components/list-select";
 import { PersonPartnersFields } from "@/components/person-partners-fields";
 import { roleLabel } from "@/lib/crm/constants";
 import { addAffiliation, getPerson, listPartners, logTouch, removeAffiliation, searchAll, setPersonStatus, updatePerson } from "@/lib/crm/actions";
+import { addPersonTag, listTags, removePersonTag } from "@/lib/crm/tags";
 import { getSessionContext } from "@/lib/crm/member";
 import { MERGE_FIELDS } from "@/lib/crm/person-merge";
 import { addPersonEmail, listPersonEmails, makeMainEmail, removePersonEmail } from "@/lib/crm/person-emails";
@@ -64,6 +65,8 @@ function PersonInner() {
   const [status, setStatus] = useState("active");
   const [deceasedOn, setDeceasedOn] = useState("");
   const [role, setRole] = useState<"admin" | "editor" | "viewer" | null>(null);
+  const [allTags, setAllTags] = useState<{ id: string; name: string }[]>([]);
+  const [tagName, setTagName] = useState("");
   const [mergeOpen, setMergeOpen] = useState(false);
   const navigate = Route.useNavigate();
   const latestId = useRef(personId);
@@ -108,6 +111,7 @@ function PersonInner() {
       setDeceasedOn(String(p.deceased_on ?? ""));
     });
     listPartners({ data: undefined }).then((r) => setOrgs(r.map((o) => ({ id: o.id, name: o.name }))));
+    listTags().then(setAllTags).catch(() => setAllTags([]));
   }
   useEffect(load, [personId]);
   useEffect(() => {
@@ -146,7 +150,8 @@ function PersonInner() {
     load();
   }
 
-  const canMerge = role === "admin" || role === "editor";
+  const canEdit = role === "admin" || role === "editor";
+  const canMerge = canEdit;
 
   function onMerged(keepId: string, keptName: string) {
     toast.success(`Merged into ${keptName}`);
@@ -198,6 +203,61 @@ function PersonInner() {
               {roleLabel(r)}
             </Badge>
           ))}
+        </div>
+        <div className="mt-3">
+          <p className="text-sm font-medium text-ink-soft">Tags</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {data.tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex min-h-8 items-center gap-1 rounded-full bg-paper-2 px-3 py-1 text-sm"
+              >
+                {tag.name}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="text-muted"
+                    aria-label={`Remove ${tag.name}`}
+                    onClick={() => {
+                      void removePersonTag({ data: { personId, tagId: tag.id } })
+                        .then(() => load())
+                        .catch((err) => toast.error(err instanceof Error ? err.message : "Could not remove tag"));
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+          {canEdit && (
+            <form
+              className="mt-2 flex flex-wrap items-end gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = tagName.trim();
+                if (!name) return;
+                void addPersonTag({ data: { personId, name } })
+                  .then(() => {
+                    setTagName("");
+                    load();
+                  })
+                  .catch((err) => toast.error(err instanceof Error ? err.message : "Could not add tag"));
+              }}
+            >
+              <Field label="Add tag">
+                <Input value={tagName} onChange={(e) => setTagName(e.target.value)} list="chapter-tags" />
+              </Field>
+              <datalist id="chapter-tags">
+                {allTags.map((tag) => (
+                  <option key={tag.id} value={tag.name} />
+                ))}
+              </datalist>
+              <Button type="submit" variant="secondary">
+                Add
+              </Button>
+            </form>
+          )}
         </div>
         <p className="mt-2 text-ink-soft">
           {p.email ?? "No email"}
