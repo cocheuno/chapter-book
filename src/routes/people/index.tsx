@@ -160,6 +160,14 @@ function PeopleInner() {
           <p className="text-ink-soft">Scientists, teachers, clergy, students, friends.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {canEdit ? (
+            <Link
+              to="/people/import"
+              className="text-sm font-medium text-bronze underline-offset-2 hover:underline"
+            >
+              Import
+            </Link>
+          ) : null}
           <Link to="/people/lists" className="text-sm font-medium text-bronze underline-offset-2 hover:underline">
             Saved lists
           </Link>

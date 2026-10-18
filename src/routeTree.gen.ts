@@ -25,6 +25,7 @@ import { Route as PartnersIndexRouteImport } from './routes/partners/index'
 import { Route as PartnersOrgIdRouteImport } from './routes/partners/$orgId'
 import { Route as PeopleIndexRouteImport } from './routes/people/index'
 import { Route as PeoplePersonIdRouteImport } from './routes/people/$personId'
+import { Route as PeopleImportRouteImport } from './routes/people/import'
 import { Route as PeopleListsRouteImport } from './routes/people/lists'
 import { Route as RTokenRouteImport } from './routes/r/$token'
 import { Route as SchoolsIndexRouteImport } from './routes/schools/index'
@@ -122,6 +123,11 @@ const PeopleIndexRoute = PeopleIndexRouteImport.update({
 const PeoplePersonIdRoute = PeoplePersonIdRouteImport.update({
   id: '/people/$personId',
   path: '/people/$personId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PeopleImportRoute = PeopleImportRouteImport.update({
+  id: '/people/import',
+  path: '/people/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PeopleListsRoute = PeopleListsRouteImport.update({
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/people/import': typeof PeopleImportRoute
   '/people/lists': typeof PeopleListsRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
@@ -264,6 +271,7 @@ export interface FileRoutesByTo {
   '/mail/compose': typeof MailComposeRoute
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/people/import': typeof PeopleImportRoute
   '/people/lists': typeof PeopleListsRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
@@ -301,6 +309,7 @@ export interface FileRoutesById {
   '/p/$slug': typeof PSlugRouteWithChildren
   '/partners/$orgId': typeof PartnersOrgIdRoute
   '/people/$personId': typeof PeoplePersonIdRoute
+  '/people/import': typeof PeopleImportRoute
   '/people/lists': typeof PeopleListsRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
@@ -339,6 +348,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/people/import'
     | '/people/lists'
     | '/r/$token'
     | '/schools/$schoolId'
@@ -374,6 +384,7 @@ export interface FileRouteTypes {
     | '/mail/compose'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/people/import'
     | '/people/lists'
     | '/r/$token'
     | '/schools/$schoolId'
@@ -410,6 +421,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/partners/$orgId'
     | '/people/$personId'
+    | '/people/import'
     | '/people/lists'
     | '/r/$token'
     | '/schools/$schoolId'
@@ -447,6 +459,7 @@ export interface RootRouteChildren {
   PSlugRoute: typeof PSlugRouteWithChildren
   PartnersOrgIdRoute: typeof PartnersOrgIdRoute
   PeoplePersonIdRoute: typeof PeoplePersonIdRoute
+  PeopleImportRoute: typeof PeopleImportRoute
   PeopleListsRoute: typeof PeopleListsRoute
   RTokenRoute: typeof RTokenRoute
   SchoolsSchoolIdRoute: typeof SchoolsSchoolIdRoute
@@ -580,6 +593,13 @@ declare module '@tanstack/react-router' {
       path: '/people/$personId'
       fullPath: '/people/$personId'
       preLoaderRoute: typeof PeoplePersonIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/people/import': {
+      id: '/people/import'
+      path: '/people/import'
+      fullPath: '/people/import'
+      preLoaderRoute: typeof PeopleImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/people/lists': {
@@ -739,6 +759,7 @@ const rootRouteChildren: RootRouteChildren = {
   PSlugRoute: PSlugRouteWithChildren,
   PartnersOrgIdRoute: PartnersOrgIdRoute,
   PeoplePersonIdRoute: PeoplePersonIdRoute,
+  PeopleImportRoute: PeopleImportRoute,
   PeopleListsRoute: PeopleListsRoute,
   RTokenRoute: RTokenRoute,
   SchoolsSchoolIdRoute: SchoolsSchoolIdRoute,
