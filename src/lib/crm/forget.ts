@@ -167,6 +167,15 @@ export const forgetPerson = createServerFn({ method: "POST" })
           status = 'do_not_contact',
           email_unsubscribed = true,
           news_consent = 'no',
+          works_with_minors = false,
+          safe_env_program = null,
+          safe_env_trained_on = null,
+          safe_env_diocese = null,
+          background_check_on = null,
+          background_check_expires_on = null,
+          suitability_requested_on = null,
+          suitability_received_on = null,
+          suitability_expires_on = null,
           forgotten_at = now()
       where id = ${personId} and chapter_id = ${chapterId}
     `;

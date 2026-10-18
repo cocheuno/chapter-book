@@ -168,6 +168,15 @@ function PeopleInner() {
               Import
             </Link>
           ) : null}
+          {canEdit ? (
+            <Link
+              to="/people/safe-environment"
+              search={{ status: "all" }}
+              className="text-sm font-medium text-bronze underline-offset-2 hover:underline"
+            >
+              Safe environment
+            </Link>
+          ) : null}
           <Link to="/people/lists" className="text-sm font-medium text-bronze underline-offset-2 hover:underline">
             Saved lists
           </Link>

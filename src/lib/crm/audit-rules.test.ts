@@ -72,6 +72,7 @@ describe("AUDIT_ACTIONS", () => {
       "segment_deleted",
       "person_forgotten",
       "people_imported",
+      "safe_env_saved",
     ];
     for (const action of required) {
       const meta = AUDIT_ACTIONS[action];
@@ -91,6 +92,7 @@ describe("AUDIT_ACTIONS", () => {
       "segment_deleted",
       "person_forgotten",
       "people_imported",
+      "safe_env_saved",
     ]);
     assert.equal(actionsInGroup("chapter").includes("person_merged"), false);
   });
@@ -159,6 +161,10 @@ describe("auditSummary", () => {
     assert.equal(
       auditSummary("people_imported", { created: 2, tasks: 1, skipped: 3 }),
       "2 created, 1 tasks",
+    );
+    assert.equal(
+      auditSummary("safe_env_saved", { changed: ["works_with_minors", "safe_env_trained_on"] }),
+      "changed: works_with_minors, safe_env_trained_on",
     );
   });
 

@@ -27,6 +27,7 @@ import { Route as PeopleIndexRouteImport } from './routes/people/index'
 import { Route as PeoplePersonIdRouteImport } from './routes/people/$personId'
 import { Route as PeopleImportRouteImport } from './routes/people/import'
 import { Route as PeopleListsRouteImport } from './routes/people/lists'
+import { Route as PeopleSafeEnvironmentRouteImport } from './routes/people/safe-environment'
 import { Route as RTokenRouteImport } from './routes/r/$token'
 import { Route as SchoolsIndexRouteImport } from './routes/schools/index'
 import { Route as SchoolsSchoolIdRouteImport } from './routes/schools/$schoolId'
@@ -135,6 +136,11 @@ const PeopleListsRoute = PeopleListsRouteImport.update({
   path: '/people/lists',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PeopleSafeEnvironmentRoute = PeopleSafeEnvironmentRouteImport.update({
+  id: '/people/safe-environment',
+  path: '/people/safe-environment',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RTokenRoute = RTokenRouteImport.update({
   id: '/r/$token',
   path: '/r/$token',
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/people/$personId': typeof PeoplePersonIdRoute
   '/people/import': typeof PeopleImportRoute
   '/people/lists': typeof PeopleListsRoute
+  '/people/safe-environment': typeof PeopleSafeEnvironmentRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
@@ -273,6 +280,7 @@ export interface FileRoutesByTo {
   '/people/$personId': typeof PeoplePersonIdRoute
   '/people/import': typeof PeopleImportRoute
   '/people/lists': typeof PeopleListsRoute
+  '/people/safe-environment': typeof PeopleSafeEnvironmentRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter': typeof ChapterIndexRoute
@@ -311,6 +319,7 @@ export interface FileRoutesById {
   '/people/$personId': typeof PeoplePersonIdRoute
   '/people/import': typeof PeopleImportRoute
   '/people/lists': typeof PeopleListsRoute
+  '/people/safe-environment': typeof PeopleSafeEnvironmentRoute
   '/r/$token': typeof RTokenRoute
   '/schools/$schoolId': typeof SchoolsSchoolIdRoute
   '/chapter/': typeof ChapterIndexRoute
@@ -350,6 +359,7 @@ export interface FileRouteTypes {
     | '/people/$personId'
     | '/people/import'
     | '/people/lists'
+    | '/people/safe-environment'
     | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter/'
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/people/$personId'
     | '/people/import'
     | '/people/lists'
+    | '/people/safe-environment'
     | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter'
@@ -423,6 +434,7 @@ export interface FileRouteTypes {
     | '/people/$personId'
     | '/people/import'
     | '/people/lists'
+    | '/people/safe-environment'
     | '/r/$token'
     | '/schools/$schoolId'
     | '/chapter/'
@@ -461,6 +473,7 @@ export interface RootRouteChildren {
   PeoplePersonIdRoute: typeof PeoplePersonIdRoute
   PeopleImportRoute: typeof PeopleImportRoute
   PeopleListsRoute: typeof PeopleListsRoute
+  PeopleSafeEnvironmentRoute: typeof PeopleSafeEnvironmentRoute
   RTokenRoute: typeof RTokenRoute
   SchoolsSchoolIdRoute: typeof SchoolsSchoolIdRoute
   ChapterIndexRoute: typeof ChapterIndexRoute
@@ -607,6 +620,13 @@ declare module '@tanstack/react-router' {
       path: '/people/lists'
       fullPath: '/people/lists'
       preLoaderRoute: typeof PeopleListsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/people/safe-environment': {
+      id: '/people/safe-environment'
+      path: '/people/safe-environment'
+      fullPath: '/people/safe-environment'
+      preLoaderRoute: typeof PeopleSafeEnvironmentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/r/$token': {
@@ -761,6 +781,7 @@ const rootRouteChildren: RootRouteChildren = {
   PeoplePersonIdRoute: PeoplePersonIdRoute,
   PeopleImportRoute: PeopleImportRoute,
   PeopleListsRoute: PeopleListsRoute,
+  PeopleSafeEnvironmentRoute: PeopleSafeEnvironmentRoute,
   RTokenRoute: RTokenRoute,
   SchoolsSchoolIdRoute: SchoolsSchoolIdRoute,
   ChapterIndexRoute: ChapterIndexRoute,
