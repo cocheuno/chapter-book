@@ -24,6 +24,7 @@ import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./mem
 import { csvRow } from "./csv";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
+import { readSafeEnvironment, safeEnvironmentView, withoutSafeEnvironment } from "./safe-environment";
 import { parseSegmentFilter, segmentWhere } from "./segment-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
 import { withAssignee } from "./task-assign-rules";
@@ -444,6 +445,9 @@ export const getPerson = createServerFn({ method: "GET" })
       select * from persons where id = ${id} and chapter_id = ${m.chapterId}
     `;
     if (!rows[0]) throw new Error("Person not found");
+    const source = rows[0];
+    const safeEnvironment = safeEnvironmentView(m.role, readSafeEnvironment(source), todayIn(m.timezone));
+    const person = withoutSafeEnvironment(source);
     const roles = await sql<{ role_key: string }>`select role_key from person_roles where person_id = ${id}`;
     const affiliations = await sql<{
       id: string;
@@ -519,7 +523,8 @@ export const getPerson = createServerFn({ method: "GET" })
       order by lower(t.name), t.name
     `;
     return {
-      person: rows[0],
+      person,
+      safeEnvironment,
       roles: roles.map((r) => r.role_key),
       affiliations,
       pastAffiliations,

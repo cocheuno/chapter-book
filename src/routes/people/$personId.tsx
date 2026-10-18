@@ -16,11 +16,13 @@ import { getSessionContext } from "@/lib/crm/member";
 import { MERGE_FIELDS } from "@/lib/crm/person-merge";
 import { addPersonEmail, listPersonEmails, makeMainEmail, removePersonEmail } from "@/lib/crm/person-emails";
 import { getMergePreview, mergePeople } from "@/lib/crm/person-merge-server";
+import { clearanceLabel } from "@/lib/crm/safe-environment";
+import { setSafeEnvironment } from "@/lib/crm/safe-environment-server";
 import { attendanceLine } from "@/lib/crm/engagement";
 import { listedName } from "@/lib/crm/names";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { PERSON_STATUSES, deceasedMark } from "@/lib/crm/person-status";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/people/$personId")({ component: PersonPage });
@@ -78,6 +80,14 @@ function PersonInner() {
     latestId.current = personId;
     setData(null);
     setMergeOpen(false);
+  }
+
+  function reloadPerson() {
+    const id = personId;
+    return getPerson({ data: id }).then((d) => {
+      if (latestId.current !== id) return;
+      setData(d);
+    });
   }
 
   function load() {
@@ -472,6 +482,10 @@ function PersonInner() {
         </section>
       )}
 
+      {data.safeEnvironment ? (
+        <SafeEnvironmentSection personId={personId} record={data.safeEnvironment} onSaved={reloadPerson} />
+      ) : null}
+
       <section>
         <h2 className="mb-2 font-display text-xl">Gatherings</h2>
         {data.celebrated.length > 0 && (
@@ -542,6 +556,134 @@ function PersonInner() {
         </section>
       )}
     </div>
+  );
+}
+
+type SafeEnvRecord = NonNullable<Awaited<ReturnType<typeof getPerson>>["safeEnvironment"]>;
+
+function safeForm(record: SafeEnvRecord) {
+  return {
+    worksWithMinors: record.works_with_minors,
+    program: record.safe_env_program ?? "",
+    trainedOn: record.safe_env_trained_on ?? "",
+    diocese: record.safe_env_diocese ?? "",
+    backgroundCheckOn: record.background_check_on ?? "",
+    backgroundCheckExpiresOn: record.background_check_expires_on ?? "",
+    suitabilityRequestedOn: record.suitability_requested_on ?? "",
+    suitabilityReceivedOn: record.suitability_received_on ?? "",
+    suitabilityExpiresOn: record.suitability_expires_on ?? "",
+  };
+}
+
+function SafeEnvironmentSection({
+  personId,
+  record,
+  onSaved,
+}: {
+  personId: string;
+  record: SafeEnvRecord;
+  onSaved: () => Promise<void>;
+}) {
+  const [form, setForm] = useState(safeForm(record));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setForm(safeForm(record));
+  }, [record]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await setSafeEnvironment({ data: { personId, ...form } });
+      await onSaved();
+      toast.success("Saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setText(
+    key:
+      | "program"
+      | "trainedOn"
+      | "diocese"
+      | "backgroundCheckOn"
+      | "backgroundCheckExpiresOn"
+      | "suitabilityRequestedOn"
+      | "suitabilityReceivedOn"
+      | "suitabilityExpiresOn",
+    value: string,
+  ) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-surface p-4">
+      <h2 className="font-display text-xl">Safe environment</h2>
+      <p className="mt-2 text-sm">
+        {clearanceLabel(record.clearance)}
+        {record.soonestExpiry ? <span className="text-ink-soft"> · Expires {record.soonestExpiry}</span> : null}
+      </p>
+      <form onSubmit={(event) => void save(event)} className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={form.worksWithMinors}
+            onChange={(event) => setForm((current) => ({ ...current, worksWithMinors: event.target.checked }))}
+          />
+          Works with minors
+        </label>
+        <Field label="Program">
+          <Input value={form.program} onChange={(event) => setText("program", event.target.value)} placeholder="e.g. VIRTUS" />
+        </Field>
+        <Field label="Training date">
+          <Input type="date" value={form.trainedOn} onChange={(event) => setText("trainedOn", event.target.value)} />
+        </Field>
+        <Field label="Diocese">
+          <Input value={form.diocese} onChange={(event) => setText("diocese", event.target.value)} />
+        </Field>
+        <Field label="Background check date">
+          <Input type="date" value={form.backgroundCheckOn} onChange={(event) => setText("backgroundCheckOn", event.target.value)} />
+        </Field>
+        <Field label="Background check expires">
+          <Input
+            type="date"
+            value={form.backgroundCheckExpiresOn}
+            onChange={(event) => setText("backgroundCheckExpiresOn", event.target.value)}
+          />
+        </Field>
+        <Field label="Letter of suitability requested">
+          <Input
+            type="date"
+            value={form.suitabilityRequestedOn}
+            onChange={(event) => setText("suitabilityRequestedOn", event.target.value)}
+          />
+        </Field>
+        <Field label="Letter of suitability received">
+          <Input
+            type="date"
+            value={form.suitabilityReceivedOn}
+            onChange={(event) => setText("suitabilityReceivedOn", event.target.value)}
+          />
+        </Field>
+        <Field label="Letter of suitability expires">
+          <Input
+            type="date"
+            value={form.suitabilityExpiresOn}
+            onChange={(event) => setText("suitabilityExpiresOn", event.target.value)}
+          />
+        </Field>
+        <div>
+          <Button type="submit" disabled={busy}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -814,6 +956,7 @@ function MergePanel({
         : preview.keep.display_name || chosen?.label || "";
   const sameCount = preview ? MERGE_FIELDS.length - preview.differingFields.length : 0;
   const moveLines = preview ? MOVE_LINES.filter((line) => preview.counts[line.key] > 0) : [];
+  const movesSafeEnvironment = preview?.movesSafeEnvironment === true;
 
   return (
     <section className="space-y-4 rounded-xl border border-line bg-surface p-4">
@@ -917,7 +1060,7 @@ function MergePanel({
           </p>
           <div>
             <h2 className="mb-1 text-sm font-medium">What moves to the kept record</h2>
-            {moveLines.length === 0 ? (
+            {moveLines.length === 0 && !movesSafeEnvironment ? (
               <p className="text-sm text-ink-soft">Nothing else moves.</p>
             ) : (
               <ul className="text-sm">
@@ -926,6 +1069,7 @@ function MergePanel({
                     {line.label}: {preview.counts[line.key]}
                   </li>
                 ))}
+                {movesSafeEnvironment ? <li>Safe-environment record</li> : null}
               </ul>
             )}
           </div>

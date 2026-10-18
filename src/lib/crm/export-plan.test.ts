@@ -10,6 +10,7 @@ import {
   exportValue,
   readmeText,
 } from "./export-plan.ts";
+import { SAFE_ENV_FIELDS } from "./safe-environment.ts";
 
 const EXPECTED: { file: string; table: string; scope: string }[] = [
   ["chapter.csv", "chapters", "self"],
@@ -91,6 +92,10 @@ describe("exportColumns", () => {
       ]),
       ["id", "display_name", "email", "notes", "created_at"],
     );
+  });
+
+  it("keeps the safe-environment columns for the admin people export", () => {
+    assert.deepEqual(exportColumns([...SAFE_ENV_FIELDS]), [...SAFE_ENV_FIELDS]);
   });
 });
 

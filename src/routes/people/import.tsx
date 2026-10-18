@@ -161,7 +161,8 @@ function ImportInner() {
   async function commit() {
     if (!checked || busy) return;
     const n = checked.rows.filter((item) => item.kind === "new").length;
-    if (!window.confirm(`Import ${n} new people?`)) return;
+    const m = checked.rows.filter((item) => item.kind === "match" && item.differences.length > 0).length;
+    if (!window.confirm(`Import ${n} new people and make ${m} review tasks?`)) return;
     const rows = mappedRows();
     const limit = tooLong(rows);
     if (limit) {
@@ -172,6 +173,7 @@ function ImportInner() {
     try {
       const result = await importPeople({ data: { rows } });
       setSummary(result);
+      setChecked(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not import");
     } finally {
@@ -204,6 +206,7 @@ function ImportInner() {
           <Field label="CSV file">
             <Input type="file" accept=".csv,text/csv" onChange={onFile} />
           </Field>
+          <p className="text-sm text-ink-soft">For large lists, import 500 rows at a time.</p>
           {fileError ? <p className="text-sm text-danger">{fileError}</p> : null}
           {headers.length > 0 ? (
             <div className="space-y-3">

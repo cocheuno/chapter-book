@@ -20,6 +20,7 @@ import {
   type MergeFieldName,
   type MergedPerson,
 } from "./person-merge";
+import { SAFE_ENV_FIELDS, readSafeEnvironment, safeEnvToCopy } from "./safe-environment";
 
 const side = z.enum(["keep", "other"]);
 
@@ -107,8 +108,9 @@ function previewPerson(row: Record<string, unknown>) {
 /** Dates become ISO strings so the audit row can be read back without the driver. */
 function removedRow(row: Record<string, unknown>): Record<string, unknown> {
   const copy: Record<string, unknown> = {};
+  const hidden = new Set<string>(SAFE_ENV_FIELDS);
   for (const [key, value] of Object.entries(row)) {
-    if (key === "chapter_id") continue;
+    if (key === "chapter_id" || hidden.has(key)) continue;
     if (value instanceof Date)
       copy[key] = Number.isNaN(value.getTime()) ? null : value.toISOString();
     else if (typeof value === "bigint") copy[key] = Number(value);
@@ -581,6 +583,7 @@ export const getMergePreview = createServerFn({ method: "POST" })
       differingFields: differingFields(keep, other),
       defaultPicks: defaultPicks(keep, other),
       counts,
+      movesSafeEnvironment: safeEnvToCopy(readSafeEnvironment(keep), readSafeEnvironment(other)) !== null,
     };
   });
 
@@ -632,6 +635,24 @@ export const mergePeople = createServerFn({ method: "POST" })
       update person_emails set person_id = ${data.keepId}
       where person_id = ${data.mergeId} and chapter_id = ${member.chapterId}
     `;
+    const safeBlock = safeEnvToCopy(readSafeEnvironment(keep), readSafeEnvironment(other));
+    if (safeBlock) {
+      const copied = await sql<{ id: string }>`
+        update persons set
+          works_with_minors = ${safeBlock.works_with_minors},
+          safe_env_program = ${safeBlock.safe_env_program},
+          safe_env_trained_on = ${safeBlock.safe_env_trained_on},
+          safe_env_diocese = ${safeBlock.safe_env_diocese},
+          background_check_on = ${safeBlock.background_check_on},
+          background_check_expires_on = ${safeBlock.background_check_expires_on},
+          suitability_requested_on = ${safeBlock.suitability_requested_on},
+          suitability_received_on = ${safeBlock.suitability_received_on},
+          suitability_expires_on = ${safeBlock.suitability_expires_on}
+        where id = ${data.keepId} and chapter_id = ${member.chapterId}
+        returning id
+      `;
+      if (!copied[0]) throw new Error("Person not found.");
+    }
     await sql`
       delete from persons where id = ${data.mergeId} and chapter_id = ${member.chapterId}
     `;
