@@ -1,8 +1,9 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { databaseSource } from "./database-source";
 import { runInTransaction } from "./transaction-rules";
 
 /** Which database backend is active. */
-export type DbSource = "neon" | "pglite";
+export type DbSource = "neon" | "pglite" | "missing";
 
 // An empty/whitespace DATABASE_URL (an easy misconfig in deploy UIs) must mean
 // "unset" — otherwise production would silently run on the PGLite fallback.
@@ -12,12 +13,14 @@ const databaseUrl =
   rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
 
 /**
- * Active backend: real **Neon** when `DATABASE_URL` is set (deployed / configured
- * sandbox), otherwise a local embedded **PGLite** (Postgres compiled to WASM) so
- * the app has a working database even with nothing configured — the live preview
- * included. Swap in Neon later by just setting `DATABASE_URL`; no code changes.
+ * Active backend: real **Neon** when `DATABASE_URL` is set. A hosted deployment
+ * (`VERCEL_ENV` set) with no database URL is "missing" and refuses queries.
+ * Otherwise a local embedded **PGLite** so the workspace preview still runs.
  */
-export const dbSource: DbSource = databaseUrl ? "neon" : "pglite";
+export const dbSource: DbSource = databaseSource({
+  databaseUrl,
+  vercelEnv: typeof process !== "undefined" ? process.env.VERCEL_ENV : undefined,
+});
 
 /**
  * Minimal shared SQL surface, satisfied by both Neon and PGLite. Both the
@@ -190,12 +193,16 @@ async function createSql(): Promise<Sql> {
         "or a server route loader, never from client code.",
     );
   }
+  if (dbSource === "missing") {
+    throw new Error("DATABASE_URL is not set on this deployment.");
+  }
   return dbSource === "neon" ? createNeonSql() : createPgliteSql();
 }
 
 /**
  * Get the shared, **server-only** SQL client. Neon when `DATABASE_URL` is set,
- * otherwise the local PGLite fallback. Memoized — safe to call per request.
+ * PGLite when nothing is configured locally. A hosted deployment with no
+ * database URL throws. Memoized — safe to call per request.
  *
  * Schema comes from `migrations/*.sql`, auto-applied before the first query on
  * both backends — define tables there, never inline in server functions.
@@ -229,6 +236,9 @@ export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite
  * unchanged. Inside `fn`, use only the `tx` argument.
  */
 export async function withTransaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T> {
+  if (dbSource === "missing") {
+    throw new Error("DATABASE_URL is not set on this deployment.");
+  }
   if (dbSource === "pglite") {
     const pg = await getPglite();
     return pg.transaction(async (t) =>
@@ -262,7 +272,7 @@ export async function withTransaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T
 /**
  * Finish DB bootstrap before the server handles traffic.
  *
- * - **PGLite** (preview / no `DATABASE_URL`): open the in-memory DB and apply
+ * - **PGLite** (no `DATABASE_URL` and not a hosted deployment): open the in-memory DB and apply
  *   `migrations/*.sql`. Idempotent — concurrent callers share one promise.
  * - **Neon**: no-op (pool is created lazily on first query).
  *

@@ -5,8 +5,10 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { publicCopyHtml } from "./announcement-html";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
+import { bookRegistrationAllowed } from "./book-registration";
+import { maySetBookRegistration } from "./handler-roles";
 import { nid } from "./ids";
-import { assertEditor, loadMember } from "./member";
+import { assertAdmin, assertEditor, loadMember } from "./member";
 import { parsePriceCents } from "@/lib/payments/pricing";
 import { ticketPartsUnchanged } from "@/lib/payments/registration-desk";
 
@@ -214,6 +216,9 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
             manage_message: page.manage_message,
           }
         : { use_book_registration: false, intro: null, for_schools: null, manage_message: null },
+      bookRegistrationAllowed: bookRegistrationAllowed(
+        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
+      ),
       agreements: agreements.map((row) => ({
         id: row.id,
         kind: row.kind,
@@ -607,7 +612,9 @@ export const setBookRegistration = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(z.object({ eventId: z.string().min(1), enabled: z.boolean() }).parse)
   .handler(async ({ context, data }) => {
-    const member = await editor(context.userId);
+    const member = await loadMember(context.userId);
+    assertAdmin(member.role);
+    if (!maySetBookRegistration(member.role)) throw new Error("Only an admin can do that.");
     const sql = await getSql();
     const event = await requireEvent(sql, member.chapterId, data.eventId);
     if (!event.public_item_id) throw new Error("This event has no public page.");

@@ -68,10 +68,12 @@ export default async function grokPwaMiddleware(
   const method = (event.req.method ?? "GET").toUpperCase();
   if (method !== "GET") return next();
 
+  const chromeOn = grokChromeEnabled(process.env.GROK_CHROME, process.env.BETTER_AUTH_URL);
   const path = event.url.pathname;
   const urlWithQuery = path + event.url.search;
 
   if (path === "/__grok/manifest.webmanifest" || path === "/__grok/manifest.json") {
+    if (!chromeOn) return next();
     return new Response(renderWebManifest(requestHost(event)), {
       headers: {
         "content-type": "application/manifest+json; charset=utf-8",
@@ -85,6 +87,7 @@ export default async function grokPwaMiddleware(
     isDocumentPath(path) &&
     acceptsHtml(event.req.headers.get("accept"))
   ) {
+    if (!chromeOn) return next();
     const html = renderInstallPageHtml(installPageTemplate, {
       host: requestHost(event),
       url: urlWithQuery,
@@ -105,7 +108,7 @@ export default async function grokPwaMiddleware(
     result.body &&
     String(result.headers.get("content-type") ?? "").includes("text/html") &&
     !result.headers.get("content-encoding") &&
-    grokChromeEnabled(process.env.GROK_CHROME)
+    chromeOn
   ) {
     return injectHeadStreaming(result, requestHost(event));
   }

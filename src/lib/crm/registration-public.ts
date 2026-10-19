@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { bookRegistrationAllowed } from "./book-registration";
 import { calendarHref } from "./calendar-file";
 import { todayIn } from "./dates";
 import { lowerEmail, nid } from "./ids";
@@ -210,7 +211,10 @@ export async function findRegistrationEvent(
     startsAt: row.starts_at,
     timezone: row.timezone,
     chapterTimezone: row.chapter_timezone,
-    enabled: row.use_book_registration === true,
+    enabled:
+      bookRegistrationAllowed(
+        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
+      ) && row.use_book_registration === true,
     intro: row.intro,
     forSchools: row.for_schools,
     manageMessage: row.manage_message,

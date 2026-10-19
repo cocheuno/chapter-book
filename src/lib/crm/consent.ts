@@ -17,6 +17,7 @@ import {
   type GuardianConsentInput,
 } from "@/lib/payments/consent-rules";
 import { THROTTLE_LIMIT, turnstileMode } from "@/lib/payments/registration-rules";
+import { bookRegistrationAllowed } from "./book-registration";
 import { lowerEmail, nid } from "./ids";
 import { composePersonName, splitWalkupName } from "./names";
 import { hashInviteToken, newInviteToken } from "./operator-rules";
@@ -407,6 +408,13 @@ export async function readConsentDetail(
 export const getConsentPage = createServerFn({ method: "GET" })
   .validator((token: unknown) => (typeof token === "string" ? token.trim().slice(0, 200) : ""))
   .handler(async ({ data: token }) => {
+    if (
+      !bookRegistrationAllowed(
+        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
+      )
+    ) {
+      return { valid: false as const };
+    }
     if (!token) return { valid: false as const };
     const sql = await getSql();
     const chapterId = await firstChapterId(sql);
@@ -442,6 +450,13 @@ const consentSubmit = z.object({
 export const submitConsent = createServerFn({ method: "POST" })
   .validator(consentSubmit.parse)
   .handler(async ({ data }) => {
+    if (
+      !bookRegistrationAllowed(
+        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
+      )
+    ) {
+      throw new Error(INVALID_LINK);
+    }
     const sql = await getSql();
     const ip = clientIp();
     await bumpThrottle(sql, `consent:${hashInviteToken(ip)}`);
