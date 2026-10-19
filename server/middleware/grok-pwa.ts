@@ -68,7 +68,7 @@ export default async function grokPwaMiddleware(
   const method = (event.req.method ?? "GET").toUpperCase();
   if (method !== "GET") return next();
 
-  const chromeOn = grokChromeEnabled(process.env.GROK_CHROME, process.env.BETTER_AUTH_URL);
+  const chromeOn = grokChromeEnabled(process.env.GROK_CHROME, process.env.BETTER_AUTH_URL, process.env.VERCEL_ENV);
   const path = event.url.pathname;
   const urlWithQuery = path + event.url.search;
 

@@ -25,7 +25,7 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `ALLOW_PREVIEW_MIGRATIONS` | **Preview** only. `off` until H1 step 3; then exactly `on` |
 | `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
 | `FOUNDER_EMAIL` | **Production** only. The address of the chapter's admin account. Only that address can open an empty hosted book. |
-| `GROK_CHROME` | Optional on Vercel (off unless exactly `on`). Stops Grok's page chrome (the grok.com script and share-tag rewriting) unless it is exactly `on`. Grok's own workspace preview is not affected. |
+| `GROK_CHROME` | Optional. `off` always turns it off and `on` always turns it on. Unset means off on every Vercel deployment. Keep it set to `off` on Production and Preview. |
 | `BOOK_REGISTRATION` | Leave unset: tickets are sold through Stripe Payment Links. |
 | `BROKER_SIGNIN` | Leave unset on Vercel (Production and Preview). Grok's Google/X sign-in service then stays off wherever `BETTER_AUTH_URL` is set. Set to `on` only for a deployment that must use it. |
 | `TURNSTILE_SITE_KEY` | **Production:** the real widget's site key. **Preview:** Cloudflare's test key `1x00000000000000000000AA`. When neither Turnstile key is set, the check is skipped. |
