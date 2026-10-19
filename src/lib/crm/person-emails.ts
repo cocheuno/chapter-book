@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSql, type Sql } from "@/lib/db";
+import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { nid } from "./ids";
@@ -162,51 +162,54 @@ export const makeMainEmail = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const member = await loadMember(context.userId);
     assertEditor(member.role);
-    const sql = await getSql();
-    const rows = await sql<{ email: string; main_email: string | null }>`
-      select e.email, p.email as main_email
-      from person_emails e
-      join persons p on p.id = e.person_id and p.chapter_id = e.chapter_id
-      where e.id = ${data.emailId} and e.person_id = ${data.personId} and e.chapter_id = ${member.chapterId}
-    `;
-    const row = rows[0];
-    if (!row) throw new Error("That email is no longer on this person.");
-    const next = row.email.trim().toLowerCase();
-    const previous = row.main_email?.trim().toLowerCase() || null;
-    const owned = await emailOwnerError(sql, member.chapterId, next, data.personId);
-    if (owned) throw new Error(owned);
-    await sql`
-      delete from person_emails
-      where id = ${data.emailId} and person_id = ${data.personId} and chapter_id = ${member.chapterId}
-    `;
+    let next = "";
     try {
-      const saved = await sql<{ id: string }>`
-        update persons set email = ${next}
-        where id = ${data.personId} and chapter_id = ${member.chapterId}
-        returning id
-      `;
-      if (!saved[0]) throw new Error("Person not found");
+      return await withTransaction(async (tx) => {
+        const rows = await tx<{ email: string; main_email: string | null }>`
+          select e.email, p.email as main_email
+          from person_emails e
+          join persons p on p.id = e.person_id and p.chapter_id = e.chapter_id
+          where e.id = ${data.emailId} and e.person_id = ${data.personId} and e.chapter_id = ${member.chapterId}
+        `;
+        const row = rows[0];
+        if (!row) throw new Error("That email is no longer on this person.");
+        next = row.email.trim().toLowerCase();
+        const previous = row.main_email?.trim().toLowerCase() || null;
+        const owned = await emailOwnerError(tx, member.chapterId, next, data.personId);
+        if (owned) throw new Error(owned);
+        await tx`
+          delete from person_emails
+          where id = ${data.emailId} and person_id = ${data.personId} and chapter_id = ${member.chapterId}
+        `;
+        const saved = await tx<{ id: string }>`
+          update persons set email = ${next}
+          where id = ${data.personId} and chapter_id = ${member.chapterId}
+          returning id
+        `;
+        if (!saved[0]) throw new Error("Person not found");
+        // The log sits between the main-address change and storing the old address again.
+        await recordAudit(tx, {
+          chapterId: member.chapterId,
+          actor: member.userId,
+          action: "email_made_main",
+          entity: "person",
+          entityId: data.personId,
+          detail: { from: previous ?? "", to: next },
+        });
+        if (previous && previous !== next) {
+          await tx`
+            insert into person_emails (id, chapter_id, person_id, email, label, created_by)
+            values (
+              ${nid()}, ${member.chapterId}, ${data.personId}, ${previous}, ${"previous main"}, ${member.userId}
+            )
+            on conflict do nothing
+          `;
+        }
+        return { ok: true };
+      });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
+      const sql = await getSql();
       throw new Error(await alreadyBelongs(sql, member.chapterId, next));
     }
-    // The log sits between the main-address change and storing the old address again.
-    await recordAudit(sql, {
-      chapterId: member.chapterId,
-      actor: member.userId,
-      action: "email_made_main",
-      entity: "person",
-      entityId: data.personId,
-      detail: { from: previous ?? "", to: next },
-    });
-    if (previous && previous !== next) {
-      await sql`
-        insert into person_emails (id, chapter_id, person_id, email, label, created_by)
-        values (
-          ${nid()}, ${member.chapterId}, ${data.personId}, ${previous}, ${"previous main"}, ${member.userId}
-        )
-        on conflict do nothing
-      `;
-    }
-    return { ok: true };
   });

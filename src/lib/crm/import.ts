@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSql, type Sql } from "@/lib/db";
+import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { PERSON_ROLES } from "./constants";
@@ -188,12 +188,7 @@ async function loadExisting(sql: Sql, chapterId: string): Promise<ExistingPerson
   return [...byId.values()];
 }
 
-async function insertNew(
-  sql: Sql,
-  chapterId: string,
-  userId: string,
-  row: ImportRow,
-): Promise<boolean> {
+async function insertNew(chapterId: string, userId: string, row: ImportRow): Promise<boolean> {
   const given = row.given_name.trim();
   const family = row.family_name.trim();
   const suffix = row.suffix.trim() || null;
@@ -210,50 +205,52 @@ async function insertNew(
     postNominals,
   });
   const email = lowerEmail(row.email);
-  if (email) {
-    const dup = await findPersonByEmail(sql, chapterId, email);
-    if (dup) return false;
-  } else {
-    const dup = await sql<{ id: string }>`
-      select id from persons
-      where chapter_id = ${chapterId}
-        and forgotten_at is null
-        and (
-          lower(display_name) = ${foldName(name)}
-          or (
-            lower(coalesce(given_name, '')) = ${foldName(given)}
-            and lower(coalesce(family_name, '')) = ${foldName(family)}
-          )
-        )
-    `;
-    if (dup[0]) return false;
-  }
   const id = nid();
   try {
-    await sql`
-      insert into persons (
-        id, chapter_id, display_name, given_name, family_name, middle_name, middle_initial, suffix,
-        honorific, religious_title, academic_title, post_nominals, salutation_override,
-        email, phone, mobile, street, street2, city, state, postal_code, country, website, dietary, notes,
-        source, news_consent, created_by
-      )
-      values (
-        ${id}, ${chapterId}, ${name}, ${given}, ${family}, ${null}, ${null}, ${suffix},
-        ${honorific}, ${religious || null}, ${academic || null}, ${postNominals}, ${null},
-        ${email}, ${blankToNull(row.phone)}, ${blankToNull(row.mobile)}, ${blankToNull(row.street)},
-        ${blankToNull(row.street2)}, ${blankToNull(row.city)}, ${blankToNull(row.state)},
-        ${blankToNull(row.postal_code)}, ${row.country.trim() || "United States"}, ${blankToNull(row.website)},
-        ${null}, ${blankToNull(row.notes)}, ${"import"}, ${"unknown"}, ${userId}
-      )
-    `;
+    return await withTransaction(async (tx) => {
+      if (email) {
+        const dup = await findPersonByEmail(tx, chapterId, email);
+        if (dup) return false;
+      } else {
+        const dup = await tx<{ id: string }>`
+          select id from persons
+          where chapter_id = ${chapterId}
+            and forgotten_at is null
+            and (
+              lower(display_name) = ${foldName(name)}
+              or (
+                lower(coalesce(given_name, '')) = ${foldName(given)}
+                and lower(coalesce(family_name, '')) = ${foldName(family)}
+              )
+            )
+        `;
+        if (dup[0]) return false;
+      }
+      await tx`
+        insert into persons (
+          id, chapter_id, display_name, given_name, family_name, middle_name, middle_initial, suffix,
+          honorific, religious_title, academic_title, post_nominals, salutation_override,
+          email, phone, mobile, street, street2, city, state, postal_code, country, website, dietary, notes,
+          source, news_consent, created_by
+        )
+        values (
+          ${id}, ${chapterId}, ${name}, ${given}, ${family}, ${null}, ${null}, ${suffix},
+          ${honorific}, ${religious || null}, ${academic || null}, ${postNominals}, ${null},
+          ${email}, ${blankToNull(row.phone)}, ${blankToNull(row.mobile)}, ${blankToNull(row.street)},
+          ${blankToNull(row.street2)}, ${blankToNull(row.city)}, ${blankToNull(row.state)},
+          ${blankToNull(row.postal_code)}, ${row.country.trim() || "United States"}, ${blankToNull(row.website)},
+          ${null}, ${blankToNull(row.notes)}, ${"import"}, ${"unknown"}, ${userId}
+        )
+      `;
+      await tx`
+        insert into person_roles (person_id, role_key) values (${id}, ${roleKey(row.role, PERSON_ROLES)})
+      `;
+      return true;
+    });
   } catch (err) {
     if (isUniqueViolation(err)) return false;
     throw err;
   }
-  await sql`
-    insert into person_roles (person_id, role_key) values (${id}, ${roleKey(row.role, PERSON_ROLES)})
-  `;
-  return true;
 }
 
 export const checkImport = createServerFn({ method: "POST" })
@@ -281,7 +278,7 @@ export const importPeople = createServerFn({ method: "POST" })
     const drafts = new Map<string, { name: string; lines: string[] }>();
     for (const item of classified) {
       if (item.kind === "new") {
-        const ok = await insertNew(sql, member.chapterId, member.userId, item.values);
+        const ok = await insertNew(member.chapterId, member.userId, item.values);
         if (ok) created += 1;
         continue;
       }

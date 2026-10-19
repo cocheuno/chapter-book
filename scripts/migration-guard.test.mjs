@@ -99,6 +99,10 @@ test("allowed forms, comments, and strings are not reported", () => {
       "alter column title type text;\nalter column title set data type text;\n" +
       "alter column title set default 'a';\n" +
       "insert into site_items (id) values ('a');\ncopy site_items (id) from stdin;\n" +
+      "do $$ begin execute 'delete from persons'; end $$;\n" +
+      "create or replace function f() returns void language sql as 'select 1';\n" +
+      "grant select on persons to public;\nrevoke all on persons from public;\n" +
+      "alter table persons owner to current_user;\nset role admin;\n" +
       "merge into site_items t using (select 'a' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n*/\n" +
       "select 'update delete truncate drop rename insert into copy merge' as note;\n",
     "0023_delete_cascade.sql":
@@ -137,8 +141,8 @@ test("allowed forms, comments, and strings are not reported", () => {
 test("insert, copy, and merge are forbidden unless the same file creates the table", () => {
   const forbidden = [
     ["insert into site_items (id) values ('a');\n", ["insert into"]],
-    ["copy site_items (id) from stdin;\n", ["copy ... from"]],
-    ['copy "Site_Items" (id) from stdin;\n', ["copy ... from"]],
+    ["copy site_items (id) from stdin;\n", ["copy", "copy ... from"]],
+    ['copy "Site_Items" (id) from stdin;\n', ["copy", "copy ... from"]],
     [
       "merge into site_items t using (select 'a' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n",
       ["merge into"],
@@ -165,15 +169,31 @@ test("insert, copy, and merge are forbidden unless the same file creates the tab
 
   const allowed = [
     "create table notes (id text);\ninsert into notes (id) values ('a');\n",
-    "create table if not exists notes (id text);\ncopy notes (id) from stdin;\n",
     "create table \"Notes\" (id text);\ninsert into public.notes (id) values ('a');\n",
-    'create table public.notes (id text);\ncopy "Notes" (id) from stdin;\n',
     'create table notes (id text);\nmerge into "public"."Notes" t using (select \'a\' as id) s on t.id = s.id when not matched then insert (id) values (s.id);\n',
-    "copy site_items to stdout;\n",
+    "on conflict (id) do nothing;\n",
+    "select $1;\n",
   ];
   for (const sql of allowed) {
     assert.deepEqual(findForbiddenSql("0019_new.sql", sql), []);
   }
+  assert.deepEqual(
+    findForbiddenSql(
+      "0019_new.sql",
+      "create table if not exists notes (id text);\ncopy notes (id) from stdin;\n",
+    ).map((row) => row.form),
+    ["copy"],
+  );
+  assert.deepEqual(
+    findForbiddenSql("0019_new.sql", 'create table public.notes (id text);\ncopy "Notes" (id) from stdin;\n').map(
+      (row) => row.form,
+    ),
+    ["copy"],
+  );
+  assert.deepEqual(
+    findForbiddenSql("0019_new.sql", "copy site_items to stdout;\n").map((row) => row.form),
+    ["copy"],
+  );
 
   const mixed =
     "create table notes (id text);\n" +
@@ -303,8 +323,48 @@ test("older files and migrations/auth are not checked", () => {
   writeSql(dir, "0018_old.sql", "update site_items set title = 'x';\n");
   mkdirSync(join(dir, "auth"));
   writeSql(join(dir, "auth"), "0019_auth.sql", "delete from persons;\n");
+  writeSql(join(dir, "auth"), "fix.sql", "DO $$ BEGIN EXECUTE 'DELETE FROM persons'; END $$;\n");
   writeSql(dir, "0019_ok.sql", "create table if not exists notes (id text);\n");
   assert.deepEqual(guardMigrationDir(dir), []);
+});
+
+test("dollar quotes, do blocks, and the other new forms are rejected", () => {
+  const example = "DO $$ BEGIN EXECUTE 'DELETE FROM persons'; END $$;\n";
+  const exampleForms = findForbiddenSql("0019_do.sql", example).map((row) => row.form);
+  assert.equal(exampleForms.includes("delete"), false);
+  assert.ok(exampleForms.includes("do"));
+  assert.ok(exampleForms.includes("dollar quote"));
+  assert.ok(exampleForms.includes("execute"));
+
+  const cases = [
+    ["$$;\n", "dollar quote"],
+    ["$tag$ begin $tag$;\n", "dollar quote"],
+    ["do $tag$ begin $tag$;\n", "do"],
+    ["do language plpgsql $$ begin end $$;\n", "do"],
+    ["execute 'select 1';\n", "execute"],
+    ["create function f() returns void language sql as 'select 1';\n", "create function"],
+    ["create or replace procedure p() language sql as 'select 1';\n", "create procedure"],
+    ["create trigger t before insert on notes execute function f();\n", "create trigger"],
+    ["create or replace rule r as on insert to notes do instead nothing;\n", "create rule"],
+    ["copy notes to stdout;\n", "copy"],
+    ["grant select on notes to public;\n", "grant"],
+    ["revoke all on notes from public;\n", "revoke"],
+    ["alter table notes owner to current_user;\n", "alter ... owner to"],
+    ["set role admin;\n", "set role"],
+  ];
+  for (const [sql, form] of cases) {
+    const found = findForbiddenSql("0019_form.sql", sql);
+    assert.ok(
+      found.some((row) => row.form === form),
+      `${sql} should report ${form}, got ${found.map((row) => row.form).join(", ")}`,
+    );
+  }
+});
+
+test("an unnumbered sql file directly in migrations fails the guard", () => {
+  const dir = mkdtempSync(join(tmpdir(), "migration-guard-name-"));
+  writeSql(dir, "fix.sql", "create table if not exists notes (id text);\n");
+  assert.deepEqual(guardMigrationDir(dir), [{ file: "fix.sql", line: 1, form: "file name" }]);
 });
 
 test("the real migrations folder has no guarded violation", () => {
