@@ -558,7 +558,7 @@ async function saveKeptPerson(
     if (!isUniqueViolation(err)) throw err;
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Merged, but the name or email could not be saved: ${reason}. Edit the person to fix it.`,
+      `Nothing was merged: the name or email could not be saved (${reason}). Check for another person with the same name or email, then try again.`,
     );
   }
 }

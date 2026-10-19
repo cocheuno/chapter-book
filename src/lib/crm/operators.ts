@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
+import { operatorDirectory } from "./handler-roles";
 import { nid } from "./ids";
 import { assertAdmin, loadMember } from "./member";
 import {
@@ -62,6 +63,37 @@ export const listOperators = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const m = await loadMember(context.userId);
     const sql = await getSql();
+    if (operatorDirectory(m.role) !== "full") {
+      const rows = await sql<{
+        user_id: string;
+        role: OperatorRole;
+        disabled_at: string | null;
+        created_at: string;
+        name: string | null;
+      }>`
+        select m.user_id, m.role, m.disabled_at, m.created_at, u.name
+        from chapter_members m
+        left join "user" u on u.id = m.user_id
+        where m.chapter_id = ${m.chapterId}
+        order by m.role, u.name
+      `;
+      return {
+        members: rows.map((row) => ({
+          user_id: row.user_id,
+          role: row.role,
+          disabled_at: row.disabled_at,
+          created_at: row.created_at,
+          name: row.name,
+          email: null,
+          reset_created_at: null,
+          reset_used_at: null,
+        })),
+        invites: [],
+        unassigned: [],
+        selfId: m.userId,
+        role: m.role,
+      };
+    }
     const members = await sql<{
       user_id: string;
       role: OperatorRole;

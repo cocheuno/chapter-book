@@ -192,7 +192,8 @@ Code changes must not change the chapter's current data, or what the public webs
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
 | 60 | Review fixes: time zone, read-only reads, wording | — | Done (PR 53) | |
-| 61 | Transactions for merge and forget; merge keeps tags; stricter migration guard | — | | |
+| 61 | Transactions for merge and forget; merge keeps tags; stricter migration guard | — | Done (PR 54) | |
+| 63/64/71 | Safety switches and viewer limits (second review, round 1) | — | | |
 
 ---
 

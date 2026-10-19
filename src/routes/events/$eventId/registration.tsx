@@ -30,8 +30,6 @@ const AGREEMENTS = [
   { kind: "photo", label: "Photo release" },
 ] as const;
 
-const PAID_HINT = "Paid tickets show 'Online payment opens soon' until payments are set up.";
-
 type Setup = Awaited<ReturnType<typeof getRegistrationSetup>>;
 
 type PartDraft = {
@@ -162,6 +160,7 @@ function RegistrationInner() {
   const [tickets, setTickets] = useState<TicketDraft[]>([]);
   const [page, setPage] = useState<PageDraft>({ intro: "", forSchools: "", manageMessage: "" });
   const [bookOn, setBookOn] = useState(false);
+  const [hostAllows, setHostAllows] = useState(false);
   const [publicSlug, setPublicSlug] = useState<string | null>(null);
   const [agreements, setAgreements] = useState<AgreementDraft[]>(
     AGREEMENTS.map((item) => ({ kind: item.kind, label: item.label, html: "", createdAt: null })),
@@ -180,6 +179,7 @@ function RegistrationInner() {
         manageMessage: data.page.manage_message ?? "",
       });
       setBookOn(data.page.use_book_registration);
+      setHostAllows(data.bookRegistrationAllowed);
       setPublicSlug(data.event.slug);
       setAgreements(toAgreements(data));
       setReady(true);
@@ -291,12 +291,15 @@ function RegistrationInner() {
       </header>
 
       <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+        <p className="text-sm text-ink-soft">
+          Tickets are sold through Stripe Payment Links (October 2026). Leave this off.
+        </p>
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <input
             type="checkbox"
             className="size-5"
             checked={bookOn}
-            disabled={busy}
+            disabled={busy || !hostAllows}
             onChange={(event) => {
               const next = event.target.checked;
               if (
@@ -312,6 +315,7 @@ function RegistrationInner() {
           />
           Use Chapter Book registration
         </label>
+        {!hostAllows ? <p className="text-sm text-ink-soft">Turned off on this deployment.</p> : null}
         {bookOn && publicSlug ? (
           <>
             <p className="font-mono text-sm">/p/{publicSlug}/register</p>
@@ -505,7 +509,6 @@ function RegistrationInner() {
                 </Field>
               </div>
               {cents != null ? <p className="text-sm text-muted">{formatCents(cents)}</p> : null}
-              {cents != null && cents > 0 ? <p className="text-sm text-muted">{PAID_HINT}</p> : null}
               <Field label="Description">
                 <Textarea
                   value={ticket.description}

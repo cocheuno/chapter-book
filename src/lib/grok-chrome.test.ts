@@ -5,34 +5,38 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { grokChromeEnabled } from "./grok-chrome.ts";
 
+const hosted = "https://example.com";
+
 describe("grokChromeEnabled", () => {
-  it("returns false for off", () => {
-    assert.equal(grokChromeEnabled("off"), false);
-  });
+  const cases: Array<[string, string | undefined, string | undefined, boolean]> = [
+    ["blank url, unset", undefined, undefined, true],
+    ["blank url, off", "off", "", true],
+    ["blank url, on", "on", "", true],
+    ["blank url, ON ", "ON ", "  ", true],
+    ["blank url, yes", "yes", undefined, true],
+    ["set url, unset", undefined, hosted, false],
+    ["set url, off", "off", hosted, false],
+    ["set url, on", "on", hosted, true],
+    ["set url, ON ", "ON ", hosted, true],
+    ["set url, yes", "yes", hosted, false],
+  ];
 
-  it("returns false for off with surrounding spaces and different case", () => {
-    assert.equal(grokChromeEnabled(" OFF "), false);
-  });
-
-  it("returns true when the value is unset", () => {
-    assert.equal(grokChromeEnabled(undefined), true);
-  });
-
-  it("returns true for an empty value", () => {
-    assert.equal(grokChromeEnabled(""), true);
-  });
-
-  it("returns true for on", () => {
-    assert.equal(grokChromeEnabled("on"), true);
-  });
+  for (const [label, value, url, expected] of cases) {
+    it(label, () => {
+      assert.equal(grokChromeEnabled(value, url), expected);
+    });
+  }
 });
 
 describe("grok pwa middleware", () => {
-  it("guards head injection with grokChromeEnabled", () => {
+  it("gates manifest, install, and head injection on the hosted check", () => {
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "../../server/middleware/grok-pwa.ts"),
       "utf8",
     );
-    assert.ok(source.includes("grokChromeEnabled(process.env.GROK_CHROME)"));
+    assert.ok(
+      source.includes("grokChromeEnabled(process.env.GROK_CHROME, process.env.BETTER_AUTH_URL)"),
+    );
+    assert.equal(source.split("if (!chromeOn) return next();").length - 1, 2);
   });
 });

@@ -6,6 +6,7 @@ import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
 import { nid, slugify } from "./ids";
 import { canWrite } from "./access";
+import { bookRegistrationAllowed } from "./book-registration";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicAboutFields, publicSummaryFields } from "./announcement-html";
@@ -611,7 +612,10 @@ async function readPublicPage(
       where e.chapter_id = ${chapterId} and e.public_item_id = ${page.id} and rp.use_book_registration
       limit 1
     `;
-    const bookRegistration = Boolean(bookRows[0]);
+    const bookRegistration =
+      bookRegistrationAllowed(
+        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
+      ) && Boolean(bookRows[0]);
     const gatherings = await listGatherings(sql, chapterId);
     const shelf = await sql<{ id: string; slug: string | null; title: string; published: boolean }>`
       select id, slug, title, published from site_items where chapter_id = ${chapterId}

@@ -20,6 +20,7 @@ import { findPersonByEmail } from "./person-emails";
 import { composePersonName, listedName, postNominalsText, salutation, splitMiddle, splitWalkupName } from "./names";
 import { toHonorificGreeting, toSalutationGreeting } from "./templates";
 import { ensureEventWebPage } from "./event-page";
+import { mayExportNametags, mayPreviewMail } from "./handler-roles";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
 import { csvRow } from "./csv";
 import { recordAudit } from "./audit";
@@ -2386,6 +2387,8 @@ export const previewMail = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const m = await ctx(context.userId);
+    assertEditor(m.role);
+    if (!mayPreviewMail(m.role)) throw new Error("Viewers can look, not edit.");
     const sql = await getSql();
     const t = await sql<{ subject: string; body: string; name: string; key: string }>`
       select subject, body, name, key from mail_templates where id = ${data.templateId} and chapter_id = ${m.chapterId}
@@ -2674,6 +2677,8 @@ export const exportNametags = createServerFn({ method: "POST" })
   .validator((eventId: string) => eventId)
   .handler(async ({ context, data: eventId }) => {
     const m = await ctx(context.userId);
+    assertEditor(m.role);
+    if (!mayExportNametags(m.role)) throw new Error("Viewers can look, not edit.");
     const sql = await getSql();
     const rows = await sql<{
       honorific: string | null;
