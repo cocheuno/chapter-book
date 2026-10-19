@@ -9,7 +9,7 @@ import { ConferencePublicEditor } from "@/components/conference-public-editor";
 import { checklistPlan, missingChecklistItems } from "@/lib/crm/checklist";
 import { ADMISSIONS, hatLabel, OCCASIONS } from "@/lib/crm/constants";
 import { getEventWebPage, setEventWebPage } from "@/lib/crm/event-page";
-import { formatWhen, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
+import { DEFAULT_TZ, formatWhen, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
   addMissingChecklistItems,
   addProgramPiece,
@@ -122,7 +122,7 @@ function EventInner() {
           </div>
           <h1 className="mt-2 font-display text-3xl">{e.title}</h1>
           <p className="text-ink-soft">
-            {e.starts_at ? formatWhen(e.starts_at, "full", e.timezone ?? "America/Denver") : "Date TBA"} · {e.venue_name} {e.venue_detail}
+            {e.starts_at ? formatWhen(e.starts_at, "full", e.timezone || DEFAULT_TZ) : "Date TBA"} · {e.venue_name} {e.venue_detail}
           </p>
           {e.celebrant_name && <p className="text-sm">Celebrant: {e.celebrant_name}</p>}
           {data.companion && (
@@ -206,12 +206,12 @@ function EventInner() {
                 <Input
                   key={e.starts_at ?? "none"}
                   type="datetime-local"
-                  defaultValue={e.starts_at ? toDatetimeLocal(e.starts_at, e.timezone ?? "America/Denver") : ""}
+                  defaultValue={e.starts_at ? toDatetimeLocal(e.starts_at, e.timezone || DEFAULT_TZ) : ""}
                   onBlur={(ev) => {
                     const v = ev.target.value;
                     if (v) {
                       updateEvent({
-                        data: { id: eventId, startsAt: fromDatetimeLocal(v, e.timezone ?? "America/Denver") },
+                        data: { id: eventId, startsAt: fromDatetimeLocal(v, e.timezone || DEFAULT_TZ) },
                       })
                         .then(() => {
                           toast.success("Saved");

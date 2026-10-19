@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { ADMISSIONS, OCCASIONS } from "@/lib/crm/constants";
 import { createEvent, listEvents, listParishes } from "@/lib/crm/actions";
-import { fromDatetimeLocal, nextOccasionLocal } from "@/lib/crm/format";
+import { DEFAULT_TZ, fromDatetimeLocal, nextOccasionLocal } from "@/lib/crm/format";
 import { matchEventTitle } from "@/lib/crm/match";
+import { getSessionContext } from "@/lib/crm/member";
 import { useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -40,10 +41,19 @@ function NewEventInner() {
   const [webPage, setWebPage] = useState(false);
   const [parishes, setParishes] = useState<{ id: string; name: string }[]>([]);
   const [events, setEvents] = useState<{ id: string; title: string; status: string }[]>([]);
+  const [timeZone, setTimeZone] = useState(DEFAULT_TZ);
 
   useEffect(() => {
     listParishes().then(setParishes);
     listEvents().then(setEvents);
+    getSessionContext()
+      .then((session) => {
+        const zone = session.timezone.trim();
+        if (zone) setTimeZone(zone);
+      })
+      .catch(() => {
+        setTimeZone(DEFAULT_TZ);
+      });
   }, []);
 
   useEffect(() => {
@@ -72,7 +82,7 @@ function NewEventInner() {
             data: {
               typeKey,
               title,
-              startsAt: startsAt ? fromDatetimeLocal(startsAt) : undefined,
+              startsAt: startsAt ? fromDatetimeLocal(startsAt, timeZone) : undefined,
               hostParishId: hostId || undefined,
               venueOrganizationId: hostId || undefined,
               occasion: typeKey === "gold_mass" ? occasion : undefined,

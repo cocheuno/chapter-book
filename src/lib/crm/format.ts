@@ -1,4 +1,4 @@
-export const DEFAULT_TZ = "America/Denver";
+export const DEFAULT_TZ = "America/Chicago";
 
 export function formatWhen(
   iso: string | null | undefined,
@@ -85,5 +85,5 @@ export function fromDatetimeLocal(local: string, tz = DEFAULT_TZ): string {
     .formatToParts(probe)
     .find((p) => p.type === "timeZoneName")?.value;
   const m = name?.match(/([+-]\d{2}:\d{2})/);
-  return `${date}T${time}:00${m?.[1] ?? "-07:00"}`;
+  return `${date}T${time}:00${m?.[1] ?? "-06:00"}`;
 }

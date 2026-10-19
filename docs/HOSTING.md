@@ -139,7 +139,9 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
 
 ## Backups (C17)
 
-**Monthly.** An admin opens Chapter → Export everything → Download full export, and saves the zip in the chapter's private storage (a folder only officers can open). Delete exports older than a year.
+**Monthly.** An admin opens Chapter → Export spreadsheets → Download full export, and saves the zip in the chapter's private storage (a folder only officers can open). Delete exports older than a year.
+
+**Monthly restore point.** The Neon free plan keeps only 6 hours of history, so once a month, in the Neon console, create a branch from main named `backup-YYYY-MM` (no compute needed). Keep the last three and delete older ones. To restore: first make a fresh `backup-YYYY-MM-DD` branch of the current main, then use Neon's Restore on main with the backup branch as the source, then check the site.
 
 **Once a quarter, restore drill.** In the Neon console, open the project → Branches → Create branch from main, named `restore-drill-<yyyy-mm>`, not connected to Vercel. Open its SQL Editor and compare a few counts with the book (people, events, participations). Then delete that branch. The free Neon plan keeps only a short restore window, which is why the monthly export matters.
 

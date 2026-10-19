@@ -10,6 +10,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
 import { nid, slugify } from "./ids";
+import { canWrite } from "./access";
 import { assertEditor, loadMember } from "./member";
 import { chooseConferenceItem } from "./conference-page";
 import { CHAPTER_TIME_ZONE } from "./dates";
@@ -101,7 +102,7 @@ async function ensurePublicItem(sql: Sql, chapterId: string, eventId: string) {
         id, chapter_id, kind, title, summary, location, when_label, featured, published, sort_order, slug, layout
       ) values (
         ${itemId}, ${chapterId}, ${"event"}, ${event.title}, ${null}, ${where || null}, ${null},
-        ${false}, ${true}, ${0}, ${slug}, ${"conference"}
+        ${false}, ${false}, ${0}, ${slug}, ${"conference"}
       )
     `;
   }
@@ -117,25 +118,36 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
   .handler(async ({ context, data: eventId }) => {
     const m = await loadMember(context.userId);
     const sql = await getSql();
-    const itemId = await ensurePublicItem(sql, m.chapterId, eventId);
-    const pages = await sql<{
-      id: string;
-      title: string;
-      subtitle: string | null;
-      summary: string | null;
-      when_label: string | null;
-      location: string | null;
-      url: string | null;
-      body: string | null;
-      image_id: string | null;
-      slug: string | null;
-    }>`
-      select id, title, subtitle, summary, when_label, location, url, body, image_id, slug
-      from site_items where id = ${itemId} and chapter_id = ${m.chapterId}
-    `;
-    const page = pages[0];
-    if (!page) throw new Error("The public page could not be opened.");
-    await backfillSpeakers(sql, eventId);
+    const event = await requireConference(sql, m.chapterId, eventId);
+    let itemId: string | null;
+    if (canWrite(m.role)) {
+      itemId = await ensurePublicItem(sql, m.chapterId, eventId);
+    } else {
+      const shelf = await sql<ShelfItem>`
+        select id, title, kind, layout from site_items where chapter_id = ${m.chapterId}
+      `;
+      itemId = chooseConferenceItem(shelf, event.title, event.public_item_id);
+    }
+    const pages = itemId
+      ? await sql<{
+          id: string;
+          title: string;
+          subtitle: string | null;
+          summary: string | null;
+          when_label: string | null;
+          location: string | null;
+          url: string | null;
+          body: string | null;
+          image_id: string | null;
+          slug: string | null;
+        }>`
+          select id, title, subtitle, summary, when_label, location, url, body, image_id, slug
+          from site_items where id = ${itemId} and chapter_id = ${m.chapterId}
+        `
+      : [];
+    const page = pages[0] ?? null;
+    if (!page && canWrite(m.role)) throw new Error("The public page could not be opened.");
+    if (canWrite(m.role)) await backfillSpeakers(sql, eventId);
     const sessions = await sql<{
       id: string;
       title: string;

@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type Desk = Awaited<ReturnType<typeof getConferenceDesk>>;
+type DeskPage = NonNullable<Desk["page"]>;
 
 export function ConferencePublicEditor({ eventId }: { eventId: string }) {
   const [desk, setDesk] = useState<Desk | null>(null);
@@ -57,38 +58,46 @@ export function ConferencePublicEditor({ eventId }: { eventId: string }) {
             <h2 className="font-display text-xl">Web page</h2>
             <p className="mt-1 text-sm text-ink-soft">The title, introduction, and register link visitors see.</p>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <Link to="/website" search={{ item: page.id, announce: "" }} className="text-bronze underline-offset-2 hover:underline">
-              Edit on Website
-            </Link>
-            {page.slug ? (
-              <a href={`/p/${page.slug}`} className="text-bronze underline-offset-2 hover:underline">
-                Open the public page
-              </a>
-            ) : null}
-          </div>
+          {page ? (
+            <div className="flex flex-wrap gap-4 text-sm">
+              <Link to="/website" search={{ item: page.id, announce: "" }} className="text-bronze underline-offset-2 hover:underline">
+                Edit on Website
+              </Link>
+              {page.slug ? (
+                <a href={`/p/${page.slug}`} className="text-bronze underline-offset-2 hover:underline">
+                  Open the public page
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        <CopyForm
-          eventId={eventId}
-          page={page}
-          onSaved={() => {
-            toast.success("Web page saved");
-            load();
-          }}
-        />
+        {page ? (
+          <CopyForm
+            eventId={eventId}
+            page={page}
+            onSaved={() => {
+              toast.success("Web page saved");
+              load();
+            }}
+          />
+        ) : (
+          <p className="mt-3 text-sm text-ink-soft">No web page yet.</p>
+        )}
       </section>
 
       <section className="rounded-xl border border-line bg-surface p-4">
         <h2 className="font-display text-xl">Venue</h2>
         <p className="mt-1 text-sm text-ink-soft">When and where the conference meets, and the venue picture.</p>
-        <VenueForm
-          eventId={eventId}
-          page={page}
-          onSaved={() => {
-            toast.success("Venue saved");
-            load();
-          }}
-        />
+        {page ? (
+          <VenueForm
+            eventId={eventId}
+            page={page}
+            onSaved={() => {
+              toast.success("Venue saved");
+              load();
+            }}
+          />
+        ) : null}
       </section>
 
       <section className="rounded-xl border border-line bg-surface p-4">
@@ -121,7 +130,7 @@ export function ConferencePublicEditor({ eventId }: { eventId: string }) {
               key={speaker.id}
               eventId={eventId}
               speaker={speaker}
-              bioHref={page.slug && lineup[index] ? `/p/${page.slug}/speakers/${lineup[index].slug}` : null}
+              bioHref={page?.slug && lineup[index] ? `/p/${page.slug}/speakers/${lineup[index].slug}` : null}
               onChanged={() => load()}
             />
           ))}
@@ -166,7 +175,7 @@ export function ConferencePublicEditor({ eventId }: { eventId: string }) {
   );
 }
 
-function CopyForm({ eventId, page, onSaved }: { eventId: string; page: Desk["page"]; onSaved: () => void }) {
+function CopyForm({ eventId, page, onSaved }: { eventId: string; page: DeskPage; onSaved: () => void }) {
   const [title, setTitle] = useState(page.title);
   const [headline, setHeadline] = useState(page.subtitle ?? "");
   const [summary, setSummary] = useState(page.summary ?? "");
@@ -215,7 +224,7 @@ function CopyForm({ eventId, page, onSaved }: { eventId: string; page: Desk["pag
   );
 }
 
-function VenueForm({ eventId, page, onSaved }: { eventId: string; page: Desk["page"]; onSaved: () => void }) {
+function VenueForm({ eventId, page, onSaved }: { eventId: string; page: DeskPage; onSaved: () => void }) {
   const [whenLabel, setWhenLabel] = useState(page.when_label ?? "");
   const [location, setLocation] = useState(page.location ?? "");
   const [imageId, setImageId] = useState(page.image_id ?? "");

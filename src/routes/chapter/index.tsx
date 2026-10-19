@@ -456,11 +456,11 @@ function ChapterInner() {
 
       {isAdmin && (
         <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
-          <h2 className="font-display text-xl">Export everything</h2>
+          <h2 className="font-display text-xl">Export spreadsheets</h2>
           <p className="text-sm text-ink-soft">
-            Downloads one .zip of spreadsheets with every person, partner, event, RSVP, contact note, task, website
-            item, letter and registration. It is the chapter's own backup. It contains personal information: keep it
-            in the chapter's private storage and do not email it.
+            A copy of your records as spreadsheets. It does not include pictures, guardian consents, sign-in accounts
+            or held mail, and it cannot be loaded back automatically. For a full restore point, see docs/HOSTING.md,
+            Backups.
           </p>
           <Button
             type="button"

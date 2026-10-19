@@ -5,6 +5,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
 import { nid, slugify } from "./ids";
+import { canWrite } from "./access";
 import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicAboutFields, publicSummaryFields } from "./announcement-html";
@@ -161,8 +162,10 @@ export const listSite = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const m = await loadMember(context.userId);
     const sql = await getSql();
-    await backfillSlugs(sql, m.chapterId);
-    await backfillConference(sql, m.chapterId);
+    if (canWrite(m.role)) {
+      await backfillSlugs(sql, m.chapterId);
+      await backfillConference(sql, m.chapterId);
+    }
     const settings = await readSettings(sql, m.chapterId);
     const items = await readItems(sql, m.chapterId, false);
     const gatherings = await listGatherings(sql, m.chapterId);

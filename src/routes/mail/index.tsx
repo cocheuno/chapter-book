@@ -39,7 +39,7 @@ function MailInner() {
         </a>
       </div>
       <section>
-        <h2 className="mb-2 font-display text-xl">Sent</h2>
+        <h2 className="mb-2 font-display text-xl">Recorded (not emailed)</h2>
         {data.mailings.length === 0 && <p className="text-muted">No letters yet. Start from a Gold Mass template.</p>}
         <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
           {data.mailings.map((m) => (
@@ -47,7 +47,7 @@ function MailInner() {
               <Link to="/mail/$mailingId" params={{ mailingId: m.id }} className="block px-4 py-3 hover:bg-paper-2">
                 <span className="font-medium">{m.subject_snapshot || "(no subject)"}</span>
                 <span className="ml-2 text-sm text-muted">
-                  {m.audience_count ?? 0} · {m.status}
+                  {m.audience_count ?? 0} · Recorded — mail is not switched on, nothing was emailed.
                   {m.event_title ? ` · ${m.event_title}` : ""}
                 </span>
               </Link>

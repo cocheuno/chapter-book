@@ -164,6 +164,9 @@ function ComposeInner() {
               </li>
             ))}
           </ul>
+          <p className="text-sm text-ink-soft">
+            Mail is not switched on. This records the mailing and logs a touch for each recipient. Nothing is emailed.
+          </p>
           <Field label={`Type ${preview.audienceCount} to confirm`}>
             <Input inputMode="numeric" value={typed} onChange={(e) => setTyped(e.target.value)} />
           </Field>

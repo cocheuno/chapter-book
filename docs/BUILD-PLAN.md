@@ -168,19 +168,19 @@ Code changes must not change the chapter's current data, or what the public webs
 | **Phase 1–3: registration and payments (Oct–Dec)** | | | | |
 | 20 | Free registration and the mail outbox | 01, 05, 06, 09 | Done (PRs 38–40) | PAYMENTS Phase 1, MAIL seam |
 | 21 | Stripe in test mode | 20 | Needs H7, H8 | PAYMENTS Phase 2 |
-| 22 | Minors, groups, safe-environment records | 20 | Needs D4 | PAYMENTS Phase 3, §4 |
+| 22 | Minors, groups, safe-environment records | 20 | Done | PAYMENTS Phase 3, §4 |
 | 23 | Audit log everywhere | 20 | Done (PR 41) | C8 |
 | 24 | Two-factor for admins | 01 | Ready | C9 |
 | 25 | Go live | 21–24 | Needs D3, H6–H8 | PAYMENTS Phase 4 |
 | **Data quality and reach** | | | | |
 | 30 | Merge people | 23 | Done (PR 44) | C15 |
-| 31 | CSV import with duplicate preview | 07, 34 | Ready | §8 |
+| 31 | CSV import with duplicate preview | 07, 34 | Done | §8 |
 | 32 | Full export | 07, 23 | Done (PR 43) | §8, C17 |
-| 33 | Tags and saved segments | — | Ready | §8 |
-| 34 | Secondary emails | — | Ready | §8 |
-| 35 | Task assignee and "My tasks" | — | Ready | §8 |
-| 36 | Engagement counts | — | Ready | §8 |
-| 38 | Forget a person | 23 | Ready | §8 |
+| 33 | Tags and saved segments | — | Done | §8 |
+| 34 | Secondary emails | — | Done | §8 |
+| 35 | Task assignee and "My tasks" | — | Done | §8 |
+| 36 | Engagement counts | — | Done | §8 |
+| 38 | Forget a person | 23 | Done | §8 |
 | **Pages (review §9)** | | | | |
 | 40 | Content model: pages, drafts, revisions, redirects | 10, 11 | Ready | §9 |
 | 41 | Media library with PDFs | 40 | Needs H10 | §9 |
@@ -190,6 +190,9 @@ Code changes must not change the chapter's current data, or what the public webs
 | 45 | Option B: the book serves the public site | 40–43 | Needs D1 = B, H13 | §9 |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
+| **Fixes from the October 2026 architecture review** | | | | |
+| 60 | Review fixes: time zone, read-only reads, wording | — | | |
+| 61 | Transactions for merge and forget; merge keeps tags; stricter migration guard | — | | |
 
 ---
 
@@ -762,6 +765,8 @@ Follow `docs/PAYMENTS.md`, **Phase 1**, with the Phase 1 prompt there, and `docs
 
 `docs/PAYMENTS.md`, **Phase 2**. Also add `offers` to the event JSON-LD (WP-12): price range, `availability`, `validFrom`.
 
+Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book registration stays off.
+
 ### WP-22 Minors, groups, safe-environment records
 
 `docs/PAYMENTS.md`, **Phase 3**, with D4 (default: no admission without consent). Also, from review §4, add safe-environment fields to people:
@@ -794,6 +799,8 @@ Add an admin-only "Activity" list on the Chapter desk, with filters by action an
 
 **Done when:** an admin cannot use the book until enrolled; editors and viewers are unaffected.
 
+Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book registration stays off.
+
 ### WP-25 Go live
 
 `docs/PAYMENTS.md`, **Phase 4**: human tasks H6–H8, then:
@@ -802,6 +809,8 @@ Add an admin-only "Activity" list on the Chapter desk, with filters by action an
 - then open registration
 
 Code: a small "Test mode" banner on the registrations desk whenever the Stripe key starts with `sk_test_`.
+
+Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book registration stays off.
 
 ---
 
