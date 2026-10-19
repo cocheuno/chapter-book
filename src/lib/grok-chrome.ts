@@ -1,12 +1,16 @@
 /**
  * Grok page chrome (the grok.com script and share-tag rewriting).
- * On when BETTER_AUTH_URL is blank (the Grok workspace).
- * On a hosted deployment, on only when the value is exactly "on".
+ * "off" always turns it off. "on" always turns it on.
+ * Anything else is on only when both BETTER_AUTH_URL and VERCEL_ENV are blank
+ * (the Grok workspace or a local machine).
  */
 export function grokChromeEnabled(
   value: string | undefined,
   betterAuthUrl: string | undefined,
+  vercelEnv: string | undefined,
 ): boolean {
-  if ((betterAuthUrl ?? "").trim() === "") return true;
-  return (value ?? "").trim().toLowerCase() === "on";
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "off") return false;
+  if (v === "on") return true;
+  return (betterAuthUrl ?? "").trim() === "" && (vercelEnv ?? "").trim() === "";
 }
