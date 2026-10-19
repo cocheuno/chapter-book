@@ -3,7 +3,7 @@ import { Gated } from "@/components/gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listEvents } from "@/lib/crm/actions";
-import { formatWhen } from "@/lib/crm/format";
+import { DEFAULT_TZ, formatWhen } from "@/lib/crm/format";
 import { rememberList } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 
@@ -56,7 +56,7 @@ function EventsInner() {
                 </Badge>
               </div>
               <p className="text-sm text-muted">
-                {e.starts_at ? formatWhen(e.starts_at, "date") : "Date TBA"}
+                {e.starts_at ? formatWhen(e.starts_at, "date", e.timezone || DEFAULT_TZ) : "Date TBA"}
                 {e.venue_name ? ` · ${e.venue_name}` : ""}
               </p>
             </Link>

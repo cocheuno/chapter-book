@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TaskAssigneeSelect } from "@/components/task-assignee";
 import { addClergyCheckTask, getHome, setTaskStatus } from "@/lib/crm/actions";
 import { hatLabel } from "@/lib/crm/constants";
-import { formatWhen } from "@/lib/crm/format";
+import { DEFAULT_TZ, formatWhen } from "@/lib/crm/format";
 import { CLERGY_CHECK_TITLE } from "@/lib/crm/person-status";
 import { listAssignees, setTaskAssignee } from "@/lib/crm/task-assign";
 import { useEffect, useState } from "react";
@@ -80,7 +80,9 @@ function HomeInner() {
           <p className="text-xs tracking-wide text-muted uppercase">Next gathering</p>
           <h2 className="mt-1 font-display text-2xl">{data.nextEvent.title}</h2>
           <p className="mt-1 text-ink-soft">
-            {data.nextEvent.starts_at ? formatWhen(data.nextEvent.starts_at, "short") : "Date TBA"}
+            {data.nextEvent.starts_at
+              ? formatWhen(data.nextEvent.starts_at, "short", data.nextEvent.timezone || DEFAULT_TZ)
+              : "Date TBA"}
             {data.nextEvent.venue_name ? ` · ${data.nextEvent.venue_name}` : ""}
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-sm">

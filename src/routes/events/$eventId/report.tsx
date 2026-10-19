@@ -3,7 +3,7 @@ import { Crumbs } from "@/components/crumbs";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { getAttendanceReport } from "@/lib/crm/actions";
-import { formatWhen } from "@/lib/crm/format";
+import { DEFAULT_TZ, formatWhen } from "@/lib/crm/format";
 import { rememberVisit, useListHref } from "@/lib/nav/nav-store";
 import { useEffect, useState } from "react";
 
@@ -52,7 +52,7 @@ function ReportInner() {
         <p className="text-sm text-muted">Attendance report</p>
         <h1 className="font-display text-3xl">{e.title}</h1>
         <p className="text-ink-soft">
-          {e.starts_at ? formatWhen(e.starts_at, "full", e.timezone ?? "America/Chicago") : "Date TBA"}
+          {e.starts_at ? formatWhen(e.starts_at, "full", e.timezone || DEFAULT_TZ) : "Date TBA"}
           {e.venue_name ? ` · ${e.venue_name}` : ""}
         </p>
       </header>

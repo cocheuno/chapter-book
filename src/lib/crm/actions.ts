@@ -80,10 +80,11 @@ export const getHome = createServerFn({ method: "GET" })
       type_key: string;
       status: string;
       starts_at: string | null;
+      timezone: string | null;
       venue_name: string | null;
       celebrant_name: string | null;
     }>`
-      select e.id, e.title, e.type_key, e.status, e.starts_at,
+      select e.id, e.title, e.type_key, e.status, e.starts_at, e.timezone,
              o.name as venue_name, p.display_name as celebrant_name
       from events e
       left join organizations o on o.id = e.venue_organization_id
@@ -1224,9 +1225,10 @@ export const listEvents = createServerFn({ method: "GET" })
       status: string;
       admission: string;
       starts_at: string | null;
+      timezone: string | null;
       venue_name: string | null;
     }>`
-      select e.id, e.title, e.type_key, e.status, e.admission, e.starts_at, o.name as venue_name
+      select e.id, e.title, e.type_key, e.status, e.admission, e.starts_at, e.timezone, o.name as venue_name
       from events e
       left join organizations o on o.id = e.venue_organization_id
       where e.chapter_id = ${m.chapterId}
@@ -2351,11 +2353,23 @@ async function resolveAudience(
   return { recipients, skips };
 }
 
-function eventMetaFrom(ev: { title: string; starts_at: string | null; venue_detail: string | null; venue_name: string | null } | undefined) {
+function eventMetaFrom(
+  ev:
+    | {
+        title: string;
+        starts_at: string | null;
+        timezone: string | null;
+        venue_detail: string | null;
+        venue_name: string | null;
+      }
+    | undefined,
+  chapterTimezone: string,
+) {
+  const zone = ev?.timezone?.trim() || chapterTimezone;
   return {
     title: ev?.title ?? "",
-    date: ev?.starts_at ? formatWhen(ev.starts_at, "dateLong") : "",
-    time: ev?.starts_at ? formatWhen(ev.starts_at, "time") : "",
+    date: ev?.starts_at ? formatWhen(ev.starts_at, "dateLong", zone) : "",
+    time: ev?.starts_at ? formatWhen(ev.starts_at, "time", zone) : "",
     venue: ev?.venue_name ?? "",
     detail: ev?.venue_detail ?? "",
   };
@@ -2378,14 +2392,20 @@ export const previewMail = createServerFn({ method: "POST" })
     `;
     if (!t[0]) throw new Error("Template not found");
     const ev = data.eventId
-      ? await sql<{ title: string; starts_at: string | null; venue_detail: string | null; venue_name: string | null }>`
-          select e.title, e.starts_at, e.venue_detail, o.name as venue_name
+      ? await sql<{
+          title: string;
+          starts_at: string | null;
+          timezone: string | null;
+          venue_detail: string | null;
+          venue_name: string | null;
+        }>`
+          select e.title, e.starts_at, e.timezone, e.venue_detail, o.name as venue_name
           from events e left join organizations o on o.id = e.venue_organization_id
           where e.id = ${data.eventId} and e.chapter_id = ${m.chapterId}
         `
       : [];
     if (data.eventId && !ev[0]) throw new Error("Event not found");
-    const eventMeta = eventMetaFrom(ev[0]);
+    const eventMeta = eventMetaFrom(ev[0], m.timezone);
     const { recipients, skips } = await resolveAudience(sql, m, data.audienceSource, data.eventId);
     const sample = recipients[0];
     const subject = sample ? mergeFields(t[0].subject, sample, eventMeta, m) : t[0].subject;
@@ -2429,14 +2449,20 @@ export const sendMail = createServerFn({ method: "POST" })
     `;
     if (!t[0]) throw new Error("Template not found");
     const ev = data.eventId
-      ? await sql<{ title: string; starts_at: string | null; venue_detail: string | null; venue_name: string | null }>`
-          select e.title, e.starts_at, e.venue_detail, o.name as venue_name
+      ? await sql<{
+          title: string;
+          starts_at: string | null;
+          timezone: string | null;
+          venue_detail: string | null;
+          venue_name: string | null;
+        }>`
+          select e.title, e.starts_at, e.timezone, e.venue_detail, o.name as venue_name
           from events e left join organizations o on o.id = e.venue_organization_id
           where e.id = ${data.eventId} and e.chapter_id = ${m.chapterId}
         `
       : [];
     if (data.eventId && !ev[0]) throw new Error("Event not found");
-    const eventMeta = eventMetaFrom(ev[0]);
+    const eventMeta = eventMetaFrom(ev[0], m.timezone);
     const { recipients, skips } = await resolveAudience(sql, m, data.audienceSource, data.eventId);
     if (recipients.length < 1) throw new Error("No one to send to. Check skipped partners and add a chair or front-office email.");
     if (data.typedCount !== recipients.length) {

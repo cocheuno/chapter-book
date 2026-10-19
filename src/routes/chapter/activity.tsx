@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { listActivity } from "@/lib/crm/audit";
 import type { AuditGroup } from "@/lib/crm/audit-rules";
-import { formatWhen } from "@/lib/crm/format";
+import { DEFAULT_TZ, formatWhen } from "@/lib/crm/format";
 import { getSessionContext } from "@/lib/crm/member";
 
 export const Route = createFileRoute("/chapter/activity")({ component: ActivityPage });
@@ -41,7 +41,7 @@ function ActivityPage() {
 
 function ActivityInner() {
   const [role, setRole] = useState<string | null>(null);
-  const [timezone, setTimezone] = useState("America/Denver");
+  const [timezone, setTimezone] = useState(DEFAULT_TZ);
   const [group, setGroup] = useState<"" | AuditGroup>("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");

@@ -4,7 +4,7 @@ import { CopyPreview } from "@/components/copy-preview";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
+import { DEFAULT_TZ, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
   getRegistrationSetup,
   removePart,
@@ -157,7 +157,7 @@ function RegistrationInner() {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState("");
-  const [timeZone, setTimeZone] = useState("America/Denver");
+  const [timeZone, setTimeZone] = useState(DEFAULT_TZ);
   const [parts, setParts] = useState<PartDraft[]>([]);
   const [tickets, setTickets] = useState<TicketDraft[]>([]);
   const [page, setPage] = useState<PageDraft>({ intro: "", forSchools: "", manageMessage: "" });
@@ -169,7 +169,7 @@ function RegistrationInner() {
 
   const load = useCallback(() => {
     return getRegistrationSetup({ data: eventId }).then((data) => {
-      const tz = data.event.timezone || "America/Denver";
+      const tz = data.event.timezone || DEFAULT_TZ;
       setTitle(data.event.title);
       setTimeZone(tz);
       setParts(toPartDrafts(data, tz));
