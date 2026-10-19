@@ -3,7 +3,10 @@
  * Fail new migrations that would change existing data (Rule 1).
  *
  * Only files in migrations/ numbered 0019 and up are checked. migrations/auth/
- * is not checked for forbidden statements. Tables created there, and in every
+ * is not checked. Guarded files also reject dollar quotes, do blocks, execute,
+ * create function/procedure/trigger/rule, copy, grant, revoke, alter ... owner
+ * to, and set role. A .sql file directly in migrations/ must be named
+ * NNNN_name.sql. Tables created in auth/, and in every
  * migration numbered below the file being checked, already exist: a later
  * create table if not exists does not make them new. Comments and '...'
  * string literals are blanked before matching, and line numbers stay on the
@@ -29,6 +32,16 @@ const COPY_FROM =
   /\bcopy\s+(?:(?:"public"|public)\s*\.\s*)?("[^"]+"|[A-Za-z_][\w$]*)[^;]*?\bfrom\b/gi;
 const MERGE_INTO = /\bmerge\s+into\s+(?:(?:"public"|public)\s*\.\s*)?("[^"]+"|[A-Za-z_][\w$]*)/gi;
 const ALTER_DEFAULT = /\balter\s+column\s+(?:"[^"]+"|[A-Za-z_][\w$]*)\s+set\s+default\b/gi;
+const DOLLAR_QUOTE = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/g;
+const DO_BLOCK = /\bdo\s+(?:language\b|\$)/gi;
+const EXECUTE_WORD = /\bexecute\b/gi;
+const CREATE_ROUTINE = /\bcreate\s+(?:or\s+replace\s+)?(function|procedure|trigger|rule)\b/gi;
+const COPY_WORD = /\bcopy\b/gi;
+const GRANT_WORD = /\bgrant\b/gi;
+const REVOKE_WORD = /\brevoke\b/gi;
+const ALTER_OWNER = /\balter\b[^;]*?\bowner\s+to\b/gi;
+const SET_ROLE = /\bset\s+role\b/gi;
+const MIGRATION_FILE_NAME = /^\d{4}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/i;
 
 const FIRST_GUARDED = 19;
 
@@ -241,6 +254,34 @@ export function findForbiddenSql(file, sql, earlierTables) {
   for (const name of createdTableKeys(masked)) {
     if (!earlier.has(name)) created.add(name);
   }
+  const blocked = [
+    [DOLLAR_QUOTE, "dollar quote"],
+    [DO_BLOCK, "do"],
+    [EXECUTE_WORD, "execute"],
+    [COPY_WORD, "copy"],
+    [GRANT_WORD, "grant"],
+    [REVOKE_WORD, "revoke"],
+    [ALTER_OWNER, "alter ... owner to"],
+    [SET_ROLE, "set role"],
+  ];
+  for (const [pattern, form] of blocked) {
+    for (const match of masked.matchAll(pattern)) {
+      found.push({
+        file,
+        line: lineNumber(sql, match.index),
+        form,
+        index: match.index,
+      });
+    }
+  }
+  for (const match of masked.matchAll(CREATE_ROUTINE)) {
+    found.push({
+      file,
+      line: lineNumber(sql, match.index),
+      form: `create ${match[1].toLowerCase()}`,
+      index: match.index,
+    });
+  }
   const writes = [
     [INSERT_INTO, "insert into"],
     [COPY_FROM, "copy ... from"],
@@ -296,6 +337,18 @@ function tablesCreatedBy(sql) {
  * @returns {Array<{ file: string, line: number, form: string }>}
  */
 export function guardMigrationDir(dir) {
+  /** @type {Array<{ file: string, line: number, form: string }>} */
+  const violations = [];
+  const sqlFiles = readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".sql"))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+  for (const name of sqlFiles) {
+    if (!MIGRATION_FILE_NAME.test(name)) {
+      violations.push({ file: name, line: 1, form: "file name" });
+    }
+  }
+
   const top = readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && migrationNumber(entry.name) !== null)
     .map((entry) => entry.name)
@@ -317,8 +370,6 @@ export function guardMigrationDir(dir) {
     }
   }
 
-  /** @type {Array<{ file: string, line: number, form: string }>} */
-  const violations = [];
   for (const name of top) {
     if (!isGuardedMigration(name)) continue;
     const number = migrationNumber(name);

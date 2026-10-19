@@ -844,6 +844,7 @@ const MOVE_LINES: {
   { key: "celebrant", label: "Events as celebrant" },
   { key: "speakerSlots", label: "Speaker slots" },
   { key: "otherEmails", label: "Other emails" },
+  { key: "tags", label: "Tags" },
 ];
 
 const FIELD_LABEL = new Map(MERGE_FIELDS.map((field) => [field.field, field.label]));

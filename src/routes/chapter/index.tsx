@@ -460,7 +460,7 @@ function ChapterInner() {
           <p className="text-sm text-ink-soft">
             A copy of your records as spreadsheets. It does not include pictures, guardian consents, sign-in accounts
             or held mail, and it cannot be loaded back automatically. For a full restore point, see docs/HOSTING.md,
-            Backups.
+            Backups. It contains personal information: keep it in the chapter's private storage and do not email it.
           </p>
           <Button
             type="button"

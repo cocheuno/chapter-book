@@ -1,4 +1,5 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { runInTransaction } from "./transaction-rules";
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";
@@ -44,8 +45,19 @@ export interface Sql {
  * `_migrations` insert rejects — and would get memoized, poisoning every later
  * `getSql()`). A failed init clears its slot so the next call retries.
  */
+/** The checked-out `pg` client `withTransaction` needs. Kept small so this file does not import `pg` at runtime. */
+type PgClient = {
+  query(text: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
+  release(): void;
+};
+
+type PgPool = {
+  connect(): Promise<PgClient>;
+};
+
 const globalRef = globalThis as typeof globalThis & {
   __pgSqlPromise__?: Promise<Sql>;
+  __pgPool__?: PgPool;
   __pgliteInstance__?: Promise<import("@electric-sql/pglite").PGlite>;
   __pgliteMigrateChain__?: Promise<void>;
 };
@@ -94,12 +106,14 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
     const pool = new Pool({ connectionString: databaseUrl });
+    globalRef.__pgPool__ = pool;
     return toSql(async <T>(text: string, params: unknown[]) => {
       const res = await pool.query(text, params);
       return res.rows as T[];
     });
   })().catch((err) => {
     globalRef.__pgSqlPromise__ = undefined;
+    globalRef.__pgPool__ = undefined;
     throw err;
   });
   return globalRef.__pgSqlPromise__;
@@ -207,6 +221,42 @@ export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite
   const pg = await globalRef.__pgliteInstance__;
   if (!pg) throw new Error("PGLite instance failed to initialize");
   return pg;
+}
+
+/**
+ * Run `fn` on one connection. Neon checks out a pool client, begins, and
+ * commits (or rolls back). PGLite uses its own transaction. `getSql()` is
+ * unchanged. Inside `fn`, use only the `tx` argument.
+ */
+export async function withTransaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T> {
+  if (dbSource === "pglite") {
+    const pg = await getPglite();
+    return pg.transaction(async (t) =>
+      fn(
+        toSql(async <Row>(text: string, params: unknown[]) => {
+          const result = await t.query<Row>(text, params);
+          return result.rows;
+        }),
+      ),
+    );
+  }
+  await getSql();
+  const pool = globalRef.__pgPool__;
+  if (!pool) throw new Error("Postgres pool failed to initialize");
+  const client = await pool.connect();
+  const tx = toSql(async <Row>(text: string, params: unknown[]) => {
+    const result = await client.query(text, params);
+    return result.rows as Row[];
+  });
+  return runInTransaction(
+    {
+      query: (text, params) => client.query(text, params),
+      release: () => {
+        client.release();
+      },
+    },
+    () => fn(tx),
+  );
 }
 
 /**

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSql, type Sql } from "@/lib/db";
+import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { todayIn } from "./dates";
@@ -68,6 +68,7 @@ type MoveCounts = {
   celebrant: number;
   speakerSlots: number;
   otherEmails: number;
+  tags: number;
 };
 
 type AffiliationMove = { id: string; plan: AffiliationPlan };
@@ -143,18 +144,21 @@ async function affiliationMoves(
   keepId: string,
   mergeId: string,
 ): Promise<AffiliationMove[]> {
-  const [otherRows, keepRows] = await Promise.all([
-    sql<{ id: string; organization_id: string | null; role_key: string; is_current: boolean }>`
-      select id, organization_id, role_key, is_current
-      from affiliations
-      where person_id = ${mergeId} and chapter_id = ${chapterId}
-    `,
-    sql<{ organization_id: string | null; role_key: string }>`
-      select organization_id, role_key
-      from affiliations
-      where person_id = ${keepId} and chapter_id = ${chapterId} and is_current
-    `,
-  ]);
+  const otherRows = await sql<{
+    id: string;
+    organization_id: string | null;
+    role_key: string;
+    is_current: boolean;
+  }>`
+    select id, organization_id, role_key, is_current
+    from affiliations
+    where person_id = ${mergeId} and chapter_id = ${chapterId}
+  `;
+  const keepRows = await sql<{ organization_id: string | null; role_key: string }>`
+    select organization_id, role_key
+    from affiliations
+    where person_id = ${keepId} and chapter_id = ${chapterId} and is_current
+  `;
   const current = new Map<string, string[]>();
   for (const row of keepRows) {
     const orgId = row.organization_id ?? "";
@@ -181,71 +185,68 @@ async function moveCounts(
   keepId: string,
   mergeId: string,
 ): Promise<{ counts: MoveCounts; affiliations: AffiliationMove[] }> {
-  const [
-    participations,
-    roles,
-    tasks,
-    touches,
-    letters,
-    registrations,
-    attendees,
-    celebrant,
-    speakerSlots,
-    otherEmails,
-    affiliations,
-  ] = await Promise.all([
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from participations
-        where person_id = ${mergeId} and chapter_id = ${chapterId} and party_type = 'person'
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from person_roles where person_id = ${mergeId}
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from tasks
-        where person_id = ${mergeId} and chapter_id = ${chapterId}
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from touches
-        where person_id = ${mergeId} and chapter_id = ${chapterId}
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n
-        from mail_messages msg
-        join mailings m on m.id = msg.mailing_id
-        where msg.person_id = ${mergeId} and m.chapter_id = ${chapterId}
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from registrations
-        where purchaser_person_id = ${mergeId} and chapter_id = ${chapterId}
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from registration_attendees
-        where person_id = ${mergeId} and chapter_id = ${chapterId}
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from events
-        where celebrant_id = ${mergeId} and chapter_id = ${chapterId}
-      `),
-    countOf(sql<{ n: number }>`
-        select (
-          (select count(*)::int from program_pieces pp
-            join events e on e.id = pp.event_id
-            where e.chapter_id = ${chapterId} and pp.speaker_person_id = ${mergeId})
-          + (select count(*)::int from event_sessions es
-            join events e on e.id = es.event_id
-            where e.chapter_id = ${chapterId} and es.speaker_person_id = ${mergeId})
-          + (select count(*)::int from event_slots sl
-            join events e on e.id = sl.event_id
-            where e.chapter_id = ${chapterId} and sl.person_id = ${mergeId})
-        )::int as n
-      `),
-    countOf(sql<{ n: number }>`
-        select count(*)::int as n from person_emails
-        where person_id = ${mergeId} and chapter_id = ${chapterId}
-      `),
-    affiliationMoves(sql, chapterId, keepId, mergeId),
-  ]);
+  const participations = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from participations
+    where person_id = ${mergeId} and chapter_id = ${chapterId} and party_type = 'person'
+  `);
+  const roles = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from person_roles where person_id = ${mergeId}
+  `);
+  const tasks = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from tasks
+    where person_id = ${mergeId} and chapter_id = ${chapterId}
+  `);
+  const touches = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from touches
+    where person_id = ${mergeId} and chapter_id = ${chapterId}
+  `);
+  const letters = await countOf(sql<{ n: number }>`
+    select count(*)::int as n
+    from mail_messages msg
+    join mailings m on m.id = msg.mailing_id
+    where msg.person_id = ${mergeId} and m.chapter_id = ${chapterId}
+  `);
+  const registrations = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from registrations
+    where purchaser_person_id = ${mergeId} and chapter_id = ${chapterId}
+  `);
+  const attendees = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from registration_attendees
+    where person_id = ${mergeId} and chapter_id = ${chapterId}
+  `);
+  const celebrant = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from events
+    where celebrant_id = ${mergeId} and chapter_id = ${chapterId}
+  `);
+  const speakerSlots = await countOf(sql<{ n: number }>`
+    select (
+      (select count(*)::int from program_pieces pp
+        join events e on e.id = pp.event_id
+        where e.chapter_id = ${chapterId} and pp.speaker_person_id = ${mergeId})
+      + (select count(*)::int from event_sessions es
+        join events e on e.id = es.event_id
+        where e.chapter_id = ${chapterId} and es.speaker_person_id = ${mergeId})
+      + (select count(*)::int from event_slots sl
+        join events e on e.id = sl.event_id
+        where e.chapter_id = ${chapterId} and sl.person_id = ${mergeId})
+    )::int as n
+  `);
+  const otherEmails = await countOf(sql<{ n: number }>`
+    select count(*)::int as n from person_emails
+    where person_id = ${mergeId} and chapter_id = ${chapterId}
+  `);
+  const tags = await countOf(sql<{ n: number }>`
+    select count(*)::int as n
+    from person_tags pt
+    join tags t on t.id = pt.tag_id
+    where pt.person_id = ${mergeId}
+      and t.chapter_id = ${chapterId}
+      and not exists (
+        select 1 from person_tags kept
+        where kept.person_id = ${keepId} and kept.tag_id = pt.tag_id
+      )
+  `);
+  const affiliations = await affiliationMoves(sql, chapterId, keepId, mergeId);
   return {
     affiliations,
     counts: {
@@ -260,6 +261,7 @@ async function moveCounts(
       celebrant,
       speakerSlots,
       otherEmails,
+      tags,
     },
   };
 }
@@ -350,16 +352,14 @@ async function mergeAffiliations(
 }
 
 async function mergeParticipations(sql: Sql, chapterId: string, keepId: string, mergeId: string) {
-  const [keepRows, otherRows] = await Promise.all([
-    sql<Record<string, unknown>>`
-      select * from participations
-      where person_id = ${keepId} and chapter_id = ${chapterId} and party_type = 'person'
-    `,
-    sql<Record<string, unknown>>`
-      select * from participations
-      where person_id = ${mergeId} and chapter_id = ${chapterId} and party_type = 'person'
-    `,
-  ]);
+  const keepRows = await sql<Record<string, unknown>>`
+    select * from participations
+    where person_id = ${keepId} and chapter_id = ${chapterId} and party_type = 'person'
+  `;
+  const otherRows = await sql<Record<string, unknown>>`
+    select * from participations
+    where person_id = ${mergeId} and chapter_id = ${chapterId} and party_type = 'person'
+  `;
   const keepByEvent = new Map<string, Record<string, unknown>>();
   for (const row of keepRows) keepByEvent.set(String(row.event_id), row);
   for (const other of otherRows) {
@@ -594,78 +594,93 @@ export const mergePeople = createServerFn({ method: "POST" })
     const member = await loadMember(context.userId);
     assertEditor(member.role);
     if (data.confirm !== "MERGE") throw new Error("Type MERGE to confirm.");
-    const sql = await getSql();
-    const { keep, other } = await loadPair(sql, member.chapterId, data.keepId, data.mergeId);
-    const today = todayIn(member.timezone);
-    const { counts, affiliations } = await moveCounts(
-      sql,
-      member.chapterId,
-      data.keepId,
-      data.mergeId,
-    );
-    const merged = mergePersonFields(keep, other, data.picks, today);
-    const fromOther = MERGE_FIELDS.map((field) => field.field).filter(
-      (field) => data.picks[field] === "other",
-    );
-
-    await mergeRoles(sql, data.keepId, data.mergeId);
-    await mergeRelationships(sql, data.keepId, data.mergeId);
-    await mergeAffiliations(sql, member.chapterId, data.keepId, data.mergeId, affiliations, today);
-    await mergeParticipations(sql, member.chapterId, data.keepId, data.mergeId);
-    await repoint(sql, member.chapterId, data.keepId, data.mergeId);
-
-    // The removed row is stored before the delete. Each statement stands alone.
-    await recordAudit(sql, {
-      chapterId: member.chapterId,
-      actor: member.userId,
-      action: "person_merged",
-      entity: "person",
-      entityId: data.keepId,
-      detail: {
-        mergedId: data.mergeId,
-        mergedName: show(other.display_name),
-        keptName: show(keep.display_name),
-        fromOther,
-        moved: counts,
-        removed: removedRow(other),
-      },
-    });
-    // Move these before the person delete. The foreign key would otherwise remove them.
-    await sql`
-      update person_emails set person_id = ${data.keepId}
-      where person_id = ${data.mergeId} and chapter_id = ${member.chapterId}
-    `;
-    const safeBlock = safeEnvToCopy(readSafeEnvironment(keep), readSafeEnvironment(other));
-    if (safeBlock) {
-      const copied = await sql<{ id: string }>`
-        update persons set
-          works_with_minors = ${safeBlock.works_with_minors},
-          safe_env_program = ${safeBlock.safe_env_program},
-          safe_env_trained_on = ${safeBlock.safe_env_trained_on},
-          safe_env_diocese = ${safeBlock.safe_env_diocese},
-          background_check_on = ${safeBlock.background_check_on},
-          background_check_expires_on = ${safeBlock.background_check_expires_on},
-          suitability_requested_on = ${safeBlock.suitability_requested_on},
-          suitability_received_on = ${safeBlock.suitability_received_on},
-          suitability_expires_on = ${safeBlock.suitability_expires_on}
-        where id = ${data.keepId} and chapter_id = ${member.chapterId}
-        returning id
+    return withTransaction(async (tx) => {
+      await tx`
+        select id from persons
+        where chapter_id = ${member.chapterId} and id in (${data.keepId}, ${data.mergeId})
+        order by id
+        for update
       `;
-      if (!copied[0]) throw new Error("Person not found.");
-    }
-    await sql`
-      delete from persons where id = ${data.mergeId} and chapter_id = ${member.chapterId}
-    `;
-    await saveKeptPerson(sql, member.chapterId, data.keepId, keep, merged);
-    await storeLeftoverEmails(
-      sql,
-      member.chapterId,
-      data.keepId,
-      member.userId,
-      keep,
-      other,
-      lowerEmail(merged.email),
-      today,
-    );
-    return { id: data.keepId };
+      const { keep, other } = await loadPair(tx, member.chapterId, data.keepId, data.mergeId);
+      const today = todayIn(member.timezone);
+      const { counts, affiliations } = await moveCounts(
+        tx,
+        member.chapterId,
+        data.keepId,
+        data.mergeId,
+      );
+      const merged = mergePersonFields(keep, other, data.picks, today);
+      const fromOther = MERGE_FIELDS.map((field) => field.field).filter(
+        (field) => data.picks[field] === "other",
+      );
+
+      await mergeRoles(tx, data.keepId, data.mergeId);
+      await mergeRelationships(tx, data.keepId, data.mergeId);
+      await mergeAffiliations(tx, member.chapterId, data.keepId, data.mergeId, affiliations, today);
+      await mergeParticipations(tx, member.chapterId, data.keepId, data.mergeId);
+      await repoint(tx, member.chapterId, data.keepId, data.mergeId);
+
+      // The removed row is stored before the delete.
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "person_merged",
+        entity: "person",
+        entityId: data.keepId,
+        detail: {
+          mergedId: data.mergeId,
+          mergedName: show(other.display_name),
+          keptName: show(keep.display_name),
+          fromOther,
+          moved: counts,
+          removed: removedRow(other),
+        },
+      });
+      // Move these before the person delete. The foreign key would otherwise remove them.
+      await tx`
+        update person_emails set person_id = ${data.keepId}
+        where person_id = ${data.mergeId} and chapter_id = ${member.chapterId}
+      `;
+      const safeBlock = safeEnvToCopy(readSafeEnvironment(keep), readSafeEnvironment(other));
+      if (safeBlock) {
+        const copied = await tx<{ id: string }>`
+          update persons set
+            works_with_minors = ${safeBlock.works_with_minors},
+            safe_env_program = ${safeBlock.safe_env_program},
+            safe_env_trained_on = ${safeBlock.safe_env_trained_on},
+            safe_env_diocese = ${safeBlock.safe_env_diocese},
+            background_check_on = ${safeBlock.background_check_on},
+            background_check_expires_on = ${safeBlock.background_check_expires_on},
+            suitability_requested_on = ${safeBlock.suitability_requested_on},
+            suitability_received_on = ${safeBlock.suitability_received_on},
+            suitability_expires_on = ${safeBlock.suitability_expires_on}
+          where id = ${data.keepId} and chapter_id = ${member.chapterId}
+          returning id
+        `;
+        if (!copied[0]) throw new Error("Person not found.");
+      }
+      await tx`
+        insert into person_tags (person_id, tag_id, created_at)
+        select ${data.keepId}, pt.tag_id, pt.created_at
+        from person_tags pt
+        join tags t on t.id = pt.tag_id
+        where pt.person_id = ${data.mergeId} and t.chapter_id = ${member.chapterId}
+        on conflict (person_id, tag_id) do nothing
+      `;
+      await tx`
+        delete from persons where id = ${data.mergeId} and chapter_id = ${member.chapterId}
+      `;
+      await saveKeptPerson(tx, member.chapterId, data.keepId, keep, merged);
+      await storeLeftoverEmails(
+        tx,
+        member.chapterId,
+        data.keepId,
+        member.userId,
+        keep,
+        other,
+        lowerEmail(merged.email),
+        today,
+      );
+      return { id: data.keepId };
+    });
   });
