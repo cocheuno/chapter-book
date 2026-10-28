@@ -85,6 +85,20 @@ describe("planRegistration", () => {
     assert.equal(plan.partNeeds.friday, 2);
   });
 
+  it("accepts a paid ticket that has a Stripe payment link", () => {
+    const plan = planRegistration(
+      { attendees: [person()] },
+      {
+        tickets: [ticket({ id: "general", price_cents: 2500, payment_link: "https://buy.stripe.com/test_example" })],
+        parts: [],
+      },
+      now,
+    );
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.equal(plan.totalCents, 2500);
+  });
+
   it("refuses a paid ticket", () => {
     const plan = planRegistration(
       { attendees: [person()] },

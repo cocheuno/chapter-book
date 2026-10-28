@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { getSql } from "@/lib/db";
+import { getSql, withSavepoint } from "@/lib/db";
 import {
   EMERGENCY_NAME_MAX,
   EMERGENCY_PHONE_MAX,
@@ -139,6 +139,7 @@ async function matchOrCreateGuardian(
   sql: Sql,
   chapterId: string,
   input: { name: string; email: string; phone: string },
+  inTransaction = false,
 ): Promise<{ id: string; created: boolean }> {
   const found = await findPersonByEmail(sql, chapterId, input.email);
   if (found) return { id: found.id, created: false };
@@ -147,7 +148,7 @@ async function matchOrCreateGuardian(
   const familyName = (split.familyName ?? "").trim();
   const displayName = composePersonName({ givenName, familyName });
   const id = nid();
-  try {
+  const insertGuardian = async () => {
     await sql`
       insert into persons (
         id, chapter_id, display_name, given_name, family_name, email, phone,
@@ -157,6 +158,10 @@ async function matchOrCreateGuardian(
         ${input.email}, ${input.phone}, ${"web"}, ${"United States"}, ${"no"}
       )
     `;
+  };
+  try {
+    if (inTransaction) await withSavepoint(sql, insertGuardian);
+    else await insertGuardian();
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
     const again = await findPersonByEmail(sql, chapterId, input.email);
@@ -182,6 +187,7 @@ export async function writeOnlineConsent(
     textId: string;
     signedIp: string;
     consent: GuardianConsentInput;
+    inTransaction?: boolean;
     undos?: Array<() => Promise<void>>;
   },
 ): Promise<void> {
@@ -191,7 +197,12 @@ export async function writeOnlineConsent(
   const phone = input.consent.guardianPhone.trim();
   const email = lowerEmail(input.consent.guardianEmail);
   if (!email) throw new Error("Enter the guardian's email.");
-  const guardian = await matchOrCreateGuardian(sql, input.chapterId, { name, email, phone });
+  const guardian = await matchOrCreateGuardian(
+    sql,
+    input.chapterId,
+    { name, email, phone },
+    input.inTransaction === true,
+  );
   if (guardian.created) {
     const guardianId = guardian.id;
     input.undos?.push(async () => {

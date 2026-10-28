@@ -31,6 +31,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   registration_created: { label: "Registration created", group: "registration" },
   registration_switch: { label: "Registration switch", group: "registration" },
   registration_cancelled: { label: "Registration cancelled", group: "registration" },
+  registration_marked_paid: { label: "Registration marked paid", group: "registration" },
+  registration_refunded: { label: "Registration refunded", group: "registration" },
   attendee_cancelled: { label: "Attendee cancelled", group: "registration" },
   attendee_renamed: { label: "Attendee renamed", group: "registration" },
   confirmation_viewed: { label: "Confirmation viewed", group: "registration" },
@@ -144,6 +146,9 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "attendee_cancelled":
     case "confirmation_viewed":
       return text(row.code);
+    case "registration_marked_paid":
+    case "registration_refunded":
+      return [text(row.code), row.amountCents == null ? "" : String(row.amountCents)].filter(Boolean).join(", ");
     case "consent_received":
       return [text(row.code), text(row.method)].filter(Boolean).join(", ");
     case "consent_details_purged":

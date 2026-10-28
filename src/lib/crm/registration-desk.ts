@@ -9,6 +9,7 @@ import { issueConsentLink, readConsentDetail, recordPaperConsent } from "./conse
 import { nid } from "./ids";
 import { assertAdmin, assertEditor, loadMember } from "./member";
 import { consentDetailsPurgeOpen, eventLastDay } from "@/lib/payments/consent-rules";
+import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
 import { mealCounts, partReleases, seatDrift } from "@/lib/payments/registration-desk";
 
@@ -25,6 +26,10 @@ function asNumberOrNull(value: number | string | null | undefined): number | nul
   if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function canCancelUnpaid(status: string): boolean {
+  return status === "free" || status === "pending";
 }
 
 function plusDays(isoDate: string, days: number): string {
@@ -233,10 +238,11 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       purchaser_email: string;
       purchaser_phone: string | null;
       needs_review: string | null;
+      total_cents: number | string;
     }>`
       select r.id, r.code, r.status,
         to_char(r.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
-        r.purchaser_name, r.purchaser_email, r.purchaser_phone, r.needs_review
+        r.purchaser_name, r.purchaser_email, r.purchaser_phone, r.needs_review, r.total_cents
       from registrations r
       where r.chapter_id = ${member.chapterId} and r.event_id = ${eventId}
       order by r.created_at desc, r.id desc
@@ -381,6 +387,7 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         purchaserEmail: row.purchaser_email,
         purchaserPhone: row.purchaser_phone,
         needsReview: row.needs_review,
+        totalCents: asNumber(row.total_cents),
         confirmationStatus: confirmation.get(row.id) ?? null,
         attendees: attendeesByRegistration.get(row.id) ?? [],
       })),
@@ -426,7 +433,9 @@ export const cancelAttendee = createServerFn({ method: "POST" })
       const attendee = rows[0];
       if (!attendee) throw new Error("Attendee not found.");
       if (attendee.status === "cancelled" || attendee.cancelled_at) return { ok: true as const };
-      if (attendee.status !== "free") throw new Error("Only free registrations can be cancelled here for now.");
+      if (!canCancelUnpaid(attendee.status)) {
+        throw new Error("Only free registrations can be cancelled here for now.");
+      }
       const released = await releaseAttendee(tx, member.chapterId, data.eventId, attendee.id);
       if (!released) return { ok: true as const };
       const remaining = await tx<{ n: number }>`
@@ -438,7 +447,8 @@ export const cancelAttendee = createServerFn({ method: "POST" })
       if (asNumber(remaining[0]?.n) === 0) {
         const closed = await tx<{ id: string }>`
           update registrations set status = 'cancelled', cancelled_at = now()
-          where id = ${attendee.registration_id} and chapter_id = ${member.chapterId} and status = 'free'
+          where id = ${attendee.registration_id} and chapter_id = ${member.chapterId}
+            and status in ('free', 'pending')
           returning id
         `;
         if (closed[0]) {
@@ -485,13 +495,13 @@ export const cancelRegistration = createServerFn({ method: "POST" })
         throw new Error("Only free registrations can be cancelled here for now.");
       }
       if (current.status === "cancelled") return { ok: true as const };
-      if (current.status !== "free") throw new Error("Only free registrations can be cancelled here for now.");
+      if (!canCancelUnpaid(current.status)) throw new Error("Only free registrations can be cancelled here for now.");
       const saved = await tx<{ id: string; code: string }>`
         update registrations set status = 'cancelled', cancelled_at = now()
         where id = ${current.id}
           and chapter_id = ${member.chapterId}
           and event_id = ${data.eventId}
-          and status = 'free'
+          and status in ('free', 'pending')
         returning id, code
       `;
       const registration = saved[0];
@@ -566,6 +576,121 @@ export const renameAttendee = createServerFn({ method: "POST" })
       detail: { code: current.code, from, to, eventId: data.eventId },
     });
     return { id: current.id };
+  });
+
+export const markRegistrationPaid = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      eventId: z.string().min(1),
+      registrationId: z.string().min(1),
+      note: z.string().trim().max(200).optional(),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    const note = data.note?.trim() ? data.note.trim() : null;
+    return withTransaction(async (tx) => {
+      const locked = await tx<{ id: string }>`
+        select id from registrations where id = ${data.registrationId} and chapter_id = ${member.chapterId} for update
+      `;
+      if (!locked[0]) throw new Error("This registration is not awaiting payment.");
+      const rows = await tx<{
+        id: string;
+        code: string;
+        status: string;
+        total_cents: number | string;
+        currency: string;
+        event_id: string;
+      }>`
+        select id, code, status, total_cents, currency, event_id
+        from registrations
+        where id = ${data.registrationId} and chapter_id = ${member.chapterId}
+      `;
+      const current = rows[0];
+      if (!current || current.event_id !== data.eventId || current.status !== "pending") {
+        throw new Error("This registration is not awaiting payment.");
+      }
+      const amountCents = asNumber(current.total_cents);
+      await tx`
+        insert into payments (
+          id, chapter_id, registration_id, kind, method, amount_cents, currency, recorded_by, note
+        ) values (
+          ${nid()}, ${member.chapterId}, ${current.id}, ${"charge"}, ${"stripe"},
+          ${amountCents}, ${current.currency || "usd"}, ${member.userId}, ${note}
+        )
+      `;
+      const saved = await tx<{ id: string }>`
+        update registrations set status = 'paid', paid_at = now()
+        where id = ${current.id} and chapter_id = ${member.chapterId} and status = 'pending'
+        returning id
+      `;
+      if (!saved[0]) throw new Error("This registration is not awaiting payment.");
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "registration_marked_paid",
+        entity: "registration",
+        entityId: current.id,
+        detail: { code: current.code, amountCents, eventId: data.eventId },
+      });
+      return { ok: true as const };
+    });
+  });
+
+export const refundRegistration = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string().min(1), registrationId: z.string().min(1) }).parse)
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    return withTransaction(async (tx) => {
+      const locked = await tx<{ id: string }>`
+        select id from registrations where id = ${data.registrationId} and chapter_id = ${member.chapterId} for update
+      `;
+      if (!locked[0]) throw new Error("This registration is not paid.");
+      const rows = await tx<{
+        id: string;
+        code: string;
+        status: string;
+        total_cents: number | string;
+        currency: string;
+        event_id: string;
+      }>`
+        select id, code, status, total_cents, currency, event_id
+        from registrations
+        where id = ${data.registrationId} and chapter_id = ${member.chapterId}
+      `;
+      const current = rows[0];
+      if (!current || current.event_id !== data.eventId) throw new Error("This registration is not paid.");
+      if (current.status === "refunded") return { ok: true as const };
+      if (current.status !== "paid") throw new Error("This registration is not paid.");
+      const amountCents = asNumber(current.total_cents);
+      await tx`
+        insert into payments (
+          id, chapter_id, registration_id, kind, method, amount_cents, currency, recorded_by
+        ) values (
+          ${nid()}, ${member.chapterId}, ${current.id}, ${"refund"}, ${"stripe"},
+          ${amountCents}, ${current.currency || "usd"}, ${member.userId}
+        )
+      `;
+      const saved = await tx<{ id: string }>`
+        update registrations set status = 'refunded'
+        where id = ${current.id} and chapter_id = ${member.chapterId} and status = 'paid'
+        returning id
+      `;
+      if (!saved[0]) throw new Error("This registration is not paid.");
+      await cancelOpenAttendees(tx, member.chapterId, data.eventId, current.id);
+      await cancelHeldMail(tx, member.chapterId, current.id);
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "registration_refunded",
+        entity: "registration",
+        entityId: current.id,
+        detail: { code: current.code, amountCents, eventId: data.eventId },
+      });
+      return { ok: true as const };
+    });
   });
 
 export const getConfirmationEmail = createServerFn({ method: "POST" })
@@ -655,6 +780,7 @@ export const exportRegistrationAttendees = createServerFn({ method: "POST" })
       [
         "code",
         "registration_status",
+        "payment_state",
         "registered_at_utc",
         "purchaser_name",
         "purchaser_email",
@@ -671,6 +797,7 @@ export const exportRegistrationAttendees = createServerFn({ method: "POST" })
       rows.map((row) => [
         row.code,
         row.registration_status,
+        paymentStateLabel(row.registration_status),
         row.registered_at_utc,
         row.purchaser_name,
         row.purchaser_email,

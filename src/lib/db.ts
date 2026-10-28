@@ -1,6 +1,6 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
 import { databaseSource } from "./database-source";
-import { runInTransaction } from "./transaction-rules";
+import { runInTransaction, runSavepoint, savepointName } from "./transaction-rules";
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite" | "missing";
@@ -51,7 +51,7 @@ export interface Sql {
 /** The checked-out `pg` client `withTransaction` needs. Kept small so this file does not import `pg` at runtime. */
 type PgClient = {
   query(text: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
-  release(): void;
+  release(err?: unknown): void;
 };
 
 type PgPool = {
@@ -261,12 +261,23 @@ export async function withTransaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T
   return runInTransaction(
     {
       query: (text, params) => client.query(text, params),
-      release: () => {
-        client.release();
+      release: (err) => {
+        client.release(err);
       },
     },
     () => fn(tx),
   );
+}
+
+/**
+ * Run `fn` inside a savepoint on `tx`. A unique violation rolls back only
+ * the savepoint, so the caller can recover and keep the transaction.
+ */
+export async function withSavepoint<T>(tx: Sql, fn: () => Promise<T>): Promise<T> {
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return runSavepoint({ query: (text) => tx.query(text) }, savepointName(hex), fn);
 }
 
 /**

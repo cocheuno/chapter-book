@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { mintConsentLink } from "@/lib/crm/consent";
 import { getManagePage } from "@/lib/crm/registration-public";
+import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
+import { formatCents } from "@/lib/payments/pricing";
 import { useState } from "react";
 
 export const Route = createFileRoute("/r/$token")({
@@ -30,12 +32,33 @@ function ManageRegistration() {
     );
   }
   const cancelled = page.status === "cancelled";
+  const refunded = page.status === "refunded" || page.status === "partly_refunded";
+  const pending = page.status === "pending";
+  const heading = cancelled
+    ? "This registration was cancelled."
+    : refunded
+      ? "Refunded"
+      : pending
+        ? "Awaiting payment"
+        : "You're registered.";
   return (
     <main className="min-h-dvh bg-paper px-4 py-10 text-ink">
       <div className="mx-auto max-w-3xl space-y-6">
         {page.public_title ? <p className="font-display text-xl">{page.public_title}</p> : null}
-        <h1 className="font-display text-4xl">{cancelled ? "This registration was cancelled." : "You're registered."}</h1>
+        <p className="text-sm text-muted">{paymentStateLabel(page.status)}</p>
+        <h1 className="font-display text-4xl">{heading}</h1>
         <p className="font-display text-5xl tracking-wide">{page.code}</p>
+        {pending && page.payUrl ? (
+          <div className="space-y-3">
+            <a
+              href={page.payUrl}
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-bronze px-4 text-sm font-medium text-bronze-fg"
+            >
+              Pay {formatCents(page.totalCents)} now
+            </a>
+            <p>Your place is held, but registration is complete only when payment is received.</p>
+          </div>
+        ) : null}
         <div className="space-y-1">
           <p className="text-lg">{page.eventTitle}</p>
           {page.when_label ? <p className="text-sm text-muted">{page.when_label}</p> : null}

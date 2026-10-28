@@ -46,6 +46,9 @@ describe("deskFilter", () => {
   it("keeps active statuses and drops the rest", () => {
     assert.equal(deskFilter(reg({ status: "paid" }), "active"), true);
     assert.equal(deskFilter(reg({ status: "cancelled" }), "active"), false);
+    assert.equal(deskFilter(reg({ status: "pending" }), "awaiting_payment"), true);
+    assert.equal(deskFilter(reg({ status: "paid" }), "awaiting_payment"), false);
+    assert.equal(deskFilter(reg({ status: "free" }), "awaiting_payment"), false);
   });
 
   it("treats cancelled, expired, and refunded as cancelled", () => {

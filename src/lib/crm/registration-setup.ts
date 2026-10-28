@@ -9,6 +9,7 @@ import { bookRegistrationAllowed } from "./book-registration";
 import { maySetBookRegistration } from "./handler-roles";
 import { nid } from "./ids";
 import { assertAdmin, assertEditor, loadMember } from "./member";
+import { paymentLinkError } from "@/lib/payments/payment-link-rules";
 import { parsePriceCents } from "@/lib/payments/pricing";
 import { ticketPartsUnchanged } from "@/lib/payments/registration-desk";
 
@@ -45,6 +46,7 @@ type TicketRow = {
   sales_end: Date | string | null;
   active: boolean;
   sort_order: number;
+  payment_link: string | null;
 };
 
 function iso(value: Date | string | null | undefined): string | null {
@@ -109,7 +111,7 @@ async function auditSetup(
   sql: Sql,
   member: { chapterId: string; userId: string },
   eventId: string,
-  detail: { what: string; name: string; price_cents?: number },
+  detail: { what: string; name: string; price_cents?: number; stripePayment?: string | null },
 ) {
   await recordAudit(sql, {
     chapterId: member.chapterId,
@@ -148,7 +150,7 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
     `;
     const tickets = await sql<TicketRow>`
       select id, chapter_id, event_id, kind, name, description, price_cents, currency,
-             for_minors, needs_code, sales_start, sales_end, active, sort_order
+             for_minors, needs_code, sales_start, sales_end, active, sort_order, payment_link
       from ticket_types
       where event_id = ${eventId} and chapter_id = ${member.chapterId}
       order by sort_order, name
@@ -206,6 +208,7 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
         sales_end: iso(ticket.sales_end),
         active: ticket.active,
         sort_order: ticket.sort_order,
+        payment_link: ticket.payment_link,
         partIds: links.filter((link) => link.ticket_type_id === ticket.id).map((link) => link.part_id),
       })),
       page: page
@@ -342,6 +345,15 @@ export const removePart = createServerFn({ method: "POST" })
     return { id: data.partId };
   });
 
+function ticketPaymentLink(cents: number, raw: string | null | undefined): string | null {
+  if (cents <= 0) return null;
+  const url = (raw ?? "").trim();
+  if (!url) return null;
+  const message = paymentLinkError(url, typeof process === "undefined" ? undefined : process.env.VERCEL_ENV);
+  if (message) throw new Error(message);
+  return url;
+}
+
 export const saveTicketType = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -359,6 +371,7 @@ export const saveTicketType = createServerFn({ method: "POST" })
       active: z.boolean(),
       sortOrder: z.number().int(),
       partIds: z.array(z.string()),
+      paymentLink: z.string().max(500).optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -372,6 +385,7 @@ export const saveTicketType = createServerFn({ method: "POST" })
     const salesStart = whenOrNull(data.salesStart);
     const salesEnd = whenOrNull(data.salesEnd);
     const partIds = await partsOfEvent(sql, member.chapterId, data.eventId, data.partIds);
+    const paymentLink = ticketPaymentLink(cents, data.paymentLink);
     let id = data.ticketTypeId;
     let replaceParts = true;
     let changed = true;
@@ -387,9 +401,10 @@ export const saveTicketType = createServerFn({ method: "POST" })
         sales_end: Date | string | null;
         active: boolean;
         sort_order: number;
+        payment_link: string | null;
       }>`
         select kind, name, description, price_cents, for_minors, needs_code,
-               sales_start, sales_end, active, sort_order
+               sales_start, sales_end, active, sort_order, payment_link
         from ticket_types
         where id = ${id} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
       `;
@@ -425,7 +440,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
           sales_start = ${salesStart},
           sales_end = ${salesEnd},
           active = ${data.active},
-          sort_order = ${data.sortOrder}
+          sort_order = ${data.sortOrder},
+          payment_link = ${paymentLink}
         where id = ${id} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
         returning id
       `;
@@ -444,6 +460,7 @@ export const saveTicketType = createServerFn({ method: "POST" })
               sales_end: iso(row.sales_end),
               active: row.active,
               sort_order: row.sort_order,
+              payment_link: row.payment_link,
             },
             {
               kind: data.kind,
@@ -456,6 +473,7 @@ export const saveTicketType = createServerFn({ method: "POST" })
               sales_end: iso(salesEnd),
               active: data.active,
               sort_order: data.sortOrder,
+              payment_link: paymentLink,
             },
             [
               "kind",
@@ -468,6 +486,7 @@ export const saveTicketType = createServerFn({ method: "POST" })
               "sales_end",
               "active",
               "sort_order",
+              "payment_link",
             ],
           )
         : [];
@@ -477,10 +496,11 @@ export const saveTicketType = createServerFn({ method: "POST" })
       await sql`
         insert into ticket_types (
           id, chapter_id, event_id, kind, name, description, price_cents,
-          for_minors, needs_code, sales_start, sales_end, active, sort_order
+          for_minors, needs_code, sales_start, sales_end, active, sort_order, payment_link
         ) values (
           ${id}, ${member.chapterId}, ${data.eventId}, ${data.kind}, ${name}, ${description}, ${cents},
-          ${data.forMinors}, ${data.needsCode}, ${salesStart}, ${salesEnd}, ${data.active}, ${data.sortOrder}
+          ${data.forMinors}, ${data.needsCode}, ${salesStart}, ${salesEnd}, ${data.active}, ${data.sortOrder},
+          ${paymentLink}
         )
       `;
     }
@@ -493,7 +513,12 @@ export const saveTicketType = createServerFn({ method: "POST" })
       }
     }
     if (changed) {
-      await auditSetup(sql, member, data.eventId, { what: "ticket", name, price_cents: cents });
+      await auditSetup(sql, member, data.eventId, {
+        what: "ticket",
+        name,
+        price_cents: cents,
+        stripePayment: paymentLink,
+      });
     }
     return { id };
   });

@@ -190,6 +190,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | 45 | Option B: the book serves the public site | 40–43 | Needs D1 = B, H13 | §9 |
 | 46 | Conference page section order | — | | |
 | 47 | Registration integrity before switching on (F05–F07) | 20 | | |
+| 48 | Pay with a Stripe Payment Link | 47 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
