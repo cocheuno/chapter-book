@@ -6,6 +6,7 @@ import {
   type ConferenceItem,
   type SpeakerRecord,
 } from "@/lib/crm/conference-page";
+import { parseSectionOrder } from "@/lib/crm/section-order";
 import { CHAPTER_TIME_ZONE } from "@/lib/crm/dates";
 import { siteImageSrc } from "@/lib/crm/site-image";
 import { PublicCopy, PublicText } from "@/components/public-copy";
@@ -22,6 +23,7 @@ export type ConferencePageData = ConferenceItem & {
   sessionStarts?: Record<string, string>;
   programTimeZone?: string | null;
   register_href?: string | null;
+  section_order?: string | null;
 };
 
 function clean(value: string | null | undefined): string {
@@ -161,7 +163,10 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
       ) : null}
 
       <main className="mx-auto max-w-5xl space-y-16 px-4 py-12 sm:py-16">
-        <section id="program">
+        {parseSectionOrder(page.section_order).map((key) => {
+          if (key === "program")
+            return (
+        <section key={key} id="program">
           <h2 className="font-display text-3xl">Program</h2>
           {days ? (
             days.map((day) => (
@@ -207,9 +212,10 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
             <p className="mt-4 text-lg text-ink-soft">The program will appear here as talks and workshops are published.</p>
           ) : null}
         </section>
-
-        {speakers.length > 0 ? (
-          <section id="speakers" className="scroll-mt-20">
+            );
+          if (key === "speakers" && speakers.length > 0)
+            return (
+          <section key={key} id="speakers" className="scroll-mt-20">
             <h2 className="font-display text-3xl">Speakers</h2>
             <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
               {speakers.map((speaker) => {
@@ -252,10 +258,10 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
               })}
             </ul>
           </section>
-        ) : null}
-
-        {program.workshops.length > 0 ? (
-          <section id="workshops" className="scroll-mt-20">
+            );
+          if (key === "workshops" && program.workshops.length > 0)
+            return (
+          <section key={key} id="workshops" className="scroll-mt-20">
             <h2 className="font-display text-3xl">Workshops</h2>
             <ul className="mt-6 grid gap-4 sm:grid-cols-2">
               {program.workshops.map((workshop) => {
@@ -279,10 +285,10 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
               })}
             </ul>
           </section>
-        ) : null}
-
-        {program.notes.length > 0 ? (
-          <section id="notes" className="scroll-mt-20">
+            );
+          if (key === "notes" && program.notes.length > 0)
+            return (
+          <section key={key} id="notes" className="scroll-mt-20">
             <h2 className="font-display text-3xl">Practical notes</h2>
             <ul className="mt-6 divide-y divide-line rounded-xl border border-line bg-surface">
               {program.notes.map((note) => {
@@ -302,17 +308,17 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
               })}
             </ul>
           </section>
-        ) : null}
-
-        {page.body?.trim() ? (
-          <section id="about" className="scroll-mt-20">
+            );
+          if (key === "about" && page.body?.trim())
+            return (
+          <section key={key} id="about" className="scroll-mt-20">
             <h2 className="font-display text-3xl">The gathering</h2>
             <PublicCopy text={page.body} className="mt-4 max-w-3xl text-lg leading-relaxed text-ink-soft" />
           </section>
-        ) : null}
-
-        {page.when_label || page.location || venuePhoto ? (
-          <section id="visit" className="scroll-mt-20 rounded-xl border border-line bg-surface p-5 sm:p-8">
+            );
+          if (key === "visit" && (page.when_label || page.location || venuePhoto))
+            return (
+          <section key={key} id="visit" className="scroll-mt-20 rounded-xl border border-line bg-surface p-5 sm:p-8">
             <h2 className="font-display text-3xl">When and where</h2>
             {venuePhoto ? (
               <img
@@ -342,7 +348,9 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
               />
             ) : null}
           </section>
-        ) : null}
+            );
+          return null;
+        })}
       </main>
 
       <footer className="border-t border-line">
