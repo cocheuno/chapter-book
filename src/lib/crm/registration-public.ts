@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { getSql } from "@/lib/db";
+import { getSql, withTransaction } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { recordAudit } from "./audit";
 import { bookRegistrationAllowed } from "./book-registration";
 import { calendarHref } from "./calendar-file";
 import { todayIn } from "./dates";
@@ -17,10 +18,13 @@ import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
   THROTTLE_LIMIT,
   agreementsAccepted,
+  duplicateAttendees,
+  duplicateRegistrationMessage,
   matchAttendee,
   planRegistration,
   registrationCode,
   reviewChanges,
+  shownTextMismatch,
   turnstileMode,
   type RegistrationCatalog,
 } from "@/lib/payments/registration-rules";
@@ -383,22 +387,12 @@ function consentInput(person: {
   };
 }
 
-async function releaseSeats(sql: Sql, chapterId: string, taken: { partId: string; n: number }[]) {
-  for (const seat of taken) {
-    await sql`
-      update event_parts set taken = taken - ${seat.n}
-      where id = ${seat.partId} and chapter_id = ${chapterId}
-    `;
-  }
-}
-
 async function takeSeats(
   sql: Sql,
   chapterId: string,
   partNeeds: Record<string, number>,
   titles: Map<string, string>,
 ) {
-  const taken: { partId: string; n: number }[] = [];
   for (const [partId, n] of Object.entries(partNeeds)) {
     if (n <= 0) continue;
     const rows = await sql<{ id: string }>`
@@ -407,13 +401,8 @@ async function takeSeats(
         and (capacity is null or taken + held + ${n} <= capacity)
       returning id
     `;
-    if (!rows[0]) {
-      await releaseSeats(sql, chapterId, taken);
-      throw new Error(`${titles.get(partId) ?? "That part"} is full.`);
-    }
-    taken.push({ partId, n });
+    if (!rows[0]) throw new Error(`${titles.get(partId) ?? "That part"} is full.`);
   }
-  return taken;
 }
 
 async function verifyTurnstile(token: string | undefined, ip: string, secret: string) {
@@ -506,16 +495,12 @@ async function addTask(
   dueOn: string,
   eventId: string,
   personId: string,
-  undos: Array<() => Promise<void>>,
 ) {
   const id = nid();
   await sql`
     insert into tasks (id, chapter_id, title, due_on, status, event_id, person_id, hat)
     values (${id}, ${chapterId}, ${title}, ${dueOn}, ${"open"}, ${eventId}, ${personId}, ${"secretary"})
   `;
-  undos.push(async () => {
-    await sql`delete from tasks where id = ${id} and chapter_id = ${chapterId}`;
-  });
 }
 
 function confirmationText(input: {
@@ -580,6 +565,14 @@ export const getRegisterPreview = createServerFn({ method: "GET" })
     return registerPayload(event, catalog, agreements, guardian);
   });
 
+function keepRegistrationError(message: string): boolean {
+  return (
+    message === "The same person is listed twice." ||
+    message.startsWith("There is already a registration for ") ||
+    message.endsWith(" is full.")
+  );
+}
+
 export const createRegistration = createServerFn({ method: "POST" })
   .validator(registrationInput.parse)
   .handler(async ({ data }) => {
@@ -616,6 +609,14 @@ export const createRegistration = createServerFn({ method: "POST" })
       latestAgreements(sql, chapterId, event.eventId),
       latestGuardianText(sql, chapterId, event.eventId),
     ]);
+    const staleText = shownTextMismatch({
+      currentAgreementIds: agreements.map((row) => row.id),
+      currentConsentId: guardianText?.id ?? null,
+      sentAgreementIds: data.acceptedAgreementIds,
+      sentConsentId: data.consentTextId,
+      consentRequired: Boolean(guardianText) && data.attendees.some((person) => person.under18),
+    });
+    if (staleText) throw new Error(staleText);
     if (!agreementsAccepted(agreements.map((row) => row.id), data.acceptedAgreementIds)) {
       throw new Error("The terms changed while you were registering. Please review them and agree again.");
     }
@@ -646,256 +647,273 @@ export const createRegistration = createServerFn({ method: "POST" })
     const signedIp = hashInviteToken(ip);
 
     const titles = new Map(catalog.parts.map((part) => [part.id, part.title]));
-    const taken = await takeSeats(sql, chapterId, plan.partNeeds, titles);
-    const undos: Array<() => Promise<void>> = [];
-    let insertedRegistrationId: string | null = null;
     try {
-      const purchaserEmail = lowerEmail(data.purchaser.email);
-      if (!purchaserEmail) throw new Error("Registration could not be completed. Please try again.");
-      const purchaserName = data.purchaser.name.trim();
-      let purchaser = await personByEmail(sql, chapterId, purchaserEmail);
-      if (!purchaser) {
-        const split = splitWalkupName(purchaserName);
-        try {
-          purchaser = await createWebPerson(sql, chapterId, {
-            givenName: split.givenName,
-            familyName: split.familyName,
-            email: purchaserEmail,
-            phone: blankToNull(data.purchaser.phone),
-            newsConsent: data.newsOptIn ? "yes" : "no",
-          });
-        } catch (err) {
-          if (!isUniqueViolation(err)) throw err;
-          purchaser = await personByEmail(sql, chapterId, purchaserEmail);
-          if (!purchaser) throw err;
-        }
-      }
-
-      const registrationId = nid();
-      const token = newInviteToken();
-      const tokenHash = hashInviteToken(token);
-      const year = eventYear(event.startsAt, event.timezone || event.chapterTimezone, now);
-      let code = "";
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        code = registrationCode(year, randomCodeBytes());
-        try {
-          await sql`
-            insert into registrations (
-              id, chapter_id, event_id, code, status,
-              purchaser_name, purchaser_email, purchaser_phone, purchaser_person_id,
-              total_cents, news_opt_in, heard_from, utm_source, manage_token_hash
-            ) values (
-              ${registrationId}, ${chapterId}, ${event.eventId}, ${code}, ${"free"},
-              ${purchaserName}, ${purchaserEmail}, ${blankToNull(data.purchaser.phone)}, ${purchaser.id},
-              ${0}, ${data.newsOptIn}, ${blankToNull(data.heardFrom)}, ${blankToNull(data.utmSource)}, ${tokenHash}
-            )
-          `;
-          insertedRegistrationId = registrationId;
-          break;
-        } catch (err) {
-          if (!isUniqueViolation(err) || attempt === 4) throw err;
-        }
-      }
-      if (!insertedRegistrationId) throw new Error("Registration could not be completed. Please try again.");
-
-      const dueOn = dueInSevenDays(event.chapterTimezone || event.timezone, now);
-      const attendeeNames: string[] = [];
-      for (let index = 0; index < data.attendees.length; index += 1) {
-        const typed = data.attendees[index];
-        const given = typed.givenName.trim();
-        const family = typed.familyName.trim();
-        const email = lowerEmail(typed.email);
-        const byEmail = email ? await personByEmail(sql, chapterId, email) : null;
-        const sameName = await sql<{ id: string; email: string | null }>`
-          select id, email from persons
-          where chapter_id = ${chapterId}
-            and lower(coalesce(given_name, '')) = ${given.toLowerCase()}
-            and lower(coalesce(family_name, '')) = ${family.toLowerCase()}
-          order by id
+      return await withTransaction(async (tx) => {
+        const locked = await tx<{ id: string }>`
+          select id from events where id = ${event.eventId} and chapter_id = ${chapterId} for update
         `;
-        const matched = matchAttendee({ email, givenName: given, familyName: family }, byEmail, sameName);
-        let person: WebPerson | PersonSnap;
-        let review: ReturnType<typeof reviewChanges> = null;
-        if (matched.action === "link" && byEmail) {
-          person = byEmail;
-          review = reviewChanges(
-            { given_name: byEmail.given_name, family_name: byEmail.family_name, dietary: byEmail.dietary },
-            { givenName: given, familyName: family, dietary: typed.dietary },
-          );
-          if (review) {
-            await addTask(
-              sql,
-              chapterId,
-              `Web registration: check changes for ${byEmail.display_name}`,
-              dueOn,
-              event.eventId,
-              byEmail.id,
-              undos,
-            );
-          }
-        } else {
-          let created: WebPerson;
+        if (!locked[0]) throw new Error("Registration could not be completed. Please try again.");
+
+        const repeated = duplicateAttendees(data.attendees);
+        if (repeated) throw new Error(repeated);
+
+        const purchaserEmail = lowerEmail(data.purchaser.email);
+        if (!purchaserEmail) throw new Error("Registration could not be completed. Please try again.");
+        const emails = [purchaserEmail];
+        for (const person of data.attendees) {
+          const email = lowerEmail(person.email);
+          if (email && !emails.includes(email)) emails.push(email);
+        }
+        const conflicts = await tx<{ email: string }>`
+          select lower(r.purchaser_email) as email
+          from registrations r
+          where r.chapter_id = ${chapterId}
+            and r.event_id = ${event.eventId}
+            and r.status <> 'cancelled'
+            and r.status <> 'expired'
+            and lower(r.purchaser_email) = any(${emails}::text[])
+          union
+          select lower(a.email) as email
+          from registration_attendees a
+          join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+          where a.chapter_id = ${chapterId}
+            and r.event_id = ${event.eventId}
+            and r.status <> 'cancelled'
+            and r.status <> 'expired'
+            and a.cancelled_at is null
+            and a.email is not null
+            and lower(a.email) = any(${emails}::text[])
+        `;
+        const found = new Set(conflicts.map((row) => (row.email ?? "").toLowerCase()));
+        const hit = emails.find((email) => found.has(email));
+        if (hit) throw new Error(duplicateRegistrationMessage(hit));
+
+        await takeSeats(tx, chapterId, plan.partNeeds, titles);
+
+        const purchaserName = data.purchaser.name.trim();
+        let purchaser = await personByEmail(tx, chapterId, purchaserEmail);
+        if (!purchaser) {
+          const split = splitWalkupName(purchaserName);
           try {
-            created = await createWebPerson(sql, chapterId, {
-              givenName: given,
-              familyName: family,
-              email,
-              phone: null,
-              newsConsent: "no",
+            purchaser = await createWebPerson(tx, chapterId, {
+              givenName: split.givenName,
+              familyName: split.familyName,
+              email: purchaserEmail,
+              phone: blankToNull(data.purchaser.phone),
+              newsConsent: data.newsOptIn ? "yes" : "no",
             });
           } catch (err) {
-            if (!isUniqueViolation(err) || !email) throw err;
-            const again = await personByEmail(sql, chapterId, email);
-            if (!again) throw err;
-            created = { ...again, created: false, linkedByEmail: true };
+            if (!isUniqueViolation(err)) throw err;
+            purchaser = await personByEmail(tx, chapterId, purchaserEmail);
+            if (!purchaser) throw err;
           }
-          person = created;
-          if (!created.created && created.linkedByEmail) {
+        }
+
+        const registrationId = nid();
+        const token = newInviteToken();
+        const tokenHash = hashInviteToken(token);
+        const year = eventYear(event.startsAt, event.timezone || event.chapterTimezone, now);
+        let code = "";
+        let inserted = false;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          code = registrationCode(year, randomCodeBytes());
+          try {
+            await tx`
+              insert into registrations (
+                id, chapter_id, event_id, code, status,
+                purchaser_name, purchaser_email, purchaser_phone, purchaser_person_id,
+                total_cents, news_opt_in, heard_from, utm_source, manage_token_hash
+              ) values (
+                ${registrationId}, ${chapterId}, ${event.eventId}, ${code}, ${"free"},
+                ${purchaserName}, ${purchaserEmail}, ${blankToNull(data.purchaser.phone)}, ${purchaser.id},
+                ${0}, ${data.newsOptIn}, ${blankToNull(data.heardFrom)}, ${blankToNull(data.utmSource)}, ${tokenHash}
+              )
+            `;
+            inserted = true;
+            break;
+          } catch (err) {
+            if (!isUniqueViolation(err) || attempt === 4) throw err;
+          }
+        }
+        if (!inserted) throw new Error("Registration could not be completed. Please try again.");
+
+        const dueOn = dueInSevenDays(event.chapterTimezone || event.timezone, now);
+        const attendeeNames: string[] = [];
+        for (let index = 0; index < data.attendees.length; index += 1) {
+          const typed = data.attendees[index];
+          const given = typed.givenName.trim();
+          const family = typed.familyName.trim();
+          const email = lowerEmail(typed.email);
+          const byEmail = email ? await personByEmail(tx, chapterId, email) : null;
+          const sameName = await tx<{ id: string; email: string | null }>`
+            select id, email from persons
+            where chapter_id = ${chapterId}
+              and lower(coalesce(given_name, '')) = ${given.toLowerCase()}
+              and lower(coalesce(family_name, '')) = ${family.toLowerCase()}
+            order by id
+          `;
+          const matched = matchAttendee({ email, givenName: given, familyName: family }, byEmail, sameName);
+          let person: WebPerson | PersonSnap;
+          let review: ReturnType<typeof reviewChanges> = null;
+          if (matched.action === "link" && byEmail) {
+            person = byEmail;
             review = reviewChanges(
-              { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
+              { given_name: byEmail.given_name, family_name: byEmail.family_name, dietary: byEmail.dietary },
               { givenName: given, familyName: family, dietary: typed.dietary },
             );
             if (review) {
               await addTask(
-                sql,
+                tx,
                 chapterId,
-                `Web registration: check changes for ${created.display_name}`,
+                `Web registration: check changes for ${byEmail.display_name}`,
+                dueOn,
+                event.eventId,
+                byEmail.id,
+              );
+            }
+          } else {
+            let created: WebPerson;
+            try {
+              created = await createWebPerson(tx, chapterId, {
+                givenName: given,
+                familyName: family,
+                email,
+                phone: null,
+                newsConsent: "no",
+              });
+            } catch (err) {
+              if (!isUniqueViolation(err) || !email) throw err;
+              const again = await personByEmail(tx, chapterId, email);
+              if (!again) throw err;
+              created = { ...again, created: false, linkedByEmail: true };
+            }
+            person = created;
+            if (!created.created && created.linkedByEmail) {
+              review = reviewChanges(
+                { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
+                { givenName: given, familyName: family, dietary: typed.dietary },
+              );
+              if (review) {
+                await addTask(
+                  tx,
+                  chapterId,
+                  `Web registration: check changes for ${created.display_name}`,
+                  dueOn,
+                  event.eventId,
+                  created.id,
+                );
+              }
+            } else if (!created.created) {
+              review = reviewChanges(
+                { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
+                { givenName: given, familyName: family, dietary: typed.dietary },
+              );
+              await addTask(
+                tx,
+                chapterId,
+                `Web registration: check ${created.display_name} (matched by name only)`,
                 dueOn,
                 event.eventId,
                 created.id,
-                undos,
+              );
+            } else if (matched.action === "create" && matched.possibleDuplicateOf) {
+              await addTask(
+                tx,
+                chapterId,
+                `Web registration: possible duplicate of ${created.display_name}`,
+                dueOn,
+                event.eventId,
+                created.id,
               );
             }
-          } else if (!created.created) {
-            review = reviewChanges(
-              { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
-              { givenName: given, familyName: family, dietary: typed.dietary },
-            );
-            await addTask(
-              sql,
-              chapterId,
-              `Web registration: check ${created.display_name} (matched by name only)`,
-              dueOn,
-              event.eventId,
-              created.id,
-              undos,
-            );
-          } else if (matched.action === "create" && matched.possibleDuplicateOf) {
-            await addTask(
-              sql,
-              chapterId,
-              `Web registration: possible duplicate of ${created.display_name}`,
-              dueOn,
-              event.eventId,
-              created.id,
-              undos,
-            );
           }
+
+          const attendeeId = nid();
+          const reviewJson = review ? JSON.stringify(review) : null;
+          await tx`
+            insert into registration_attendees (
+              id, chapter_id, registration_id, given_name, family_name, email,
+              badge_affiliation, dietary, accessibility, person_id, review_changes, is_minor
+            ) values (
+              ${attendeeId}, ${chapterId}, ${registrationId}, ${given}, ${family}, ${email},
+              ${blankToNull(typed.badgeAffiliation)}, ${blankToNull(typed.dietary)}, ${blankToNull(typed.accessibility)},
+              ${person.id}, ${reviewJson}::jsonb, ${typed.under18}
+            )
+          `;
+          if (typed.under18 && typed.consent !== "later") {
+            if (!guardianText) throw new Error("Registration for students under 18 is not open yet.");
+            await writeOnlineConsent(tx, {
+              chapterId,
+              attendeeId,
+              studentPersonId: person.id,
+              textId: guardianText.id,
+              signedIp,
+              consent: consentInput(typed),
+            });
+          }
+          for (const line of plan.lines.filter((item) => item.attendeeIndex === index)) {
+            await tx`
+              insert into attendee_items (attendee_id, ticket_type_id, price_cents)
+              values (${attendeeId}, ${line.ticketId}, ${line.priceCents})
+            `;
+          }
+          const participationId = await placeParticipation(tx, {
+            chapterId,
+            eventId: event.eventId,
+            personId: person.id,
+            attendeeId,
+            dietary: blankToNull(typed.dietary),
+          });
+          await tx`
+            update registration_attendees set participation_id = ${participationId}
+            where id = ${attendeeId} and chapter_id = ${chapterId}
+          `;
+          attendeeNames.push(`${given} ${family}`.trim());
         }
 
-        const attendeeId = nid();
-        const reviewJson = review ? JSON.stringify(review) : null;
-        await sql`
-          insert into registration_attendees (
-            id, chapter_id, registration_id, given_name, family_name, email,
-            badge_affiliation, dietary, accessibility, person_id, review_changes, is_minor
+        const origin = publicOrigin({
+          PUBLIC_ORIGIN: readEnv("PUBLIC_ORIGIN"),
+          BETTER_AUTH_URL: readEnv("BETTER_AUTH_URL"),
+        });
+        const pageUrl = origin ? `${origin}/r/${token}` : `/r/${token}`;
+        await tx`
+          insert into mail_outbox (
+            id, chapter_id, stream, template_key, to_address, to_name, person_id, registration_id,
+            subject, text_body, status
           ) values (
-            ${attendeeId}, ${chapterId}, ${registrationId}, ${given}, ${family}, ${email},
-            ${blankToNull(typed.badgeAffiliation)}, ${blankToNull(typed.dietary)}, ${blankToNull(typed.accessibility)},
-            ${person.id}, ${reviewJson}::jsonb, ${typed.under18}
+            ${nid()}, ${chapterId}, ${"transactional"}, ${"registration_confirmation"},
+            ${purchaserEmail}, ${purchaserName}, ${purchaser.id}, ${registrationId},
+            ${`You're registered: ${event.title}`},
+            ${confirmationText({
+              purchaserName,
+              eventTitle: event.title,
+              code,
+              names: attendeeNames,
+              whenLabel: event.whenLabel,
+              location: event.location,
+              pageUrl,
+              contactLine: event.contactLine,
+            })},
+            ${"held"}
           )
         `;
-        if (typed.under18 && typed.consent !== "later") {
-          if (!guardianText) throw new Error("Registration for students under 18 is not open yet.");
-          await writeOnlineConsent(sql, {
-            chapterId,
-            attendeeId,
-            studentPersonId: person.id,
-            textId: guardianText.id,
-            signedIp,
-            consent: consentInput(typed),
-            undos,
-          });
-        }
-        for (const line of plan.lines.filter((item) => item.attendeeIndex === index)) {
-          await sql`
-            insert into attendee_items (attendee_id, ticket_type_id, price_cents)
-            values (${attendeeId}, ${line.ticketId}, ${line.priceCents})
-          `;
-        }
-        const participationId = await placeParticipation(sql, {
+        await recordAudit(tx, {
           chapterId,
-          eventId: event.eventId,
-          personId: person.id,
-          attendeeId,
-          dietary: blankToNull(typed.dietary),
-          undos,
-        });
-        await sql`
-          update registration_attendees set participation_id = ${participationId}
-          where id = ${attendeeId} and chapter_id = ${chapterId}
-        `;
-        attendeeNames.push(`${given} ${family}`.trim());
-      }
-
-      const origin = publicOrigin({
-        PUBLIC_ORIGIN: readEnv("PUBLIC_ORIGIN"),
-        BETTER_AUTH_URL: readEnv("BETTER_AUTH_URL"),
-      });
-      const pageUrl = origin ? `${origin}/r/${token}` : `/r/${token}`;
-      await sql`
-        insert into mail_outbox (
-          id, chapter_id, stream, template_key, to_address, to_name, person_id, registration_id,
-          subject, text_body, status
-        ) values (
-          ${nid()}, ${chapterId}, ${"transactional"}, ${"registration_confirmation"},
-          ${purchaserEmail}, ${purchaserName}, ${purchaser.id}, ${registrationId},
-          ${`You're registered: ${event.title}`},
-          ${confirmationText({
-            purchaserName,
-            eventTitle: event.title,
+          actor: "public",
+          action: "registration_created",
+          entity: "registration",
+          entityId: registrationId,
+          detail: {
             code,
-            names: attendeeNames,
-            whenLabel: event.whenLabel,
-            location: event.location,
-            pageUrl,
-            contactLine: event.contactLine,
-          })},
-          ${"held"}
-        )
-      `;
-      await sql`
-        insert into audit_log (id, chapter_id, actor, action, entity, entity_id, detail)
-        values (
-          ${nid()}, ${chapterId}, ${"public"}, ${"registration_created"}, ${"registration"}, ${registrationId},
-          ${JSON.stringify({ code, attendees: data.attendees.length, agreements: data.acceptedAgreementIds, eventId: event.eventId })}::jsonb
-        )
-      `;
-      return { manageUrl: `/r/${token}` };
-    } catch {
-      for (let i = undos.length - 1; i >= 0; i -= 1) {
-        try {
-          await undos[i]();
-        } catch {
-          // Still release the seats and cancel below.
-        }
-      }
-      try {
-        await releaseSeats(sql, chapterId, taken);
-      } catch {
-        // The visitor still sees the generic message.
-      }
-      if (insertedRegistrationId) {
-        try {
-          await sql`
-            update registrations
-            set status = 'cancelled', needs_review = ${"failed during registration"}, cancelled_at = now()
-            where id = ${insertedRegistrationId} and chapter_id = ${chapterId}
-          `;
-        } catch {
-          // The visitor still sees the generic message.
-        }
-      }
+            attendees: data.attendees.length,
+            agreements: data.acceptedAgreementIds,
+            eventId: event.eventId,
+          },
+        });
+        return { manageUrl: `/r/${token}` };
+      });
+    } catch (err) {
+      if (err instanceof Error && keepRegistrationError(err.message)) throw err;
       throw new Error("Registration could not be completed. Please try again.");
     }
   });
@@ -908,27 +926,16 @@ async function placeParticipation(
     personId: string;
     attendeeId: string;
     dietary: string | null;
-    undos: Array<() => Promise<void>>;
   },
 ): Promise<string> {
-  const existing = await sql<{
-    id: string;
-    guest_status: string | null;
-    dietary_for_this_event: string | null;
-    registration_attendee_id: string | null;
-  }>`
-    select id, guest_status, dietary_for_this_event, registration_attendee_id
+  const existing = await sql<{ id: string }>`
+    select id
     from participations
     where chapter_id = ${input.chapterId} and event_id = ${input.eventId}
       and person_id = ${input.personId} and party_type = 'person'
     limit 1
   `;
-  const updateRow = async (row: {
-    id: string;
-    guest_status: string | null;
-    dietary_for_this_event: string | null;
-    registration_attendee_id: string | null;
-  }) => {
+  const updateRow = async (row: { id: string }) => {
     await sql`
       update participations set
         guest_status = 'attending',
@@ -936,15 +943,6 @@ async function placeParticipation(
         dietary_for_this_event = coalesce(dietary_for_this_event, ${input.dietary})
       where id = ${row.id} and chapter_id = ${input.chapterId}
     `;
-    input.undos.push(async () => {
-      await sql`
-        update participations set
-          guest_status = ${row.guest_status},
-          dietary_for_this_event = ${row.dietary_for_this_event},
-          registration_attendee_id = ${row.registration_attendee_id}
-        where id = ${row.id} and chapter_id = ${input.chapterId}
-      `;
-    });
     return row.id;
   };
   if (existing[0]) return updateRow(existing[0]);
@@ -961,13 +959,8 @@ async function placeParticipation(
     `;
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
-    const again = await sql<{
-      id: string;
-      guest_status: string | null;
-      dietary_for_this_event: string | null;
-      registration_attendee_id: string | null;
-    }>`
-      select id, guest_status, dietary_for_this_event, registration_attendee_id
+    const again = await sql<{ id: string }>`
+      select id
       from participations
       where chapter_id = ${input.chapterId} and event_id = ${input.eventId}
         and person_id = ${input.personId} and party_type = 'person'
@@ -976,16 +969,6 @@ async function placeParticipation(
     if (!again[0]) throw err;
     return updateRow(again[0]);
   }
-  input.undos.push(async () => {
-    await sql`
-      update registration_attendees set participation_id = null
-      where participation_id = ${id} and chapter_id = ${input.chapterId}
-    `;
-    await sql`
-      delete from participations
-      where id = ${id} and chapter_id = ${input.chapterId} and source = 'web'
-    `;
-  });
   return id;
 }
 

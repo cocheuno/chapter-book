@@ -398,6 +398,9 @@ function RegisterPage() {
             ...(person.accessibility.trim() ? { accessibility: person.accessibility.trim() } : {}),
           })),
           acceptedAgreementIds: page.agreements.filter((item) => accepted[item.id]).map((item) => item.id),
+          ...(attendees.some((person) => person.under18) && page.guardianConsent
+            ? { consentTextId: page.guardianConsent.id }
+            : {}),
           newsOptIn,
           ...(heardFrom.trim() ? { heardFrom: heardFrom.trim() } : {}),
           ...(utmSource ? { utmSource } : {}),

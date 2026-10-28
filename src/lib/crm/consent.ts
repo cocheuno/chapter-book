@@ -16,7 +16,7 @@ import {
   studentPublicName,
   type GuardianConsentInput,
 } from "@/lib/payments/consent-rules";
-import { THROTTLE_LIMIT, turnstileMode } from "@/lib/payments/registration-rules";
+import { AGREEMENT_TEXT_UPDATED, THROTTLE_LIMIT, turnstileMode } from "@/lib/payments/registration-rules";
 import { bookRegistrationAllowed } from "./book-registration";
 import { lowerEmail, nid } from "./ids";
 import { composePersonName, splitWalkupName } from "./names";
@@ -182,7 +182,7 @@ export async function writeOnlineConsent(
     textId: string;
     signedIp: string;
     consent: GuardianConsentInput;
-    undos: Array<() => Promise<void>>;
+    undos?: Array<() => Promise<void>>;
   },
 ): Promise<void> {
   const message = guardianConsentErrors(input.consent)[0];
@@ -194,7 +194,7 @@ export async function writeOnlineConsent(
   const guardian = await matchOrCreateGuardian(sql, input.chapterId, { name, email, phone });
   if (guardian.created) {
     const guardianId = guardian.id;
-    input.undos.push(async () => {
+    input.undos?.push(async () => {
       await sql`delete from persons where id = ${guardianId} and chapter_id = ${input.chapterId} and source = 'web'`;
     });
   }
@@ -208,7 +208,7 @@ export async function writeOnlineConsent(
     `;
     if (linked[0]) {
       const guardianId = guardian.id;
-      input.undos.push(async () => {
+      input.undos?.push(async () => {
         await sql`
           delete from person_relationships
           where person_id = ${guardianId} and related_person_id = ${studentId} and kind = 'guardian_of'
@@ -230,7 +230,7 @@ export async function writeOnlineConsent(
       now(), ${input.signedIp}, ${"online"}
     )
   `;
-  input.undos.push(async () => {
+  input.undos?.push(async () => {
     await sql`delete from guardian_consents where id = ${consentId} and chapter_id = ${input.chapterId}`;
   });
 }
@@ -428,6 +428,7 @@ export const getConsentPage = createServerFn({ method: "GET" })
       eventTitle: open.eventTitle,
       studentName: studentPublicName(open.givenName, open.familyName),
       html: text.html,
+      textId: text.id,
       turnstileSiteKey: readEnv("TURNSTILE_SITE_KEY") ?? null,
     };
   });
@@ -444,6 +445,7 @@ const consentSubmit = z.object({
   photoRelease: z.boolean(),
   agreed: z.boolean(),
   signature: z.string().max(SIGNATURE_MAX),
+  consentTextId: z.string().max(64).optional(),
   turnstileToken: z.string().max(4096).optional(),
 });
 
@@ -473,6 +475,9 @@ export const submitConsent = createServerFn({ method: "POST" })
     if (!chapterId || !open) throw new Error(INVALID_LINK);
     const text = await latestGuardianText(sql, chapterId, open.eventId);
     if (!text) throw new Error(INVALID_LINK);
+    if (data.consentTextId !== text.id) {
+      throw new Error(AGREEMENT_TEXT_UPDATED);
+    }
     const consent: GuardianConsentInput = {
       guardianName: data.guardianName,
       guardianPhone: data.guardianPhone,

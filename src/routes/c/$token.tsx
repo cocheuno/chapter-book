@@ -124,6 +124,7 @@ function ConsentPage() {
           photoRelease,
           agreed,
           signature: signature.trim(),
+          consentTextId: page.textId,
           ...(turnstileToken ? { turnstileToken } : {}),
         },
       });

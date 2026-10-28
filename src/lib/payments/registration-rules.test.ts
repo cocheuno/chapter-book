@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  AGREEMENT_TEXT_UPDATED,
   agreementsAccepted,
+  duplicateAttendees,
+  duplicateRegistrationMessage,
   matchAttendee,
   planRegistration,
   registrationCode,
   reviewChanges,
+  shownTextMismatch,
   turnstileMode,
   type CatalogTicket,
   type RegistrationCatalog,
@@ -282,5 +286,125 @@ describe("agreementsAccepted", () => {
     assert.equal(agreementsAccepted(["a", "b"], ["b", "a", "c"]), true);
     assert.equal(agreementsAccepted(["a", "b"], ["a"]), false);
     assert.equal(agreementsAccepted([], ["a"]), true);
+  });
+});
+
+describe("duplicateAttendees", () => {
+  it("allows distinct people, including blank emails", () => {
+    assert.equal(
+      duplicateAttendees([
+        { givenName: "Ada", familyName: "Example", email: "ada@example.com" },
+        { givenName: "Ben", familyName: "Example", email: "" },
+        { givenName: "Cam", familyName: "Example" },
+      ]),
+      null,
+    );
+  });
+
+  it("refuses the same email regardless of case", () => {
+    assert.equal(
+      duplicateAttendees([
+        { givenName: "Ada", familyName: "Example", email: "Ada@example.com" },
+        { givenName: "Ann", familyName: "Other", email: " ada@example.com " },
+      ]),
+      "The same person is listed twice.",
+    );
+  });
+
+  it("refuses the same given and family name regardless of case", () => {
+    assert.equal(
+      duplicateAttendees([
+        { givenName: " Ada ", familyName: "Example", email: "ada@example.com" },
+        { givenName: "ada", familyName: " EXAMPLE ", email: "other@example.com" },
+      ]),
+      "The same person is listed twice.",
+    );
+  });
+
+  it("allows one person and an empty list", () => {
+    assert.equal(duplicateAttendees([]), null);
+    assert.equal(
+      duplicateAttendees([{ givenName: "Ada", familyName: "Example", email: "ada@example.com" }]),
+      null,
+    );
+  });
+});
+
+describe("duplicateRegistrationMessage", () => {
+  it("names the address that already has a registration", () => {
+    assert.equal(
+      duplicateRegistrationMessage("ada@example.com"),
+      "There is already a registration for ada@example.com for this event. Use the link on your confirmation page to see it, or contact the chapter.",
+    );
+  });
+});
+
+describe("shownTextMismatch", () => {
+  const current = {
+    currentAgreementIds: ["privacy-1", "refund-1", "conduct-1"],
+    currentConsentId: "guardian-1",
+  };
+
+  it("accepts the current agreement ids when no minor is included", () => {
+    assert.equal(
+      shownTextMismatch({
+        ...current,
+        sentAgreementIds: ["privacy-1", "refund-1", "conduct-1"],
+        consentRequired: false,
+      }),
+      null,
+    );
+  });
+
+  it("refuses an agreement id that is not the current one for that kind", () => {
+    assert.equal(
+      shownTextMismatch({
+        ...current,
+        sentAgreementIds: ["privacy-0", "refund-1", "conduct-1"],
+        consentRequired: false,
+      }),
+      AGREEMENT_TEXT_UPDATED,
+    );
+  });
+
+  it("requires the current consent id when a minor is included", () => {
+    assert.equal(
+      shownTextMismatch({
+        ...current,
+        sentAgreementIds: ["privacy-1", "refund-1", "conduct-1"],
+        sentConsentId: "guardian-1",
+        consentRequired: true,
+      }),
+      null,
+    );
+    assert.equal(
+      shownTextMismatch({
+        ...current,
+        sentAgreementIds: ["privacy-1", "refund-1", "conduct-1"],
+        sentConsentId: "guardian-0",
+        consentRequired: true,
+      }),
+      AGREEMENT_TEXT_UPDATED,
+    );
+    assert.equal(
+      shownTextMismatch({
+        ...current,
+        sentAgreementIds: ["privacy-1", "refund-1", "conduct-1"],
+        consentRequired: true,
+      }),
+      AGREEMENT_TEXT_UPDATED,
+    );
+  });
+
+  it("refuses a consent id that is not current even when consent is optional", () => {
+    assert.equal(
+      shownTextMismatch({
+        ...current,
+        sentAgreementIds: ["privacy-1"],
+        sentConsentId: "guardian-0",
+        consentRequired: false,
+      }),
+      AGREEMENT_TEXT_UPDATED,
+    );
   });
 });
