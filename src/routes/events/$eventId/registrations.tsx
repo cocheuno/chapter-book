@@ -5,8 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import {
+  applyRegistrationChanges,
   cancelAttendee,
   cancelRegistration,
+  dismissRegistrationChanges,
   markRegistrationPaid,
   refundRegistration,
   exportBadges,
@@ -135,6 +137,9 @@ function RegistrationsInner() {
   if (!data) return <p className="text-muted">{failed ? "Could not load registrations." : "Loading…"}</p>;
 
   const canEdit = data.role !== "viewer";
+  const pendingChangeIds = data.registrations.flatMap((registration) =>
+    registration.attendees.filter((attendee) => attendee.changes.length > 0).map((attendee) => attendee.id),
+  );
   const visible = data.registrations.filter(
     (registration) => deskFilter(registration, filter) && deskSearch(registration, search),
   );
@@ -227,6 +232,22 @@ function RegistrationsInner() {
 
       {canEdit ? (
         <div className="flex flex-wrap gap-2">
+          {pendingChangeIds.length ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm("Apply all changes for this event?")) return;
+                void run(
+                  () => applyRegistrationChanges({ data: { eventId, attendeeIds: pendingChangeIds } }),
+                  "Changes applied",
+                );
+              }}
+            >
+              Apply all changes
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="secondary"
@@ -376,6 +397,18 @@ function RegistrationsInner() {
                 "Registration refunded",
               );
             }}
+            onApplyChanges={(attendeeId) => {
+              void run(
+                () => applyRegistrationChanges({ data: { eventId, attendeeIds: [attendeeId] } }),
+                "Changes applied",
+              );
+            }}
+            onDismissChanges={(attendeeId) => {
+              void run(
+                () => dismissRegistrationChanges({ data: { eventId, attendeeId } }),
+                "Changes dismissed",
+              );
+            }}
             onRefresh={() => {
               void load();
             }}
@@ -480,6 +513,8 @@ function RegistrationCard({
   onCancelRegistration,
   onMarkPaid,
   onRefund,
+  onApplyChanges,
+  onDismissChanges,
   onCopyEmail,
   onRefresh,
 }: {
@@ -498,6 +533,8 @@ function RegistrationCard({
   onCancelRegistration: () => void;
   onMarkPaid: (note: string) => void;
   onRefund: () => void;
+  onApplyChanges: (attendeeId: string) => void;
+  onDismissChanges: (attendeeId: string) => void;
   onCopyEmail: () => void;
   onRefresh: () => void;
   eventId: string;
@@ -611,6 +648,34 @@ function RegistrationCard({
                 ) : null}
               </div>
             )}
+            {attendee.changesWaiting ? <p className="text-sm">Changes waiting for an editor</p> : null}
+            {attendee.changes.length ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Changes to review</p>
+                <ul className="space-y-1">
+                  {attendee.changes.map((line) => (
+                    <li key={line.field} className="text-sm">
+                      {line.label}: {line.stored} → {line.typed}
+                    </li>
+                  ))}
+                </ul>
+                {canEdit ? (
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => onApplyChanges(attendee.id)}
+                    >
+                      Apply
+                    </Button>
+                    <Button type="button" variant="ghost" disabled={busy} onClick={() => onDismissChanges(attendee.id)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {attendee.isMinor ? (
               <p className={attendee.consentOnFile ? "text-sm font-medium text-ok" : "text-sm font-medium text-danger"}>
                 {attendee.consentOnFile ? "Consent on file" : "Consent missing"}
