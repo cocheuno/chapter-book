@@ -8,6 +8,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
 import { CHAPTER_TIME_ZONE, isPastItem, todayIn, whenLabelFor } from "@/lib/crm/dates";
 import { fileToBase64, PictureField } from "@/components/picture-field";
+import { moveSection, parseSectionOrder, sectionLabel, serializeSectionOrder } from "@/lib/crm/section-order";
 import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -45,6 +46,7 @@ const emptyItem = (kind: SiteKind) => ({
   gatheringId: "",
   startsOn: "",
   endsOn: "",
+  sections: parseSectionOrder(null),
 });
 
 function WebsitePage() {
@@ -120,6 +122,7 @@ function WebsiteInner() {
       gatheringId: item.gathering_id ?? "",
       startsOn: item.starts_on ?? "",
       endsOn: item.ends_on ?? "",
+      sections: parseSectionOrder(item.section_order),
     });
     setPendingFile(null);
     requestAnimationFrame(() => {
@@ -289,6 +292,8 @@ function WebsiteInner() {
                 const uploaded = await uploadSiteImage({ data: { data: await fileToBase64(pendingFile) } });
                 imageId = uploaded.id;
               }
+              const layout = form.kind === "event" && form.layout === "conference" ? "conference" : "page";
+              const sectionOrder = form.sections.join(",");
               const saved = await saveSiteItem({
                 data: {
                   id: form.id || undefined,
@@ -305,12 +310,13 @@ function WebsiteInner() {
                   onShelf: isTalk ? form.onShelf : undefined,
                   slug: form.slug,
                   body: form.body,
-                  layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
+                  layout,
                   conferenceId: form.kind === "event" ? "" : form.conferenceId,
                   imageId,
                   gatheringId: form.kind === "announcement" ? form.gatheringId : "",
                   startsOn: form.kind === "event" ? form.startsOn : undefined,
                   endsOn: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn : undefined,
+                  ...(layout === "conference" ? { sectionOrder } : {}),
                 },
               });
               const row = {
@@ -329,12 +335,16 @@ function WebsiteInner() {
                 sort_order: 0,
                 slug: saved.slug ?? (form.slug || null),
                 body: form.body || null,
-                layout: form.kind === "event" && form.layout === "conference" ? "conference" : "page",
+                layout,
                 conference_id: form.kind === "event" ? null : form.conferenceId || null,
                 image_id: imageId || null,
                 gathering_id: form.kind === "announcement" ? form.gatheringId || null : null,
                 starts_on: form.kind === "event" ? form.startsOn || null : null,
                 ends_on: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn || null : null,
+                section_order:
+                  layout === "conference"
+                    ? serializeSectionOrder(parseSectionOrder(sectionOrder))
+                    : (data.items.find((item) => item.id === form.id)?.section_order ?? null),
               };
               setData((prev) =>
                 prev
@@ -422,6 +432,50 @@ function WebsiteInner() {
               choose a headshot file on that article. Choose a venue photo file on this event. People in the book are
               not copied onto the page.
             </p>
+          ) : null}
+          {form.kind === "event" && onConference ? (
+            <div className="sm:col-span-2">
+              <h3 className="font-display text-lg text-ink">Page sections</h3>
+              <ul className="mt-2 divide-y divide-line rounded-xl border border-line">
+                {form.sections.map((key) => {
+                  const label = sectionLabel(key);
+                  return (
+                    <li key={key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                      <span>{label}</span>
+                      <span className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          aria-label={`Move ${label} up`}
+                          onClick={() => setForm({ ...form, sections: moveSection(form.sections, key, "up") })}
+                        >
+                          Move up
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          aria-label={`Move ${label} down`}
+                          onClick={() => setForm({ ...form, sections: moveSection(form.sections, key, "down") })}
+                        >
+                          Move down
+                        </Button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-3"
+                onClick={() => setForm({ ...form, sections: parseSectionOrder(null) })}
+              >
+                Use default order
+              </Button>
+              <p className="mt-2 text-sm text-ink-soft">
+                Sections with nothing in them stay hidden on the public page.
+              </p>
+            </div>
           ) : null}
           {(form.kind === "event" || (onProgram && (form.kind === "article" || form.kind === "course"))) && (
             <Field label="When">
