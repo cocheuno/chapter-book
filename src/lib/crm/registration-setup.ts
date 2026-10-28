@@ -6,6 +6,7 @@ import { publicCopyHtml } from "./announcement-html";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
 import { bookRegistrationAllowed } from "./book-registration";
+import { PERSON_ROLES } from "./constants";
 import { maySetBookRegistration } from "./handler-roles";
 import { nid } from "./ids";
 import { assertAdmin, assertEditor, loadMember } from "./member";
@@ -47,6 +48,8 @@ type TicketRow = {
   active: boolean;
   sort_order: number;
   payment_link: string | null;
+  affiliation_prompt: string | null;
+  person_role: string | null;
 };
 
 function iso(value: Date | string | null | undefined): string | null {
@@ -83,6 +86,13 @@ function requireText(value: string, message: string): string {
   return text;
 }
 
+function storedPersonRole(value: string | null | undefined): string | null {
+  const key = (value ?? "").trim();
+  if (!key) return null;
+  if (!PERSON_ROLES.some((role) => role.key === key)) throw new Error("Choose a role in People.");
+  return key;
+}
+
 async function requireEvent(sql: Sql, chapterId: string, eventId: string) {
   const rows = await sql<{
     id: string;
@@ -111,7 +121,14 @@ async function auditSetup(
   sql: Sql,
   member: { chapterId: string; userId: string },
   eventId: string,
-  detail: { what: string; name: string; price_cents?: number; stripePayment?: string | null },
+  detail: {
+    what: string;
+    name: string;
+    price_cents?: number;
+    stripePayment?: string | null;
+    affiliationPrompt?: string | null;
+    personRole?: string | null;
+  },
 ) {
   await recordAudit(sql, {
     chapterId: member.chapterId,
@@ -150,7 +167,8 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
     `;
     const tickets = await sql<TicketRow>`
       select id, chapter_id, event_id, kind, name, description, price_cents, currency,
-             for_minors, needs_code, sales_start, sales_end, active, sort_order, payment_link
+             for_minors, needs_code, sales_start, sales_end, active, sort_order, payment_link,
+             affiliation_prompt, person_role
       from ticket_types
       where event_id = ${eventId} and chapter_id = ${member.chapterId}
       order by sort_order, name
@@ -166,8 +184,12 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
       intro: string | null;
       for_schools: string | null;
       manage_message: string | null;
+      housing_info: string | null;
+      housing_nights: string | null;
+      refund_policy: string | null;
     }>`
-      select use_book_registration, intro, for_schools, manage_message
+      select use_book_registration, intro, for_schools, manage_message,
+             housing_info, housing_nights, refund_policy
       from registration_pages
       where event_id = ${eventId} and chapter_id = ${member.chapterId}
     `;
@@ -209,6 +231,8 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
         active: ticket.active,
         sort_order: ticket.sort_order,
         payment_link: ticket.payment_link,
+        affiliation_prompt: ticket.affiliation_prompt,
+        person_role: ticket.person_role,
         partIds: links.filter((link) => link.ticket_type_id === ticket.id).map((link) => link.part_id),
       })),
       page: page
@@ -217,8 +241,19 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
             intro: page.intro,
             for_schools: page.for_schools,
             manage_message: page.manage_message,
+            housing_info: page.housing_info,
+            housing_nights: page.housing_nights,
+            refund_policy: page.refund_policy,
           }
-        : { use_book_registration: false, intro: null, for_schools: null, manage_message: null },
+        : {
+            use_book_registration: false,
+            intro: null,
+            for_schools: null,
+            manage_message: null,
+            housing_info: null,
+            housing_nights: null,
+            refund_policy: null,
+          },
       bookRegistrationAllowed: bookRegistrationAllowed(
         typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
       ),
@@ -372,6 +407,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
       sortOrder: z.number().int(),
       partIds: z.array(z.string()),
       paymentLink: z.string().max(500).optional(),
+      affiliationPrompt: z.string().max(80).optional(),
+      personRole: z.string().max(40).optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -386,6 +423,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
     const salesEnd = whenOrNull(data.salesEnd);
     const partIds = await partsOfEvent(sql, member.chapterId, data.eventId, data.partIds);
     const paymentLink = ticketPaymentLink(cents, data.paymentLink);
+    const affiliationPrompt = blankToNull(data.affiliationPrompt);
+    const personRole = storedPersonRole(data.personRole);
     let id = data.ticketTypeId;
     let replaceParts = true;
     let changed = true;
@@ -402,9 +441,12 @@ export const saveTicketType = createServerFn({ method: "POST" })
         active: boolean;
         sort_order: number;
         payment_link: string | null;
+        affiliation_prompt: string | null;
+        person_role: string | null;
       }>`
         select kind, name, description, price_cents, for_minors, needs_code,
-               sales_start, sales_end, active, sort_order, payment_link
+               sales_start, sales_end, active, sort_order, payment_link,
+               affiliation_prompt, person_role
         from ticket_types
         where id = ${id} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
       `;
@@ -441,7 +483,9 @@ export const saveTicketType = createServerFn({ method: "POST" })
           sales_end = ${salesEnd},
           active = ${data.active},
           sort_order = ${data.sortOrder},
-          payment_link = ${paymentLink}
+          payment_link = ${paymentLink},
+          affiliation_prompt = ${affiliationPrompt},
+          person_role = ${personRole}
         where id = ${id} and event_id = ${data.eventId} and chapter_id = ${member.chapterId}
         returning id
       `;
@@ -461,6 +505,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
               active: row.active,
               sort_order: row.sort_order,
               payment_link: row.payment_link,
+              affiliation_prompt: row.affiliation_prompt,
+              person_role: row.person_role,
             },
             {
               kind: data.kind,
@@ -474,6 +520,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
               active: data.active,
               sort_order: data.sortOrder,
               payment_link: paymentLink,
+              affiliation_prompt: affiliationPrompt,
+              person_role: personRole,
             },
             [
               "kind",
@@ -487,6 +535,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
               "active",
               "sort_order",
               "payment_link",
+              "affiliation_prompt",
+              "person_role",
             ],
           )
         : [];
@@ -496,11 +546,12 @@ export const saveTicketType = createServerFn({ method: "POST" })
       await sql`
         insert into ticket_types (
           id, chapter_id, event_id, kind, name, description, price_cents,
-          for_minors, needs_code, sales_start, sales_end, active, sort_order, payment_link
+          for_minors, needs_code, sales_start, sales_end, active, sort_order, payment_link,
+          affiliation_prompt, person_role
         ) values (
           ${id}, ${member.chapterId}, ${data.eventId}, ${data.kind}, ${name}, ${description}, ${cents},
           ${data.forMinors}, ${data.needsCode}, ${salesStart}, ${salesEnd}, ${data.active}, ${data.sortOrder},
-          ${paymentLink}
+          ${paymentLink}, ${affiliationPrompt}, ${personRole}
         )
       `;
     }
@@ -518,6 +569,8 @@ export const saveTicketType = createServerFn({ method: "POST" })
         name,
         price_cents: cents,
         stripePayment: paymentLink,
+        affiliationPrompt,
+        personRole,
       });
     }
     return { id };
@@ -560,6 +613,9 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
       intro: z.string().nullable().optional(),
       forSchools: z.string().nullable().optional(),
       manageMessage: z.string().nullable().optional(),
+      housingInfo: z.string().nullable().optional(),
+      housingNights: z.string().nullable().optional(),
+      refundPolicy: z.string().nullable().optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -569,32 +625,61 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
     const intro = blankToNull(data.intro);
     const forSchools = blankToNull(data.forSchools);
     const manageMessage = blankToNull(data.manageMessage);
-    const existing = await sql<{ intro: string | null; for_schools: string | null; manage_message: string | null }>`
-      select intro, for_schools, manage_message
+    const housingInfo = blankToNull(data.housingInfo);
+    const housingNights = blankToNull(data.housingNights);
+    const refundPolicy = blankToNull(data.refundPolicy);
+    const existing = await sql<{
+      intro: string | null;
+      for_schools: string | null;
+      manage_message: string | null;
+      housing_info: string | null;
+      housing_nights: string | null;
+      refund_policy: string | null;
+    }>`
+      select intro, for_schools, manage_message, housing_info, housing_nights, refund_policy
       from registration_pages
       where event_id = ${data.eventId} and chapter_id = ${member.chapterId}
     `;
-    const before = existing[0] ?? { intro: null, for_schools: null, manage_message: null };
+    const before = existing[0] ?? {
+      intro: null,
+      for_schools: null,
+      manage_message: null,
+      housing_info: null,
+      housing_nights: null,
+      refund_policy: null,
+    };
     // The on/off switch stays untouched. setBookRegistration is the only writer.
     await sql`
       insert into registration_pages (
-        event_id, chapter_id, intro, for_schools, manage_message, updated_at, updated_by
+        event_id, chapter_id, intro, for_schools, manage_message,
+        housing_info, housing_nights, refund_policy, updated_at, updated_by
       ) values (
-        ${data.eventId}, ${member.chapterId}, ${intro}, ${forSchools}, ${manageMessage}, now(), ${member.userId}
+        ${data.eventId}, ${member.chapterId}, ${intro}, ${forSchools}, ${manageMessage},
+        ${housingInfo}, ${housingNights}, ${refundPolicy}, now(), ${member.userId}
       )
       on conflict (event_id) do update set
         chapter_id = excluded.chapter_id,
         intro = excluded.intro,
         for_schools = excluded.for_schools,
         manage_message = excluded.manage_message,
+        housing_info = excluded.housing_info,
+        housing_nights = excluded.housing_nights,
+        refund_policy = excluded.refund_policy,
         updated_at = now(),
         updated_by = excluded.updated_by
     `;
     if (
       changedFields(
         before,
-        { intro, for_schools: forSchools, manage_message: manageMessage },
-        ["intro", "for_schools", "manage_message"],
+        {
+          intro,
+          for_schools: forSchools,
+          manage_message: manageMessage,
+          housing_info: housingInfo,
+          housing_nights: housingNights,
+          refund_policy: refundPolicy,
+        },
+        ["intro", "for_schools", "manage_message", "housing_info", "housing_nights", "refund_policy"],
       ).length
     ) {
       await auditSetup(sql, member, data.eventId, { what: "page", name: event.title });

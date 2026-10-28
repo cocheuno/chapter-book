@@ -12,6 +12,13 @@ import { consentDetailsPurgeOpen, eventLastDay } from "@/lib/payments/consent-ru
 import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
 import { mealCounts, partReleases, seatDrift } from "@/lib/payments/registration-desk";
+import {
+  attendeeForRole,
+  badgePrintName,
+  dietaryTagCounts,
+  lodgingLabel,
+  readDetails,
+} from "@/lib/payments/registration-details";
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
 
@@ -262,6 +269,9 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       is_minor: boolean;
       consent_on_file: boolean;
       ticket_name: string | null;
+      details: unknown;
+      emergency_name: string | null;
+      emergency_phone: string | null;
     }>`
       select a.id, a.registration_id, a.given_name, a.family_name, a.email, a.badge_affiliation,
         a.dietary, a.accessibility, a.cancelled_at, a.review_changes, a.is_minor,
@@ -269,7 +279,7 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
           select 1 from guardian_consents g
           where g.attendee_id = a.id and g.chapter_id = a.chapter_id
         ) as consent_on_file,
-        t.name as ticket_name
+        t.name as ticket_name, a.details, a.emergency_name, a.emergency_phone
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
       left join attendee_items ai on ai.attendee_id = a.id
@@ -304,6 +314,9 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         review: boolean;
         isMinor: boolean;
         consentOnFile: boolean;
+        details: ReturnType<typeof readDetails>;
+        emergencyName: string | null;
+        emergencyPhone: string | null;
       }[]
     >();
     for (const row of attendeeRows) {
@@ -323,6 +336,9 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
           review: row.review_changes != null,
           isMinor: Boolean(row.is_minor),
           consentOnFile: row.consent_on_file === true,
+          details: readDetails(row.details),
+          emergencyName: row.emergency_name,
+          emergencyPhone: row.emergency_phone,
         };
         list.push(attendee);
         attendeesByRegistration.set(row.registration_id, list);
@@ -389,7 +405,9 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         needsReview: row.needs_review,
         totalCents: asNumber(row.total_cents),
         confirmationStatus: confirmation.get(row.id) ?? null,
-        attendees: attendeesByRegistration.get(row.id) ?? [],
+        attendees: (attendeesByRegistration.get(row.id) ?? []).map((attendee) =>
+          attendeeForRole(member.role, attendee),
+        ),
       })),
       totals: {
         activeRegistrations: asNumber(totals[0]?.active_registrations),
@@ -854,6 +872,18 @@ export const exportCatererCounts = createServerFn({ method: "POST" })
       }
       body.push([group.title, "Total", total]);
     }
+    const tagRows = await sql<{ details: unknown }>`
+      select a.details
+      from registration_attendees a
+      join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      where a.chapter_id = ${member.chapterId}
+        and r.event_id = ${eventId}
+        and a.cancelled_at is null
+        and r.status in ('free', 'paid', 'pending')
+    `;
+    for (const tag of dietaryTagCounts(tagRows.map((row) => readDetails(row.details)?.dietaryTags ?? []))) {
+      body.push(["Dietary tag", tag.label, tag.count]);
+    }
     const csv = csvFile(["meal", "dietary", "count"], body);
     await exportAudit(sql, member.chapterId, member.userId, eventId, "caterer", body.length);
     return { csv, filename: "registrations-caterer.csv" };
@@ -872,8 +902,9 @@ export const exportBadges = createServerFn({ method: "POST" })
       badge_affiliation: string | null;
       code: string;
       tickets: string | null;
+      details: unknown;
     }>`
-      select a.given_name, a.family_name, a.badge_affiliation, r.code,
+      select a.given_name, a.family_name, a.badge_affiliation, a.details, r.code,
         coalesce(string_agg(t.name, '; ' order by t.sort_order, t.name), '') as tickets
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
@@ -888,10 +919,57 @@ export const exportBadges = createServerFn({ method: "POST" })
     `;
     const csv = csvFile(
       ["given_name", "family_name", "badge_affiliation", "code", "tickets"],
-      rows.map((row) => [row.given_name, row.family_name, row.badge_affiliation, row.code, row.tickets]),
+      rows.map((row) => [
+        badgePrintName(readDetails(row.details)?.badgeName, row.given_name),
+        row.family_name,
+        row.badge_affiliation,
+        row.code,
+        row.tickets,
+      ]),
     );
     await exportAudit(sql, member.chapterId, member.userId, eventId, "badges", rows.length);
     return { csv, filename: "registrations-badges.csv" };
+  });
+
+export const exportHousingList = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((eventId: string) => z.string().min(1).parse(eventId))
+  .handler(async ({ context, data: eventId }) => {
+    const member = await editor(context.userId);
+    const sql = await getSql();
+    await requireEvent(sql, member.chapterId, eventId);
+    const rows = await sql<{
+      given_name: string;
+      family_name: string;
+      email: string | null;
+      details: unknown;
+    }>`
+      select a.given_name, a.family_name, a.email, a.details
+      from registration_attendees a
+      join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      where a.chapter_id = ${member.chapterId}
+        and r.event_id = ${eventId}
+        and a.cancelled_at is null
+        and r.status in ('free', 'paid', 'pending')
+      order by a.family_name, a.given_name, a.id
+    `;
+    const csv = csvFile(
+      ["name", "email", "lodging", "nights", "room_share", "roommate", "parking"],
+      rows.map((row) => {
+        const details = readDetails(row.details);
+        return [
+          fullName(row.given_name, row.family_name),
+          row.email,
+          lodgingLabel(details?.lodging),
+          details?.nights.join("; ") ?? "",
+          details ? (details.roomShare ? "Yes" : "No") : "",
+          details?.roommate ?? "",
+          details ? (details.parking ? "Yes" : "No") : "",
+        ];
+      }),
+    );
+    await exportAudit(sql, member.chapterId, member.userId, eventId, "housing", rows.length);
+    return { csv, filename: "registrations-housing.csv" };
   });
 
 export const mintConsentLink = createServerFn({ method: "POST" })

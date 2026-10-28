@@ -33,6 +33,8 @@ export type CatalogTicket = {
   sales_end: string | null;
   partIds: string[];
   payment_link?: string | null;
+  affiliation_prompt?: string | null;
+  person_role?: string | null;
 };
 
 export type CatalogPart = {

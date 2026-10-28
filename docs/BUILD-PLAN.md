@@ -191,6 +191,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | 46 | Conference page section order | — | | |
 | 47 | Registration integrity before switching on (F05–F07) | 20 | | |
 | 48 | Pay with a Stripe Payment Link | 47 | | |
+| 49 | Registration form details | 48 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |

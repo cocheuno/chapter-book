@@ -15,6 +15,16 @@ import { hashInviteToken, newInviteToken } from "./operator-rules";
 import { publicOrigin } from "./page-head";
 import { guardianConsentErrors, type GuardianConsentInput } from "@/lib/payments/consent-rules";
 import { paymentLinkError, paidRegistrationError, payUrl } from "@/lib/payments/payment-link-rules";
+import {
+  blankDetails,
+  detailsErrors,
+  detailsSchema,
+  normalizeDetails,
+  personRoleKey,
+  personTitles,
+  storedDietary,
+  type RegistrationDetails,
+} from "@/lib/payments/registration-details";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
   THROTTLE_LIMIT,
@@ -55,6 +65,9 @@ type RegistrationEvent = {
   intro: string | null;
   forSchools: string | null;
   manageMessage: string | null;
+  housingInfo: string | null;
+  housingNights: string | null;
+  refundPolicy: string | null;
   contactLine: string | null;
   publicTitle: string | null;
 };
@@ -192,13 +205,16 @@ export async function findRegistrationEvent(
     intro: string | null;
     for_schools: string | null;
     manage_message: string | null;
+    housing_info: string | null;
+    housing_nights: string | null;
+    refund_policy: string | null;
     contact_line: string | null;
     public_title: string | null;
   }>`
     select i.id as item_id, i.slug, i.when_label, i.location, i.kind, i.starts_on, i.published,
            e.id as event_id, e.title, e.starts_at, e.timezone, c.timezone as chapter_timezone,
            coalesce(rp.use_book_registration, false) as use_book_registration,
-           rp.intro, rp.for_schools, rp.manage_message,
+           rp.intro, rp.for_schools, rp.manage_message, rp.housing_info, rp.housing_nights, rp.refund_policy,
            c.contact_line, s.public_title
     from site_items i
     join events e on e.public_item_id = i.id and e.chapter_id = i.chapter_id
@@ -231,6 +247,9 @@ export async function findRegistrationEvent(
     intro: row.intro,
     forSchools: row.for_schools,
     manageMessage: row.manage_message,
+    housingInfo: row.housing_info,
+    housingNights: row.housing_nights,
+    refundPolicy: row.refund_policy,
     contactLine: row.contact_line,
     publicTitle: row.public_title,
   };
@@ -249,6 +268,7 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
     onSale: boolean;
     full: boolean;
     hasPaymentLink: boolean;
+    affiliation_prompt: string | null;
   }[];
   pageParts: { id: string; title: string; left: number | null }[];
 }> {
@@ -264,9 +284,11 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
     sales_end: Date | string | null;
     active: boolean;
     payment_link: string | null;
+    affiliation_prompt: string | null;
+    person_role: string | null;
   }>`
     select id, kind, name, description, price_cents, for_minors, needs_code, sales_start, sales_end, active,
-           payment_link
+           payment_link, affiliation_prompt, person_role
     from ticket_types
     where event_id = ${eventId} and chapter_id = ${chapterId}
     order by sort_order, name
@@ -312,6 +334,8 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
       sales_end: iso(ticket.sales_end),
       partIds: partIdsOf(ticket.id),
       payment_link: storedPaymentLink(ticket.payment_link),
+      affiliation_prompt: blankToNull(ticket.affiliation_prompt),
+      person_role: personRoleKey(ticket.person_role),
     }));
   const leftOf = new Map(catalogParts.map((part) => [part.id, seatsLeft(part)]));
   const pageTickets = catalogTickets
@@ -328,6 +352,7 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
       onSale: ticketOnSale(ticket, now),
       full: ticket.partIds.some((partId) => leftOf.get(partId) === 0),
       hasPaymentLink: Boolean(ticket.payment_link),
+      affiliation_prompt: ticket.affiliation_prompt ?? null,
     }));
   return {
     tickets: catalogTickets,
@@ -366,6 +391,9 @@ function registerPayload(
     },
     intro: event.intro,
     for_schools: event.forSchools,
+    housing_info: event.housingInfo,
+    housing_nights: event.housingNights,
+    refund_policy: event.refundPolicy,
     tickets: catalog.pageTickets,
     parts: catalog.pageParts,
     agreements,
@@ -440,6 +468,22 @@ async function verifyTurnstile(token: string | undefined, ip: string, secret: st
   }
 }
 
+function profileForNewPerson(
+  details: RegistrationDetails | undefined,
+  dietaryText: string | null | undefined,
+  roleKey: string | null | undefined,
+) {
+  const titles = personTitles(details?.title ?? "");
+  return {
+    religiousTitle: titles.religiousTitle,
+    academicTitle: titles.academicTitle,
+    city: blankToNull(details?.city),
+    state: blankToNull(details?.state),
+    dietary: storedDietary(details?.dietaryTags ?? [], dietaryText),
+    roleKey: personRoleKey(roleKey),
+  };
+}
+
 async function createWebPerson(
   sql: Sql,
   chapterId: string,
@@ -449,32 +493,45 @@ async function createWebPerson(
     email: string | null;
     phone: string | null;
     newsConsent: "yes" | "no";
+    profile?: {
+      religiousTitle: string | null;
+      academicTitle: string | null;
+      city: string | null;
+      state: string | null;
+      dietary: string | null;
+      roleKey: string | null;
+    };
   },
 ): Promise<WebPerson> {
   const givenName = input.givenName.trim();
   const familyName = (input.familyName ?? "").trim();
   const displayName = composePersonName({ givenName, familyName });
   const id = nid();
+  const profile = input.profile;
+  const roleKey = profile?.roleKey || "friend";
   try {
     await withSavepoint(sql, async () => {
       await sql`
         insert into persons (
           id, chapter_id, display_name, given_name, family_name, email, phone,
-          source, country, news_consent, news_consent_at
+          source, country, news_consent, news_consent_at,
+          religious_title, academic_title, city, state, dietary
         ) values (
           ${id}, ${chapterId}, ${displayName}, ${givenName || null}, ${familyName || null}, ${input.email}, ${input.phone},
           ${"web"}, ${"United States"}, ${input.newsConsent},
-          case when ${input.newsConsent} = 'yes' then now() else null end
+          case when ${input.newsConsent} = 'yes' then now() else null end,
+          ${profile?.religiousTitle ?? null}, ${profile?.academicTitle ?? null},
+          ${profile?.city ?? null}, ${profile?.state ?? null}, ${profile?.dietary ?? null}
         )
       `;
     });
-    await sql`insert into person_roles (person_id, role_key) values (${id}, ${"friend"})`;
+    await sql`insert into person_roles (person_id, role_key) values (${id}, ${roleKey})`;
     return {
       id,
       display_name: displayName,
       given_name: givenName || null,
       family_name: familyName || null,
-      dietary: null,
+      dietary: profile?.dietary ?? null,
       created: true,
       linkedByEmail: false,
     };
@@ -663,6 +720,24 @@ export const createRegistration = createServerFn({ method: "POST" })
     });
     if (paidError) throw new Error(paidError);
     const registrationStatus = plan.totalCents > 0 ? "pending" : "free";
+    const housingAsked = Boolean((event.housingInfo ?? "").trim());
+    const refundPolicyShown = Boolean((event.refundPolicy ?? "").trim());
+    const prepared = data.attendees.map((person) => {
+      const admission = catalog.tickets.find((ticket) => ticket.id === person.admissionId);
+      const parsed = detailsSchema(event.housingNights).safeParse(
+        normalizeDetails(person.details ?? blankDetails()),
+      );
+      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Check the form and try again.");
+      const message = detailsErrors(parsed.data, {
+        housingAsked,
+        refundPolicyShown,
+        paid: (admission?.price_cents ?? 0) > 0,
+        affiliationPrompt: admission?.affiliation_prompt,
+        affiliation: person.badgeAffiliation,
+      })[0];
+      if (message) throw new Error(message);
+      return { details: parsed.data, roleKey: personRoleKey(admission?.person_role) };
+    });
     for (const person of data.attendees) {
       if (!person.under18 || person.consent === "later") continue;
       if (!guardianText) throw new Error("Registration for students under 18 is not open yet.");
@@ -720,6 +795,15 @@ export const createRegistration = createServerFn({ method: "POST" })
         let purchaser = await personByEmail(tx, chapterId, purchaserEmail);
         if (!purchaser) {
           const split = splitWalkupName(purchaserName);
+          const sameEmail = data.attendees.findIndex((person) => lowerEmail(person.email) === purchaserEmail);
+          const profile =
+            sameEmail >= 0
+              ? profileForNewPerson(
+                  prepared[sameEmail]?.details,
+                  data.attendees[sameEmail]?.dietary,
+                  prepared[sameEmail]?.roleKey,
+                )
+              : undefined;
           try {
             purchaser = await createWebPerson(tx, chapterId, {
               givenName: split.givenName,
@@ -727,6 +811,7 @@ export const createRegistration = createServerFn({ method: "POST" })
               email: purchaserEmail,
               phone: blankToNull(data.purchaser.phone),
               newsConsent: data.newsOptIn ? "yes" : "no",
+              ...(profile ? { profile } : {}),
             });
           } catch (err) {
             if (!isUniqueViolation(err)) throw err;
@@ -734,6 +819,8 @@ export const createRegistration = createServerFn({ method: "POST" })
             if (!purchaser) throw err;
           }
         }
+        const freshPeople = new Set<string>();
+        if ("created" in purchaser && purchaser.created) freshPeople.add(purchaser.id);
 
         const registrationId = nid();
         const token = newInviteToken();
@@ -785,19 +872,21 @@ export const createRegistration = createServerFn({ method: "POST" })
           let review: ReturnType<typeof reviewChanges> = null;
           if (matched.action === "link" && byEmail) {
             person = byEmail;
-            review = reviewChanges(
-              { given_name: byEmail.given_name, family_name: byEmail.family_name, dietary: byEmail.dietary },
-              { givenName: given, familyName: family, dietary: typed.dietary },
-            );
-            if (review) {
-              await addTask(
-                tx,
-                chapterId,
-                `Web registration: check changes for ${byEmail.display_name}`,
-                dueOn,
-                event.eventId,
-                byEmail.id,
+            if (!freshPeople.has(byEmail.id)) {
+              review = reviewChanges(
+                { given_name: byEmail.given_name, family_name: byEmail.family_name, dietary: byEmail.dietary },
+                { givenName: given, familyName: family, dietary: typed.dietary },
               );
+              if (review) {
+                await addTask(
+                  tx,
+                  chapterId,
+                  `Web registration: check changes for ${byEmail.display_name}`,
+                  dueOn,
+                  event.eventId,
+                  byEmail.id,
+                );
+              }
             }
           } else {
             let created: WebPerson;
@@ -808,6 +897,7 @@ export const createRegistration = createServerFn({ method: "POST" })
                 email,
                 phone: null,
                 newsConsent: "no",
+                profile: profileForNewPerson(prepared[index]?.details, typed.dietary, prepared[index]?.roleKey),
               });
             } catch (err) {
               if (!isUniqueViolation(err) || !email) throw err;
@@ -816,6 +906,7 @@ export const createRegistration = createServerFn({ method: "POST" })
               created = { ...again, created: false, linkedByEmail: true };
             }
             person = created;
+            if (created.created) freshPeople.add(created.id);
             if (!created.created && created.linkedByEmail) {
               review = reviewChanges(
                 { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
@@ -858,14 +949,19 @@ export const createRegistration = createServerFn({ method: "POST" })
 
           const attendeeId = nid();
           const reviewJson = review ? JSON.stringify(review) : null;
+          const detailsJson = JSON.stringify(prepared[index]?.details ?? blankDetails());
           await tx`
             insert into registration_attendees (
               id, chapter_id, registration_id, given_name, family_name, email,
-              badge_affiliation, dietary, accessibility, person_id, review_changes, is_minor
+              badge_affiliation, dietary, accessibility, person_id, review_changes, is_minor,
+              details, emergency_name, emergency_phone
             ) values (
               ${attendeeId}, ${chapterId}, ${registrationId}, ${given}, ${family}, ${email},
               ${blankToNull(typed.badgeAffiliation)}, ${blankToNull(typed.dietary)}, ${blankToNull(typed.accessibility)},
-              ${person.id}, ${reviewJson}::jsonb, ${typed.under18}
+              ${person.id}, ${reviewJson}::jsonb, ${typed.under18},
+              ${detailsJson}::jsonb,
+              ${typed.under18 ? null : blankToNull(typed.emergencyName)},
+              ${typed.under18 ? null : blankToNull(typed.emergencyPhone)}
             )
           `;
           if (typed.under18 && typed.consent !== "later") {

@@ -11,6 +11,7 @@ import {
   refundRegistration,
   exportBadges,
   exportCatererCounts,
+  exportHousingList,
   exportRegistrationAttendees,
   getConfirmationEmail,
   getConsentDetail,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/crm/registration-desk";
 import { formatWhen } from "@/lib/crm/format";
 import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
+import { DIETARY_TAGS, LODGING, type DietaryKey, type LodgingKey } from "@/lib/payments/registration-details";
 import { formatCents } from "@/lib/payments/pricing";
 import {
   deskFilter,
@@ -276,6 +278,18 @@ function RegistrationsInner() {
           >
             Export badges
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              void run(async () => {
+                downloadCsv(await exportHousingList({ data: eventId }));
+              }, "Exported");
+            }}
+          >
+            Housing list (CSV)
+          </Button>
         </div>
       ) : null}
 
@@ -416,6 +430,39 @@ function CountTable({ headers, rows, empty }: { headers: string[]; rows: (string
   );
 }
 
+function AttendeeDetails({ attendee }: { attendee: Attendee }) {
+  const details = attendee.details;
+  const lines: string[] = [];
+  if (details?.badgeName) lines.push(`Badge: ${details.badgeName}`);
+  if (details?.position) lines.push(details.position);
+  const place = [details?.city, details?.state].filter(Boolean).join(", ");
+  if (place) lines.push(place);
+  const tags = (details?.dietaryTags ?? [])
+    .map((key) => DIETARY_TAGS[key as DietaryKey])
+    .filter(Boolean);
+  if (tags.length) lines.push(tags.join(", "));
+  if (details?.lodging && details.lodging in LODGING) {
+    const nights = details.nights.length ? ` (${details.nights.join(", ")})` : "";
+    lines.push(`${LODGING[details.lodging as LodgingKey]}${nights}`);
+  }
+  if (details) {
+    lines.push(`Room share: ${details.roomShare ? "Yes" : "No"}`);
+    if (details.roommate) lines.push(`Roommate: ${details.roommate}`);
+    lines.push(`Parking: ${details.parking ? "Yes" : "No"}`);
+  }
+  if (details?.notes) lines.push(details.notes);
+  const emergency = [attendee.emergencyName, attendee.emergencyPhone].filter(Boolean).join(" · ");
+  if (!lines.length && !emergency) return null;
+  return (
+    <div className="text-sm text-muted">
+      {lines.map((line, index) => (
+        <p key={`${index}-${line}`}>{line}</p>
+      ))}
+      {emergency ? <p>Emergency: {emergency}</p> : null}
+    </div>
+  );
+}
+
 function RegistrationCard({
   eventId,
   registration,
@@ -548,6 +595,7 @@ function RegistrationCard({
                   </p>
                   <p className="text-sm text-muted">{attendee.tickets.join(", ") || "No ticket"}</p>
                   {attendee.dietary ? <p className="text-sm text-muted">{attendee.dietary}</p> : null}
+                  <AttendeeDetails attendee={attendee} />
                 </div>
                 {canEdit && isActiveRegistration(registration.status) && !attendee.cancelled ? (
                   <div className="flex gap-2">
