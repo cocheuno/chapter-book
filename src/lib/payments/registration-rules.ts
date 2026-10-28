@@ -215,3 +215,60 @@ export function agreementsAccepted(latestIds: string[], acceptedIds: string[]): 
   const accepted = new Set(acceptedIds);
   return latestIds.every((id) => accepted.has(id));
 }
+
+const DUPLICATE_PERSON = "The same person is listed twice.";
+
+export const AGREEMENT_TEXT_UPDATED =
+  "The agreement text was updated. Please read it again and submit.";
+
+/** The refusal sentence when two people in one submission are the same person. Null when they are distinct. */
+export function duplicateAttendees(
+  attendees: readonly {
+    email?: string | null;
+    givenName?: string | null;
+    familyName?: string | null;
+  }[],
+): string | null {
+  const emails = new Set<string>();
+  const names = new Set<string>();
+  for (const person of attendees) {
+    const email = (person.email ?? "").trim().toLowerCase();
+    if (email) {
+      if (emails.has(email)) return DUPLICATE_PERSON;
+      emails.add(email);
+    }
+    const given = (person.givenName ?? "").trim().toLowerCase();
+    const family = (person.familyName ?? "").trim().toLowerCase();
+    const name = `${given}\n${family}`;
+    if (names.has(name)) return DUPLICATE_PERSON;
+    names.add(name);
+  }
+  return null;
+}
+
+export function duplicateRegistrationMessage(email: string): string {
+  return `There is already a registration for ${email} for this event. Use the link on your confirmation page to see it, or contact the chapter.`;
+}
+
+/**
+ * Null when every sent id is still the current text.
+ * Agreement ids are current when each one is the latest id of a shown kind.
+ * The consent id is the guardian kind, and it is required when a minor is included.
+ */
+export function shownTextMismatch(input: {
+  currentAgreementIds: readonly string[];
+  currentConsentId: string | null;
+  sentAgreementIds: readonly string[];
+  sentConsentId?: string | null;
+  consentRequired: boolean;
+}): string | null {
+  const current = new Set(input.currentAgreementIds);
+  if (input.sentAgreementIds.some((id) => !current.has(id))) return AGREEMENT_TEXT_UPDATED;
+  const sentConsent = input.sentConsentId ?? null;
+  if (input.consentRequired) {
+    if (!input.currentConsentId || sentConsent !== input.currentConsentId) return AGREEMENT_TEXT_UPDATED;
+  } else if (sentConsent && sentConsent !== input.currentConsentId) {
+    return AGREEMENT_TEXT_UPDATED;
+  }
+  return null;
+}

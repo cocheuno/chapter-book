@@ -41,6 +41,7 @@ export const registrationInput = z.object({
   }),
   attendees: z.array(attendeeInput).max(10),
   acceptedAgreementIds: z.array(z.string().max(64)).max(10),
+  consentTextId: z.string().max(64).optional(),
   newsOptIn: z.boolean(),
   heardFrom: z.string().max(500).optional(),
   utmSource: z.string().max(100).optional(),

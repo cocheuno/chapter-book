@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSql } from "@/lib/db";
+import { getSql, withTransaction } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { csvRow } from "./csv";
 import { todayIn } from "./dates";
@@ -398,50 +398,71 @@ export const cancelAttendee = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const member = await editor(context.userId);
     const sql = await getSql();
-    const rows = await sql<{ id: string; registration_id: string; status: string; code: string }>`
-      select a.id, r.id as registration_id, r.status, r.code
+    const found = await sql<{ registration_id: string }>`
+      select r.id as registration_id
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
       where a.id = ${data.attendeeId} and a.chapter_id = ${member.chapterId} and r.event_id = ${data.eventId}
     `;
-    const attendee = rows[0];
-    if (!attendee) throw new Error("Attendee not found.");
-    if (attendee.status !== "free") throw new Error("Only free registrations can be cancelled here for now.");
-    const released = await releaseAttendee(sql, member.chapterId, data.eventId, attendee.id);
-    if (!released) throw new Error("Already cancelled.");
-    const remaining = await sql<{ n: number }>`
-      select count(*)::int as n from registration_attendees
-      where registration_id = ${attendee.registration_id}
-        and chapter_id = ${member.chapterId}
-        and cancelled_at is null
-    `;
-    if (asNumber(remaining[0]?.n) === 0) {
-      const closed = await sql<{ id: string }>`
-        update registrations set status = 'cancelled', cancelled_at = now()
-        where id = ${attendee.registration_id} and chapter_id = ${member.chapterId} and status = 'free'
-        returning id
+    const located = found[0];
+    if (!located) throw new Error("Attendee not found.");
+    return withTransaction(async (tx) => {
+      const locked = await tx<{ id: string }>`
+        select id from registrations where id = ${located.registration_id} and chapter_id = ${member.chapterId} for update
       `;
-      if (closed[0]) {
-        await cancelHeldMail(sql, member.chapterId, attendee.registration_id);
-        await recordAudit(sql, {
-          chapterId: member.chapterId,
-          actor: member.userId,
-          action: "registration_cancelled",
-          entity: "registration",
-          entityId: attendee.registration_id,
-          detail: { code: attendee.code, attendees: 0, reason: "last attendee cancelled", eventId: data.eventId },
-        });
+      if (!locked[0]) throw new Error("Attendee not found.");
+      const rows = await tx<{
+        id: string;
+        registration_id: string;
+        status: string;
+        code: string;
+        cancelled_at: Date | string | null;
+      }>`
+        select a.id, r.id as registration_id, r.status, r.code, a.cancelled_at
+        from registration_attendees a
+        join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+        where a.id = ${data.attendeeId} and a.chapter_id = ${member.chapterId} and r.event_id = ${data.eventId}
+      `;
+      const attendee = rows[0];
+      if (!attendee) throw new Error("Attendee not found.");
+      if (attendee.status === "cancelled" || attendee.cancelled_at) return { ok: true as const };
+      if (attendee.status !== "free") throw new Error("Only free registrations can be cancelled here for now.");
+      const released = await releaseAttendee(tx, member.chapterId, data.eventId, attendee.id);
+      if (!released) return { ok: true as const };
+      const remaining = await tx<{ n: number }>`
+        select count(*)::int as n from registration_attendees
+        where registration_id = ${attendee.registration_id}
+          and chapter_id = ${member.chapterId}
+          and cancelled_at is null
+      `;
+      if (asNumber(remaining[0]?.n) === 0) {
+        const closed = await tx<{ id: string }>`
+          update registrations set status = 'cancelled', cancelled_at = now()
+          where id = ${attendee.registration_id} and chapter_id = ${member.chapterId} and status = 'free'
+          returning id
+        `;
+        if (closed[0]) {
+          await cancelHeldMail(tx, member.chapterId, attendee.registration_id);
+          await recordAudit(tx, {
+            chapterId: member.chapterId,
+            actor: member.userId,
+            action: "registration_cancelled",
+            entity: "registration",
+            entityId: attendee.registration_id,
+            detail: { code: attendee.code, attendees: 0, reason: "last attendee cancelled", eventId: data.eventId },
+          });
+        }
       }
-    }
-    await recordAudit(sql, {
-      chapterId: member.chapterId,
-      actor: member.userId,
-      action: "attendee_cancelled",
-      entity: "registration_attendee",
-      entityId: attendee.id,
-      detail: { code: attendee.code, registrationId: attendee.registration_id, eventId: data.eventId },
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "attendee_cancelled",
+        entity: "registration_attendee",
+        entityId: attendee.id,
+        detail: { code: attendee.code, registrationId: attendee.registration_id, eventId: data.eventId },
+      });
+      return { ok: true as const };
     });
-    return { ok: true };
   });
 
 export const cancelRegistration = createServerFn({ method: "POST" })
@@ -449,28 +470,44 @@ export const cancelRegistration = createServerFn({ method: "POST" })
   .validator(z.object({ eventId: z.string().min(1), registrationId: z.string().min(1) }).parse)
   .handler(async ({ context, data }) => {
     const member = await editor(context.userId);
-    const sql = await getSql();
-    const saved = await sql<{ id: string; code: string }>`
-      update registrations set status = 'cancelled', cancelled_at = now()
-      where id = ${data.registrationId}
-        and chapter_id = ${member.chapterId}
-        and event_id = ${data.eventId}
-        and status = 'free'
-      returning id, code
-    `;
-    const registration = saved[0];
-    if (!registration) throw new Error("Only free registrations can be cancelled here for now.");
-    const attendees = await cancelOpenAttendees(sql, member.chapterId, data.eventId, registration.id);
-    await cancelHeldMail(sql, member.chapterId, registration.id);
-    await recordAudit(sql, {
-      chapterId: member.chapterId,
-      actor: member.userId,
-      action: "registration_cancelled",
-      entity: "registration",
-      entityId: registration.id,
-      detail: { code: registration.code, attendees, eventId: data.eventId },
+    return withTransaction(async (tx) => {
+      const locked = await tx<{ id: string }>`
+        select id from registrations where id = ${data.registrationId} and chapter_id = ${member.chapterId} for update
+      `;
+      if (!locked[0]) throw new Error("Only free registrations can be cancelled here for now.");
+      const rows = await tx<{ id: string; code: string; status: string; event_id: string }>`
+        select id, code, status, event_id
+        from registrations
+        where id = ${data.registrationId} and chapter_id = ${member.chapterId}
+      `;
+      const current = rows[0];
+      if (!current || current.event_id !== data.eventId) {
+        throw new Error("Only free registrations can be cancelled here for now.");
+      }
+      if (current.status === "cancelled") return { ok: true as const };
+      if (current.status !== "free") throw new Error("Only free registrations can be cancelled here for now.");
+      const saved = await tx<{ id: string; code: string }>`
+        update registrations set status = 'cancelled', cancelled_at = now()
+        where id = ${current.id}
+          and chapter_id = ${member.chapterId}
+          and event_id = ${data.eventId}
+          and status = 'free'
+        returning id, code
+      `;
+      const registration = saved[0];
+      if (!registration) throw new Error("Only free registrations can be cancelled here for now.");
+      const attendees = await cancelOpenAttendees(tx, member.chapterId, data.eventId, registration.id);
+      await cancelHeldMail(tx, member.chapterId, registration.id);
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "registration_cancelled",
+        entity: "registration",
+        entityId: registration.id,
+        detail: { code: registration.code, attendees, eventId: data.eventId },
+      });
+      return { ok: true as const };
     });
-    return { ok: true };
   });
 
 export const renameAttendee = createServerFn({ method: "POST" })
