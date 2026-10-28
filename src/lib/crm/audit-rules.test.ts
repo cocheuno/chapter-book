@@ -55,6 +55,8 @@ describe("AUDIT_ACTIONS", () => {
       "registration_created",
       "registration_switch",
       "registration_cancelled",
+      "registration_marked_paid",
+      "registration_refunded",
       "attendee_cancelled",
       "attendee_renamed",
       "confirmation_viewed",
@@ -181,6 +183,8 @@ describe("auditSummary", () => {
   });
 
   it("names the registration code and how consent was received", () => {
+    assert.equal(auditSummary("registration_marked_paid", { code: "R27-ABCD", amountCents: 2500 }), "R27-ABCD, 2500");
+    assert.equal(auditSummary("registration_refunded", { code: "R27-ABCD", amountCents: 2500 }), "R27-ABCD, 2500");
     assert.equal(auditSummary("consent_received", { code: "R27-ABCD", method: "paper" }), "R27-ABCD, paper");
     assert.equal(auditSummary("consent_details_purged", { rows: 4 }), "4 rows");
   });

@@ -119,17 +119,28 @@ function splitName(name: string): { givenName: string; familyName: string } {
 }
 
 function ticketBlocked(ticket: Ticket, guardianOpen: boolean): boolean {
-  if (ticket.price_cents > 0 || ticket.full || !ticket.onSale || ticket.needs_code) return true;
+  if (ticket.price_cents > 0 && !ticket.hasPaymentLink) return true;
+  if (ticket.full || !ticket.onSale || ticket.needs_code) return true;
   return ticket.for_minors && !guardianOpen;
 }
 
 function ticketNote(ticket: Ticket, guardianOpen: boolean): string | null {
-  if (ticket.price_cents > 0) return `${formatCents(ticket.price_cents)} · Online payment opens soon`;
+  if (ticket.price_cents > 0 && !ticket.hasPaymentLink) {
+    return `${formatCents(ticket.price_cents)} · Online payment opens soon`;
+  }
   if (ticket.full) return "Full";
   if (!ticket.onSale) return "Not on sale";
   if (ticket.needs_code || (ticket.for_minors && !guardianOpen)) return "Not available";
   return formatCents(ticket.price_cents);
 }
+
+type Confirmation = {
+  code: string;
+  manageUrl: string;
+  status: string;
+  totalCents: number;
+  payUrl?: string;
+};
 
 function GuardianFields({
   person,
@@ -278,6 +289,7 @@ function RegisterPage() {
   const [turnstileToken, setTurnstileToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const turnstileRef = useRef<HTMLDivElement>(null);
   const guardianOpen = Boolean(page.guardianConsent);
   const minorBlocked = attendees.some((person) => person.under18) && !guardianOpen;
@@ -408,7 +420,13 @@ function RegisterPage() {
           ...(turnstileToken ? { turnstileToken } : {}),
         },
       });
-      window.location.assign(result.manageUrl);
+      setConfirmation({
+        code: result.code,
+        manageUrl: result.manageUrl,
+        status: result.status,
+        totalCents: result.totalCents,
+        ...(result.payUrl ? { payUrl: result.payUrl } : {}),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration could not be completed. Please try again.");
       setBusy(false);
@@ -417,6 +435,51 @@ function RegisterPage() {
 
   const admissions = page.tickets.filter((ticket) => ticket.kind === "admission");
   const addOns = page.tickets.filter((ticket) => ticket.kind === "add_on");
+  const paying = attendees.some((person) => {
+    const ticket = admissions.find((item) => item.id === person.admissionId);
+    return Boolean(ticket && ticket.price_cents > 0 && ticket.hasPaymentLink);
+  });
+
+  if (confirmation) {
+    const manageHref =
+      confirmation.manageUrl.startsWith("http") || typeof window === "undefined"
+        ? confirmation.manageUrl
+        : `${window.location.origin}${confirmation.manageUrl}`;
+    return (
+      <div className="min-h-dvh bg-paper text-ink">
+        <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+            <a href="/site" className="font-display text-base leading-tight sm:text-lg">
+              {page.public_title || "Society of Catholic Scientists"}
+            </a>
+          </div>
+        </header>
+        <main className="mx-auto max-w-3xl space-y-6 px-4 py-10">
+          <h1 className="font-display text-4xl">
+            {confirmation.status === "pending" ? "Awaiting payment" : "You're registered."}
+          </h1>
+          <p className="font-display text-5xl tracking-wide">{confirmation.code}</p>
+          <p>
+            <a href={manageHref} className="break-all text-bronze underline-offset-2 hover:underline">
+              {manageHref}
+            </a>
+          </p>
+          <p>Keep this link: it is how you see your registration later.</p>
+          {confirmation.status === "pending" && confirmation.payUrl ? (
+            <>
+              <a
+                href={confirmation.payUrl}
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-bronze px-4 text-sm font-medium text-bronze-fg"
+              >
+                Pay {formatCents(confirmation.totalCents)} now
+              </a>
+              <p>Your place is held, but registration is complete only when payment is received.</p>
+            </>
+          ) : null}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
@@ -643,7 +706,13 @@ function RegisterPage() {
             </section>
           ))}
 
-          {attendees.length < MAX_ATTENDEES ? (
+          {paying && attendees.length > 1 ? (
+            <p className="text-sm text-ink-soft">
+              Paid tickets are for one person at a time. For a group, please contact the chapter.
+            </p>
+          ) : null}
+          {paying ? <p>You will pay on the next step with Stripe.</p> : null}
+          {!paying && attendees.length < MAX_ATTENDEES ? (
             <Button type="button" variant="secondary" onClick={() => setAttendees((list) => [...list, emptyAttendee(crypto.randomUUID())])}>
               Add a person
             </Button>

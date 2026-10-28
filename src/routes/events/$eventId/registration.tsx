@@ -59,6 +59,7 @@ type TicketDraft = {
   active: boolean;
   sortOrder: number;
   partIds: string[];
+  paymentLink: string;
 };
 
 type PageDraft = {
@@ -130,6 +131,7 @@ function toTicketDrafts(data: Setup, timeZone: string): TicketDraft[] {
     active: ticket.active,
     sortOrder: ticket.sort_order,
     partIds: ticket.partIds,
+    paymentLink: ticket.payment_link ?? "",
   }));
 }
 
@@ -260,6 +262,7 @@ function RegistrationInner() {
         active: true,
         sortOrder: nextSort(list),
         partIds: [],
+        paymentLink: "",
       },
     ]);
   }
@@ -509,6 +512,20 @@ function RegistrationInner() {
                 </Field>
               </div>
               {cents != null ? <p className="text-sm text-muted">{formatCents(cents)}</p> : null}
+              {cents != null && cents > 0 ? (
+                <Field label="Stripe payment link">
+                  <Input
+                    value={ticket.paymentLink}
+                    inputMode="url"
+                    placeholder="https://buy.stripe.com/…"
+                    onChange={(event) =>
+                      setTickets((list) =>
+                        list.map((row) => (row.key === ticket.key ? { ...row, paymentLink: event.target.value } : row)),
+                      )
+                    }
+                  />
+                </Field>
+              ) : null}
               <Field label="Description">
                 <Textarea
                   value={ticket.description}
@@ -645,6 +662,9 @@ function RegistrationInner() {
                           active: ticket.active,
                           sortOrder: ticket.sortOrder,
                           partIds,
+                          ...(cents != null && cents > 0 && ticket.paymentLink.trim()
+                            ? { paymentLink: ticket.paymentLink.trim() }
+                            : {}),
                         },
                       }),
                     );

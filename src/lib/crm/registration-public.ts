@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { getSql, withTransaction } from "@/lib/db";
+import { getSql, withSavepoint, withTransaction } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { bookRegistrationAllowed } from "./book-registration";
@@ -14,6 +14,7 @@ import { findPersonByEmail } from "./person-emails";
 import { hashInviteToken, newInviteToken } from "./operator-rules";
 import { publicOrigin } from "./page-head";
 import { guardianConsentErrors, type GuardianConsentInput } from "@/lib/payments/consent-rules";
+import { paymentLinkError, paidRegistrationError, payUrl } from "@/lib/payments/payment-link-rules";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
   THROTTLE_LIMIT,
@@ -98,6 +99,14 @@ function asNumberOrNull(value: number | string | null | undefined): number | nul
   if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function storedPaymentLink(value: string | null | undefined): string | null {
+  const url = (value ?? "").trim();
+  if (!url) return null;
+  const env = typeof process === "undefined" ? undefined : process.env.VERCEL_ENV;
+  if (paymentLinkError(url, env)) return null;
+  return url;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -239,6 +248,7 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
     partIds: string[];
     onSale: boolean;
     full: boolean;
+    hasPaymentLink: boolean;
   }[];
   pageParts: { id: string; title: string; left: number | null }[];
 }> {
@@ -253,8 +263,10 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
     sales_start: Date | string | null;
     sales_end: Date | string | null;
     active: boolean;
+    payment_link: string | null;
   }>`
-    select id, kind, name, description, price_cents, for_minors, needs_code, sales_start, sales_end, active
+    select id, kind, name, description, price_cents, for_minors, needs_code, sales_start, sales_end, active,
+           payment_link
     from ticket_types
     where event_id = ${eventId} and chapter_id = ${chapterId}
     order by sort_order, name
@@ -299,6 +311,7 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
       sales_start: iso(ticket.sales_start),
       sales_end: iso(ticket.sales_end),
       partIds: partIdsOf(ticket.id),
+      payment_link: storedPaymentLink(ticket.payment_link),
     }));
   const leftOf = new Map(catalogParts.map((part) => [part.id, seatsLeft(part)]));
   const pageTickets = catalogTickets
@@ -314,6 +327,7 @@ async function loadCatalog(sql: Sql, chapterId: string, eventId: string, now: Da
       partIds: ticket.partIds,
       onSale: ticketOnSale(ticket, now),
       full: ticket.partIds.some((partId) => leftOf.get(partId) === 0),
+      hasPaymentLink: Boolean(ticket.payment_link),
     }));
   return {
     tickets: catalogTickets,
@@ -442,16 +456,18 @@ async function createWebPerson(
   const displayName = composePersonName({ givenName, familyName });
   const id = nid();
   try {
-    await sql`
-      insert into persons (
-        id, chapter_id, display_name, given_name, family_name, email, phone,
-        source, country, news_consent, news_consent_at
-      ) values (
-        ${id}, ${chapterId}, ${displayName}, ${givenName || null}, ${familyName || null}, ${input.email}, ${input.phone},
-        ${"web"}, ${"United States"}, ${input.newsConsent},
-        case when ${input.newsConsent} = 'yes' then now() else null end
-      )
-    `;
+    await withSavepoint(sql, async () => {
+      await sql`
+        insert into persons (
+          id, chapter_id, display_name, given_name, family_name, email, phone,
+          source, country, news_consent, news_consent_at
+        ) values (
+          ${id}, ${chapterId}, ${displayName}, ${givenName || null}, ${familyName || null}, ${input.email}, ${input.phone},
+          ${"web"}, ${"United States"}, ${input.newsConsent},
+          case when ${input.newsConsent} = 'yes' then now() else null end
+        )
+      `;
+    });
     await sql`insert into person_roles (person_id, role_key) values (${id}, ${"friend"})`;
     return {
       id,
@@ -637,6 +653,16 @@ export const createRegistration = createServerFn({ method: "POST" })
       { guardianConsent: Boolean(guardianText) },
     );
     if (!plan.ok) throw new Error(plan.error);
+    const paidError = paidRegistrationError({
+      totalCents: plan.totalCents,
+      attendeeCount: data.attendees.length,
+      lines: plan.lines.map((line) => {
+        const ticket = catalog.tickets.find((item) => item.id === line.ticketId);
+        return { priceCents: line.priceCents, kind: ticket?.kind ?? "", paymentLink: ticket?.payment_link ?? null };
+      }),
+    });
+    if (paidError) throw new Error(paidError);
+    const registrationStatus = plan.totalCents > 0 ? "pending" : "free";
     for (const person of data.attendees) {
       if (!person.under18 || person.consent === "later") continue;
       if (!guardianText) throw new Error("Registration for students under 18 is not open yet.");
@@ -718,17 +744,19 @@ export const createRegistration = createServerFn({ method: "POST" })
         for (let attempt = 0; attempt < 5; attempt += 1) {
           code = registrationCode(year, randomCodeBytes());
           try {
-            await tx`
-              insert into registrations (
-                id, chapter_id, event_id, code, status,
-                purchaser_name, purchaser_email, purchaser_phone, purchaser_person_id,
-                total_cents, news_opt_in, heard_from, utm_source, manage_token_hash
-              ) values (
-                ${registrationId}, ${chapterId}, ${event.eventId}, ${code}, ${"free"},
-                ${purchaserName}, ${purchaserEmail}, ${blankToNull(data.purchaser.phone)}, ${purchaser.id},
-                ${0}, ${data.newsOptIn}, ${blankToNull(data.heardFrom)}, ${blankToNull(data.utmSource)}, ${tokenHash}
-              )
-            `;
+            await withSavepoint(tx, async () => {
+              await tx`
+                insert into registrations (
+                  id, chapter_id, event_id, code, status,
+                  purchaser_name, purchaser_email, purchaser_phone, purchaser_person_id,
+                  total_cents, news_opt_in, heard_from, utm_source, manage_token_hash
+                ) values (
+                  ${registrationId}, ${chapterId}, ${event.eventId}, ${code}, ${registrationStatus},
+                  ${purchaserName}, ${purchaserEmail}, ${blankToNull(data.purchaser.phone)}, ${purchaser.id},
+                  ${plan.totalCents}, ${data.newsOptIn}, ${blankToNull(data.heardFrom)}, ${blankToNull(data.utmSource)}, ${tokenHash}
+                )
+              `;
+            });
             inserted = true;
             break;
           } catch (err) {
@@ -849,6 +877,7 @@ export const createRegistration = createServerFn({ method: "POST" })
               textId: guardianText.id,
               signedIp,
               consent: consentInput(typed),
+              inTransaction: true,
             });
           }
           for (const line of plan.lines.filter((item) => item.attendeeIndex === index)) {
@@ -910,7 +939,19 @@ export const createRegistration = createServerFn({ method: "POST" })
             eventId: event.eventId,
           },
         });
-        return { manageUrl: `/r/${token}` };
+        const pricedAdmission = catalog.tickets.find(
+          (ticket) =>
+            ticket.kind === "admission" &&
+            plan.lines.some((line) => line.ticketId === ticket.id && line.priceCents > 0),
+        );
+        const link = registrationStatus === "pending" ? (pricedAdmission?.payment_link ?? "").trim() : "";
+        return {
+          manageUrl: `/r/${token}`,
+          code,
+          status: registrationStatus,
+          totalCents: plan.totalCents,
+          ...(link ? { payUrl: payUrl(link, code, purchaserEmail) } : {}),
+        };
       });
     } catch (err) {
       if (err instanceof Error && keepRegistrationError(err.message)) throw err;
@@ -948,15 +989,17 @@ async function placeParticipation(
   if (existing[0]) return updateRow(existing[0]);
   const id = nid();
   try {
-    await sql`
-      insert into participations (
-        id, chapter_id, event_id, party_type, person_id, kind_key, guest_status, source,
-        party_size, dietary_for_this_event, registration_attendee_id
-      ) values (
-        ${id}, ${input.chapterId}, ${input.eventId}, ${"person"}, ${input.personId}, ${"guest"},
-        ${"attending"}, ${"web"}, ${1}, ${input.dietary}, ${input.attendeeId}
-      )
-    `;
+    await withSavepoint(sql, async () => {
+      await sql`
+        insert into participations (
+          id, chapter_id, event_id, party_type, person_id, kind_key, guest_status, source,
+          party_size, dietary_for_this_event, registration_attendee_id
+        ) values (
+          ${id}, ${input.chapterId}, ${input.eventId}, ${"person"}, ${input.personId}, ${"guest"},
+          ${"attending"}, ${"web"}, ${1}, ${input.dietary}, ${input.attendeeId}
+        )
+      `;
+    });
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
     const again = await sql<{ id: string }>`
@@ -982,6 +1025,8 @@ export const getManagePage = createServerFn({ method: "GET" })
       id: string;
       code: string;
       status: string;
+      total_cents: number | string;
+      purchaser_email: string;
       created_at: Date | string;
       event_title: string;
       when_label: string | null;
@@ -994,7 +1039,7 @@ export const getManagePage = createServerFn({ method: "GET" })
       contact_line: string | null;
       public_title: string | null;
     }>`
-      select r.id, r.code, r.status, r.created_at, e.title as event_title,
+      select r.id, r.code, r.status, r.total_cents, r.purchaser_email, r.created_at, e.title as event_title,
              i.when_label, i.location, i.kind, i.slug, i.starts_on, i.published,
              rp.manage_message, c.contact_line, s.public_title
       from registrations r
@@ -1008,6 +1053,20 @@ export const getManagePage = createServerFn({ method: "GET" })
     `;
     const row = rows[0];
     if (!row) return null;
+    const payLinks = await sql<{ payment_link: string | null }>`
+      select t.payment_link
+      from registration_attendees a
+      join attendee_items ai on ai.attendee_id = a.id
+      join ticket_types t on t.id = ai.ticket_type_id and t.chapter_id = a.chapter_id
+      where a.registration_id = ${row.id}
+        and a.chapter_id = ${chapterId}
+        and a.cancelled_at is null
+        and t.price_cents > 0
+        and t.kind = 'admission'
+      order by t.sort_order, t.name
+      limit 1
+    `;
+    const link = row.status === "pending" ? storedPaymentLink(payLinks[0]?.payment_link) : null;
     const people = await sql<{
       id: string;
       given_name: string;
@@ -1051,6 +1110,8 @@ export const getManagePage = createServerFn({ method: "GET" })
       }),
       code: row.code,
       status: row.status,
+      totalCents: asNumber(row.total_cents),
+      payUrl: link ? payUrl(link, row.code, row.purchaser_email) : null,
       created_at: iso(row.created_at) ?? "",
       attendees: [...grouped.values()],
       manage_message: row.manage_message,

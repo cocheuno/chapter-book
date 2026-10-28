@@ -1,3 +1,4 @@
+import { paymentLinkError } from "./payment-link-rules.ts";
 import { ticketOnSale } from "./pricing.ts";
 
 export const MAX_ATTENDEES = 10;
@@ -31,6 +32,7 @@ export type CatalogTicket = {
   sales_start: string | null;
   sales_end: string | null;
   partIds: string[];
+  payment_link?: string | null;
 };
 
 export type CatalogPart = {
@@ -122,7 +124,11 @@ export function planRegistration(
       if (addOn) chosen.push(addOn);
     }
   }
-  if (chosen.some((ticket) => ticket.price_cents > 0)) {
+  if (
+    chosen.some(
+      (ticket) => ticket.price_cents > 0 && paymentLinkError((ticket.payment_link ?? "").trim(), undefined),
+    )
+  ) {
     return { ok: false, error: "Online payment opens soon. Choose a free ticket for now." };
   }
 
