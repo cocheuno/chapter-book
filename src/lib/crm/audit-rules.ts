@@ -51,6 +51,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   person_forgotten: { label: "Person forgotten", group: "people" },
   people_imported: { label: "People imported", group: "people" },
   safe_env_saved: { label: "Safe environment saved", group: "people" },
+  registration_changes_applied: { label: "Registration changes applied", group: "people" },
+  registration_changes_dismissed: { label: "Registration changes dismissed", group: "people" },
 };
 
 const SECRET_KEY = /token|hash|password|secret|html|body|link|url/i;
@@ -166,6 +168,12 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
       return `${Number(row.created ?? 0)} created, ${Number(row.tasks ?? 0)} tasks`;
     case "safe_env_saved":
       return changedLine(row);
+    case "registration_changes_applied":
+      return [text(row.code), Array.isArray(row.fields) ? row.fields.map((field) => String(field)).join(", ") : ""]
+        .filter(Boolean)
+        .join(": ");
+    case "registration_changes_dismissed":
+      return text(row.code);
     default:
       return "";
   }

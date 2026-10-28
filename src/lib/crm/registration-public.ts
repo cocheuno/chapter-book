@@ -25,6 +25,7 @@ import {
   storedDietary,
   type RegistrationDetails,
 } from "@/lib/payments/registration-details";
+import { changesTaskTitle, reviewRecord, syncPlan, type SyncPlan } from "@/lib/payments/person-sync";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
   THROTTLE_LIMIT,
@@ -78,6 +79,12 @@ type PersonSnap = {
   given_name: string | null;
   family_name: string | null;
   dietary: string | null;
+  religious_title: string | null;
+  academic_title: string | null;
+  city: string | null;
+  state: string | null;
+  phone: string | null;
+  forgotten_at: Date | string | null;
 };
 
 type WebPerson = PersonSnap & { created: boolean; linkedByEmail: boolean };
@@ -532,13 +539,20 @@ async function createWebPerson(
       given_name: givenName || null,
       family_name: familyName || null,
       dietary: profile?.dietary ?? null,
+      religious_title: profile?.religiousTitle ?? null,
+      academic_title: profile?.academicTitle ?? null,
+      city: profile?.city ?? null,
+      state: profile?.state ?? null,
+      phone: input.phone,
+      forgotten_at: null,
       created: true,
       linkedByEmail: false,
     };
   } catch (err) {
     if (!isUniqueViolation(err) || input.email) throw err;
     const existing = await sql<PersonSnap>`
-      select id, display_name, given_name, family_name, dietary
+      select id, display_name, given_name, family_name, dietary,
+        religious_title, academic_title, city, state, phone, forgotten_at
       from persons
       where chapter_id = ${chapterId} and email is null and lower(display_name) = ${displayName.toLowerCase()}
       limit 1
@@ -553,12 +567,71 @@ async function personByEmail(sql: Sql, chapterId: string, email: string): Promis
   const found = await findPersonByEmail(sql, chapterId, email);
   if (!found) return null;
   const rows = await sql<PersonSnap>`
-    select id, display_name, given_name, family_name, dietary
+    select id, display_name, given_name, family_name, dietary,
+      religious_title, academic_title, city, state, phone, forgotten_at
     from persons
     where id = ${found.id} and chapter_id = ${chapterId}
     limit 1
   `;
   return rows[0] ?? null;
+}
+
+async function fillBlankFields(sql: Sql, chapterId: string, personId: string, fill: SyncPlan["fill"]) {
+  if (Object.keys(fill).length === 0) return;
+  await sql`
+    update persons set
+      religious_title = coalesce(${fill.religious_title ?? null}, religious_title),
+      academic_title = coalesce(${fill.academic_title ?? null}, academic_title),
+      city = coalesce(${fill.city ?? null}, city),
+      state = coalesce(${fill.state ?? null}, state),
+      phone = coalesce(${fill.phone ?? null}, phone),
+      dietary = coalesce(${fill.dietary ?? null}, dietary)
+    where id = ${personId} and chapter_id = ${chapterId} and forgotten_at is null
+  `;
+}
+
+async function addTicketRole(sql: Sql, personId: string, roleKey: string | null | undefined) {
+  const role = personRoleKey(roleKey);
+  if (!role) return;
+  await sql`
+    insert into person_roles (person_id, role_key) values (${personId}, ${role})
+    on conflict do nothing
+  `;
+}
+
+/** Fill blanks and collect conflicts for a person matched by email. New people are not passed here. */
+async function syncEmailMatch(
+  sql: Sql,
+  chapterId: string,
+  person: PersonSnap,
+  typed: {
+    title?: string | null;
+    city?: string | null;
+    state?: string | null;
+    phone?: string | null;
+    dietaryTags?: readonly string[];
+    dietaryText?: string | null;
+    givenName: string;
+    familyName: string;
+    roleKey: string | null;
+  },
+): Promise<ReturnType<typeof reviewChanges>> {
+  if (person.forgotten_at) return null;
+  const plan = syncPlan(person, {
+    title: typed.title,
+    city: typed.city,
+    state: typed.state,
+    phone: typed.phone,
+    dietaryTags: typed.dietaryTags,
+    dietaryText: typed.dietaryText,
+  });
+  await fillBlankFields(sql, chapterId, person.id, plan.fill);
+  await addTicketRole(sql, person.id, typed.roleKey);
+  const names = reviewChanges(
+    { given_name: person.given_name, family_name: person.family_name, dietary: person.dietary },
+    { givenName: typed.givenName, familyName: typed.familyName, dietary: typed.dietaryText },
+  );
+  return reviewRecord(names, plan.differ);
 }
 
 async function addTask(
@@ -853,6 +926,7 @@ export const createRegistration = createServerFn({ method: "POST" })
         if (!inserted) throw new Error("Registration could not be completed. Please try again.");
 
         const dueOn = dueInSevenDays(event.chapterTimezone || event.timezone, now);
+        let purchaserSynced = freshPeople.has(purchaser.id);
         const attendeeNames: string[] = [];
         for (let index = 0; index < data.attendees.length; index += 1) {
           const typed = data.attendees[index];
@@ -873,19 +947,21 @@ export const createRegistration = createServerFn({ method: "POST" })
           if (matched.action === "link" && byEmail) {
             person = byEmail;
             if (!freshPeople.has(byEmail.id)) {
-              review = reviewChanges(
-                { given_name: byEmail.given_name, family_name: byEmail.family_name, dietary: byEmail.dietary },
-                { givenName: given, familyName: family, dietary: typed.dietary },
-              );
+              if (byEmail.id === purchaser.id) purchaserSynced = true;
+              const details = prepared[index]?.details;
+              review = await syncEmailMatch(tx, chapterId, byEmail, {
+                title: details?.title,
+                city: details?.city,
+                state: details?.state,
+                phone: byEmail.id === purchaser.id ? data.purchaser.phone : null,
+                dietaryTags: details?.dietaryTags,
+                dietaryText: typed.dietary,
+                givenName: given,
+                familyName: family,
+                roleKey: prepared[index]?.roleKey ?? null,
+              });
               if (review) {
-                await addTask(
-                  tx,
-                  chapterId,
-                  `Web registration: check changes for ${byEmail.display_name}`,
-                  dueOn,
-                  event.eventId,
-                  byEmail.id,
-                );
+                await addTask(tx, chapterId, changesTaskTitle(byEmail.display_name), dueOn, event.eventId, byEmail.id);
               }
             }
           } else {
@@ -908,19 +984,21 @@ export const createRegistration = createServerFn({ method: "POST" })
             person = created;
             if (created.created) freshPeople.add(created.id);
             if (!created.created && created.linkedByEmail) {
-              review = reviewChanges(
-                { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
-                { givenName: given, familyName: family, dietary: typed.dietary },
-              );
+              if (created.id === purchaser.id) purchaserSynced = true;
+              const details = prepared[index]?.details;
+              review = await syncEmailMatch(tx, chapterId, created, {
+                title: details?.title,
+                city: details?.city,
+                state: details?.state,
+                phone: created.id === purchaser.id ? data.purchaser.phone : null,
+                dietaryTags: details?.dietaryTags,
+                dietaryText: typed.dietary,
+                givenName: given,
+                familyName: family,
+                roleKey: prepared[index]?.roleKey ?? null,
+              });
               if (review) {
-                await addTask(
-                  tx,
-                  chapterId,
-                  `Web registration: check changes for ${created.display_name}`,
-                  dueOn,
-                  event.eventId,
-                  created.id,
-                );
+                await addTask(tx, chapterId, changesTaskTitle(created.display_name), dueOn, event.eventId, created.id);
               }
             } else if (!created.created) {
               review = reviewChanges(
@@ -994,6 +1072,11 @@ export const createRegistration = createServerFn({ method: "POST" })
             where id = ${attendeeId} and chapter_id = ${chapterId}
           `;
           attendeeNames.push(`${given} ${family}`.trim());
+        }
+
+        if (!purchaserSynced) {
+          const phonePlan = syncPlan(purchaser, { phone: data.purchaser.phone });
+          await fillBlankFields(tx, chapterId, purchaser.id, phonePlan.fill);
         }
 
         const origin = publicOrigin({

@@ -75,6 +75,8 @@ describe("AUDIT_ACTIONS", () => {
       "person_forgotten",
       "people_imported",
       "safe_env_saved",
+      "registration_changes_applied",
+      "registration_changes_dismissed",
     ];
     for (const action of required) {
       const meta = AUDIT_ACTIONS[action];
@@ -95,6 +97,8 @@ describe("AUDIT_ACTIONS", () => {
       "person_forgotten",
       "people_imported",
       "safe_env_saved",
+      "registration_changes_applied",
+      "registration_changes_dismissed",
     ]);
     assert.equal(actionsInGroup("chapter").includes("person_merged"), false);
   });
@@ -168,6 +172,11 @@ describe("auditSummary", () => {
       auditSummary("safe_env_saved", { changed: ["works_with_minors", "safe_env_trained_on"] }),
       "changed: works_with_minors, safe_env_trained_on",
     );
+    assert.equal(
+      auditSummary("registration_changes_applied", { code: "R27-ABCD", fields: ["city", "phone"] }),
+      "R27-ABCD: city, phone",
+    );
+    assert.equal(auditSummary("registration_changes_dismissed", { code: "R27-ABCD" }), "R27-ABCD");
   });
 
   it("shows the address when an other email is added or removed", () => {

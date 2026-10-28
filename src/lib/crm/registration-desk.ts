@@ -8,6 +8,8 @@ import { recordAudit } from "./audit";
 import { issueConsentLink, readConsentDetail, recordPaperConsent } from "./consent";
 import { nid } from "./ids";
 import { assertAdmin, assertEditor, loadMember } from "./member";
+import { composePersonName } from "./names";
+import { CHANGES_TASK_PREFIX, reviewForDesk, reviewUpdates, type ReviewField } from "@/lib/payments/person-sync";
 import { consentDetailsPurgeOpen, eventLastDay } from "@/lib/payments/consent-rules";
 import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
@@ -58,6 +60,26 @@ function dueInSevenDays(timeZone: string): string {
 
 function fullName(given: string, family: string): string {
   return `${given} ${family}`.trim();
+}
+
+function keptOrTyped(
+  updates: readonly { field: ReviewField; typed: string }[],
+  field: ReviewField,
+  current: string | null,
+): string | null {
+  const found = updates.find((row) => row.field === field);
+  return found ? found.typed : current;
+}
+
+async function completeChangesTask(sql: Sql, chapterId: string, eventId: string, personId: string) {
+  await sql`
+    update tasks set status = 'done'
+    where chapter_id = ${chapterId}
+      and event_id = ${eventId}
+      and person_id = ${personId}
+      and status = 'open'
+      and title like ${`${CHANGES_TASK_PREFIX}%`}
+  `;
 }
 
 function csvFile(header: string[], rows: unknown[][]): string {
@@ -312,6 +334,8 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         tickets: string[];
         cancelled: boolean;
         review: boolean;
+        changes: ReturnType<typeof reviewForDesk>["lines"];
+        changesWaiting: boolean;
         isMinor: boolean;
         consentOnFile: boolean;
         details: ReturnType<typeof readDetails>;
@@ -323,6 +347,7 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       const list = attendeesByRegistration.get(row.registration_id) ?? [];
       let attendee = list.find((item) => item.id === row.id);
       if (!attendee) {
+        const deskReview = reviewForDesk(member.role, row.review_changes);
         attendee = {
           id: row.id,
           givenName: row.given_name,
@@ -334,6 +359,8 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
           tickets: [],
           cancelled: row.cancelled_at != null,
           review: row.review_changes != null,
+          changes: deskReview.lines,
+          changesWaiting: deskReview.waiting,
           isMinor: Boolean(row.is_minor),
           consentOnFile: row.consent_on_file === true,
           details: readDetails(row.details),
@@ -706,6 +733,159 @@ export const refundRegistration = createServerFn({ method: "POST" })
         entity: "registration",
         entityId: current.id,
         detail: { code: current.code, amountCents, eventId: data.eventId },
+      });
+      return { ok: true as const };
+    });
+  });
+
+export const applyRegistrationChanges = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      eventId: z.string().min(1),
+      attendeeIds: z.array(z.string().min(1).max(64)).min(1).max(500),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    const attendeeIds = [...new Set(data.attendeeIds)];
+    return withTransaction(async (tx) => {
+      await requireEvent(tx, member.chapterId, data.eventId);
+      for (const attendeeId of attendeeIds) {
+        const attendees = await tx<{
+          id: string;
+          person_id: string | null;
+          review_changes: unknown;
+          code: string;
+        }>`
+          select a.id, a.person_id, a.review_changes, r.code
+          from registration_attendees a
+          join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+          where a.id = ${attendeeId}
+            and a.chapter_id = ${member.chapterId}
+            and r.event_id = ${data.eventId}
+          for update
+        `;
+        const attendee = attendees[0];
+        if (!attendee) throw new Error("Attendee not found.");
+        const updates = reviewUpdates(attendee.review_changes);
+        if (!attendee.person_id || updates.length === 0) continue;
+        const people = await tx<{
+          id: string;
+          forgotten_at: Date | string | null;
+          display_name: string;
+          given_name: string | null;
+          family_name: string | null;
+          religious_title: string | null;
+          academic_title: string | null;
+          honorific: string | null;
+          middle_name: string | null;
+          middle_initial: string | null;
+          suffix: string | null;
+          post_nominals: string | null;
+          city: string | null;
+          state: string | null;
+          phone: string | null;
+          dietary: string | null;
+        }>`
+          select id, forgotten_at, display_name, given_name, family_name,
+            religious_title, academic_title, honorific, middle_name, middle_initial,
+            suffix, post_nominals, city, state, phone, dietary
+          from persons
+          where id = ${attendee.person_id} and chapter_id = ${member.chapterId}
+          for update
+        `;
+        const person = people[0];
+        if (!person || person.forgotten_at) continue;
+        const given = keptOrTyped(updates, "given_name", person.given_name);
+        const family = keptOrTyped(updates, "family_name", person.family_name);
+        const religious = keptOrTyped(updates, "religious_title", person.religious_title);
+        const academic = keptOrTyped(updates, "academic_title", person.academic_title);
+        const nameChanged = updates.some((row) => row.field === "given_name" || row.field === "family_name");
+        let displayName = person.display_name;
+        if (nameChanged) {
+          const composed = composePersonName({
+            religiousTitle: religious,
+            academicTitle: academic,
+            honorific: person.honorific,
+            givenName: given,
+            familyName: family,
+            middleName: person.middle_name,
+            middleInitial: person.middle_initial,
+            suffix: person.suffix,
+            postNominals: person.post_nominals,
+          }).trim();
+          if (composed) displayName = composed;
+        }
+        const saved = await tx<{ id: string }>`
+          update persons set
+            given_name = ${given},
+            family_name = ${family},
+            religious_title = ${religious},
+            academic_title = ${academic},
+            city = ${keptOrTyped(updates, "city", person.city)},
+            state = ${keptOrTyped(updates, "state", person.state)},
+            phone = ${keptOrTyped(updates, "phone", person.phone)},
+            dietary = ${keptOrTyped(updates, "dietary", person.dietary)},
+            display_name = ${displayName}
+          where id = ${person.id} and chapter_id = ${member.chapterId} and forgotten_at is null
+          returning id
+        `;
+        if (!saved[0]) continue;
+        await tx`
+          update registration_attendees set review_changes = null
+          where id = ${attendee.id} and chapter_id = ${member.chapterId}
+        `;
+        await completeChangesTask(tx, member.chapterId, data.eventId, person.id);
+        await recordAudit(tx, {
+          chapterId: member.chapterId,
+          actor: member.userId,
+          action: "registration_changes_applied",
+          entity: "person",
+          entityId: person.id,
+          detail: { code: attendee.code, fields: updates.map((row) => row.field) },
+        });
+      }
+      return { ok: true as const };
+    });
+  });
+
+export const dismissRegistrationChanges = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ eventId: z.string().min(1), attendeeId: z.string().min(1).max(64) }).parse)
+  .handler(async ({ context, data }) => {
+    const member = await editor(context.userId);
+    return withTransaction(async (tx) => {
+      await requireEvent(tx, member.chapterId, data.eventId);
+      const attendees = await tx<{
+        id: string;
+        person_id: string | null;
+        review_changes: unknown;
+        code: string;
+      }>`
+        select a.id, a.person_id, a.review_changes, r.code
+        from registration_attendees a
+        join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+        where a.id = ${data.attendeeId}
+          and a.chapter_id = ${member.chapterId}
+          and r.event_id = ${data.eventId}
+        for update
+      `;
+      const attendee = attendees[0];
+      if (!attendee) throw new Error("Attendee not found.");
+      if (attendee.review_changes == null) return { ok: true as const };
+      await tx`
+        update registration_attendees set review_changes = null
+        where id = ${attendee.id} and chapter_id = ${member.chapterId}
+      `;
+      if (attendee.person_id) await completeChangesTask(tx, member.chapterId, data.eventId, attendee.person_id);
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "registration_changes_dismissed",
+        entity: "person",
+        entityId: attendee.person_id,
+        detail: { code: attendee.code },
       });
       return { ok: true as const };
     });
