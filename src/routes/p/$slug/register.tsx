@@ -1,9 +1,20 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { PublicCopy } from "@/components/public-copy";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { createRegistration, getRegisterPage, getRegisterPreview } from "@/lib/crm/registration-public";
 import { guardianConsentErrors } from "@/lib/payments/consent-rules";
+import {
+  DIETARY_TAG_KEYS,
+  DIETARY_TAGS,
+  LODGING,
+  LODGING_KEYS,
+  TITLES,
+  detailsErrors,
+  nightOptions,
+  type DietaryKey,
+  type LodgingKey,
+} from "@/lib/payments/registration-details";
 import { MAX_ATTENDEES } from "@/lib/payments/registration-rules";
 import { formatCents } from "@/lib/payments/pricing";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -33,12 +44,25 @@ type Ticket = RegisterData["tickets"][number];
 
 type AttendeeDraft = {
   key: string;
+  title: string;
   givenName: string;
   familyName: string;
+  badgeName: string;
   email: string;
+  position: string;
   badgeAffiliation: string;
+  city: string;
+  state: string;
+  dietaryTags: DietaryKey[];
   dietary: string;
+  lodging: "" | LodgingKey;
+  nights: string[];
+  roomShare: boolean;
+  roommate: string;
+  parking: boolean;
   accessibility: string;
+  notes: string;
+  refundAcknowledged: boolean;
   admissionId: string;
   addOnIds: string[];
   under18: boolean;
@@ -90,12 +114,25 @@ function RegisterUnavailable() {
 function emptyAttendee(key = "person-1"): AttendeeDraft {
   return {
     key,
+    title: "",
     givenName: "",
     familyName: "",
+    badgeName: "",
     email: "",
+    position: "",
     badgeAffiliation: "",
+    city: "",
+    state: "",
+    dietaryTags: [],
     dietary: "",
+    lodging: "",
+    nights: [],
+    roomShare: false,
+    roommate: "",
+    parking: false,
     accessibility: "",
+    notes: "",
+    refundAcknowledged: false,
     admissionId: "",
     addOnIds: [],
     under18: false,
@@ -274,6 +311,363 @@ function GuardianFields({
   );
 }
 
+function SectionHeading({ children }: { children: string }) {
+  return <h3 className="font-display text-xl">{children}</h3>;
+}
+
+function PersonFields({
+  person,
+  admissions,
+  addOns,
+  tickets,
+  guardianOpen,
+  guardianHtml,
+  housingInfo,
+  nights,
+  onChange,
+}: {
+  person: AttendeeDraft;
+  admissions: Ticket[];
+  addOns: Ticket[];
+  tickets: Ticket[];
+  guardianOpen: boolean;
+  guardianHtml: string | null;
+  housingInfo: string | null;
+  nights: string[];
+  onChange: (patch: Partial<AttendeeDraft>) => void;
+}) {
+  const admission = admissions.find((ticket) => ticket.id === person.admissionId);
+  const affiliationLabel = admission?.affiliation_prompt?.trim() || "Affiliation";
+  const affiliationRequired = Boolean(admission?.affiliation_prompt?.trim());
+  const askNights = person.lodging === "hotel_block" || person.lodging === "need_help";
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <SectionHeading>About you</SectionHeading>
+        <Field label="Title">
+          <Select value={person.title} onChange={(event) => onChange({ title: event.target.value })}>
+            {TITLES.map((title) => (
+              <option key={title || "none"} value={title}>
+                {title || "—"}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="First name">
+            <Input
+              value={person.givenName}
+              autoComplete="given-name"
+              required
+              onChange={(event) => onChange({ givenName: event.target.value })}
+            />
+          </Field>
+          <Field label="Last name">
+            <Input
+              value={person.familyName}
+              autoComplete="family-name"
+              required
+              onChange={(event) => onChange({ familyName: event.target.value })}
+            />
+          </Field>
+        </div>
+        <Field label="Name on badge">
+          <Input
+            value={person.badgeName}
+            maxLength={60}
+            placeholder={person.givenName.trim() || "First name"}
+            onChange={(event) => onChange({ badgeName: event.target.value })}
+          />
+        </Field>
+        <Field label="Email">
+          <Input
+            type="email"
+            value={person.email}
+            autoComplete="email"
+            onChange={(event) => onChange({ email: event.target.value })}
+          />
+        </Field>
+        <Field label="Position or role (optional)">
+          <Input
+            value={person.position}
+            maxLength={120}
+            onChange={(event) => onChange({ position: event.target.value })}
+          />
+        </Field>
+        <Field label={affiliationLabel}>
+          <Input
+            value={person.badgeAffiliation}
+            required={affiliationRequired}
+            maxLength={200}
+            onChange={(event) => onChange({ badgeAffiliation: event.target.value })}
+          />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="City">
+            <Input
+              value={person.city}
+              maxLength={100}
+              autoComplete="address-level2"
+              onChange={(event) => onChange({ city: event.target.value })}
+            />
+          </Field>
+          <Field label="State">
+            <Input
+              value={person.state}
+              maxLength={50}
+              autoComplete="address-level1"
+              onChange={(event) => onChange({ state: event.target.value })}
+            />
+          </Field>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <SectionHeading>Ticket</SectionHeading>
+        <fieldset className="space-y-2">
+          <legend className="sr-only">Admission</legend>
+          {admissions.map((ticket) => {
+            const blocked = ticketBlocked(ticket, guardianOpen);
+            const note = ticketNote(ticket, guardianOpen);
+            return (
+              <label key={ticket.id} className="block">
+                <span className="flex min-h-11 items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    className="mt-1 size-5"
+                    name={`admission-${person.key}`}
+                    checked={person.admissionId === ticket.id}
+                    disabled={blocked}
+                    required
+                    onChange={() =>
+                      onChange({
+                        admissionId: ticket.id,
+                        ...(ticket.for_minors ? { under18: true } : {}),
+                      })
+                    }
+                  />
+                  <span>
+                    {ticket.name}
+                    {note ? <span className="text-muted"> · {note}</span> : null}
+                  </span>
+                </span>
+                {ticket.description ? (
+                  <PublicCopy text={ticket.description} className="mt-1 pl-7 text-sm text-ink-soft" />
+                ) : null}
+              </label>
+            );
+          })}
+        </fieldset>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-5"
+            checked={person.under18}
+            onChange={(event) => {
+              const under18 = event.target.checked;
+              if (under18) {
+                onChange({ under18: true });
+                return;
+              }
+              onChange({
+                under18: false,
+                consent: "now",
+                admissionId: admission?.for_minors ? "" : person.admissionId,
+                addOnIds: person.addOnIds.filter((id) => !tickets.find((ticket) => ticket.id === id)?.for_minors),
+              });
+            }}
+          />
+          Under 18
+        </label>
+        {person.under18 ? (
+          guardianHtml ? (
+            <GuardianFields person={person} html={guardianHtml} onChange={onChange} />
+          ) : (
+            <p className="text-sm text-ink-soft">Registration for students under 18 is not open yet.</p>
+          )
+        ) : null}
+      </div>
+
+      <div className="space-y-3">
+        <SectionHeading>Meals</SectionHeading>
+        {addOns.length ? (
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-ink-soft">Add-ons</legend>
+            {addOns.map((ticket) => {
+              const blocked = ticketBlocked(ticket, guardianOpen);
+              const note = ticketNote(ticket, guardianOpen);
+              const checked = person.addOnIds.includes(ticket.id);
+              return (
+                <label key={ticket.id} className="block">
+                  <span className="flex min-h-11 items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-5"
+                      checked={checked}
+                      disabled={blocked}
+                      onChange={() =>
+                        onChange({
+                          addOnIds: checked
+                            ? person.addOnIds.filter((id) => id !== ticket.id)
+                            : [...person.addOnIds, ticket.id],
+                          ...(!checked && ticket.for_minors ? { under18: true } : {}),
+                        })
+                      }
+                    />
+                    <span>
+                      {ticket.name}
+                      {note ? <span className="text-muted"> · {note}</span> : null}
+                    </span>
+                  </span>
+                  {ticket.description ? (
+                    <PublicCopy text={ticket.description} className="mt-1 pl-7 text-sm text-ink-soft" />
+                  ) : null}
+                </label>
+              );
+            })}
+          </fieldset>
+        ) : null}
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-ink-soft">Dietary needs</legend>
+          {DIETARY_TAG_KEYS.map((key) => {
+            const checked = person.dietaryTags.includes(key);
+            const full = person.dietaryTags.length >= 7 && !checked;
+            return (
+              <label key={key} className="flex min-h-11 items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1 size-5"
+                  checked={checked}
+                  disabled={full}
+                  onChange={() =>
+                    onChange({
+                      dietaryTags: checked
+                        ? person.dietaryTags.filter((tag) => tag !== key)
+                        : [...person.dietaryTags, key],
+                    })
+                  }
+                />
+                {DIETARY_TAGS[key]}
+              </label>
+            );
+          })}
+        </fieldset>
+        <Field label="Allergies or other dietary needs">
+          <Input value={person.dietary} maxLength={500} onChange={(event) => onChange({ dietary: event.target.value })} />
+        </Field>
+      </div>
+
+      {housingInfo?.trim() ? (
+        <div className="space-y-3">
+          <SectionHeading>Housing</SectionHeading>
+          <PublicCopy text={housingInfo} className="text-sm text-ink-soft" />
+          <fieldset className="space-y-2">
+            <legend className="sr-only">Lodging</legend>
+            {LODGING_KEYS.map((key) => (
+              <label key={key} className="flex min-h-11 items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  className="mt-1 size-5"
+                  name={`lodging-${person.key}`}
+                  checked={person.lodging === key}
+                  required
+                  onChange={() =>
+                    onChange({
+                      lodging: key,
+                      ...(key === "hotel_block" || key === "need_help" ? {} : { nights: [] }),
+                    })
+                  }
+                />
+                {LODGING[key]}
+              </label>
+            ))}
+          </fieldset>
+          {askNights && nights.length ? (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-ink-soft">Nights</legend>
+              {nights.map((night) => {
+                const checked = person.nights.includes(night);
+                return (
+                  <label key={night} className="flex min-h-11 items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-5"
+                      checked={checked}
+                      onChange={() =>
+                        onChange({
+                          nights: checked ? person.nights.filter((item) => item !== night) : [...person.nights, night],
+                        })
+                      }
+                    />
+                    {night}
+                  </label>
+                );
+              })}
+            </fieldset>
+          ) : null}
+          <label className="flex min-h-11 items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1 size-5"
+              checked={person.roomShare}
+              onChange={(event) => onChange({ roomShare: event.target.checked })}
+            />
+            I'm willing to share a room
+          </label>
+          <Field label="Roommate's name (optional)">
+            <Input
+              value={person.roommate}
+              maxLength={120}
+              onChange={(event) => onChange({ roommate: event.target.value })}
+            />
+          </Field>
+        </div>
+      ) : null}
+
+      <div className="space-y-3">
+        <SectionHeading>Getting there</SectionHeading>
+        <label className="flex min-h-11 items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1 size-5"
+            checked={person.parking}
+            onChange={(event) => onChange({ parking: event.target.checked })}
+          />
+          I'll need parking
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        <SectionHeading>Accessibility</SectionHeading>
+        <Field label="Accessibility needs">
+          <Textarea
+            value={person.accessibility}
+            maxLength={500}
+            onChange={(event) => onChange({ accessibility: event.target.value })}
+          />
+        </Field>
+      </div>
+
+      {person.under18 ? null : (
+        <div className="space-y-3">
+          <SectionHeading>Emergency contact</SectionHeading>
+          <p className="text-sm text-ink-soft">Optional.</p>
+          <Field label="Name">
+            <Input value={person.emergencyName} onChange={(event) => onChange({ emergencyName: event.target.value })} />
+          </Field>
+          <Field label="Phone">
+            <Input
+              value={person.emergencyPhone}
+              autoComplete="tel"
+              onChange={(event) => onChange({ emergencyPhone: event.target.value })}
+            />
+          </Field>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RegisterPage() {
   const { page, preview } = Route.useLoaderData();
   const { slug } = Route.useParams();
@@ -352,6 +746,21 @@ function RegisterPage() {
       return;
     }
     for (const person of attendees) {
+      const admission = page.tickets.find((ticket) => ticket.id === person.admissionId);
+      const detailMessage = detailsErrors(
+        { lodging: person.lodging, refundAcknowledged: person.refundAcknowledged },
+        {
+          housingAsked: Boolean(page.housing_info?.trim()),
+          refundPolicyShown: Boolean(page.refund_policy?.trim()),
+          paid: Boolean(admission && admission.price_cents > 0),
+          affiliationPrompt: admission?.affiliation_prompt,
+          affiliation: person.badgeAffiliation,
+        },
+      )[0];
+      if (detailMessage) {
+        setError(detailMessage);
+        return;
+      }
       if (!person.under18 || person.consent === "later") continue;
       const message = guardianConsentErrors({
         guardianName: person.guardianName,
@@ -408,6 +817,23 @@ function RegisterPage() {
             ...(person.badgeAffiliation.trim() ? { badgeAffiliation: person.badgeAffiliation.trim() } : {}),
             ...(person.dietary.trim() ? { dietary: person.dietary.trim() } : {}),
             ...(person.accessibility.trim() ? { accessibility: person.accessibility.trim() } : {}),
+            ...(!person.under18 && person.emergencyName.trim() ? { emergencyName: person.emergencyName.trim() } : {}),
+            ...(!person.under18 && person.emergencyPhone.trim() ? { emergencyPhone: person.emergencyPhone.trim() } : {}),
+            details: {
+              title: person.title,
+              badgeName: person.badgeName.trim(),
+              position: person.position.trim(),
+              city: person.city.trim(),
+              state: person.state.trim(),
+              dietaryTags: person.dietaryTags,
+              ...(person.lodging ? { lodging: person.lodging } : {}),
+              nights: person.nights,
+              roomShare: person.roomShare,
+              roommate: person.roommate.trim(),
+              parking: person.parking,
+              notes: person.notes.trim(),
+              refundAcknowledged: person.refundAcknowledged,
+            },
           })),
           acceptedAgreementIds: page.agreements.filter((item) => accepted[item.id]).map((item) => item.id),
           ...(attendees.some((person) => person.under18) && page.guardianConsent
@@ -558,151 +984,17 @@ function RegisterPage() {
                   </Button>
                 ) : null}
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="First name">
-                  <Input
-                    value={person.givenName}
-                    autoComplete="given-name"
-                    required
-                    onChange={(event) => updateAttendee(person.key, { givenName: event.target.value })}
-                  />
-                </Field>
-                <Field label="Last name">
-                  <Input
-                    value={person.familyName}
-                    autoComplete="family-name"
-                    required
-                    onChange={(event) => updateAttendee(person.key, { familyName: event.target.value })}
-                  />
-                </Field>
-              </div>
-              <Field label="Email (optional)">
-                <Input
-                  type="email"
-                  value={person.email}
-                  autoComplete="email"
-                  onChange={(event) => updateAttendee(person.key, { email: event.target.value })}
-                />
-              </Field>
-              <Field label="Badge affiliation">
-                <Input
-                  value={person.badgeAffiliation}
-                  onChange={(event) => updateAttendee(person.key, { badgeAffiliation: event.target.value })}
-                />
-              </Field>
-              <Field label="Dietary needs">
-                <Input value={person.dietary} onChange={(event) => updateAttendee(person.key, { dietary: event.target.value })} />
-              </Field>
-              <Field label="Accessibility needs">
-                <Textarea
-                  value={person.accessibility}
-                  onChange={(event) => updateAttendee(person.key, { accessibility: event.target.value })}
-                />
-              </Field>
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium text-ink-soft">Admission</legend>
-                {admissions.map((ticket) => {
-                  const blocked = ticketBlocked(ticket, guardianOpen);
-                  const note = ticketNote(ticket, guardianOpen);
-                  return (
-                    <label key={ticket.id} className="block">
-                      <span className="flex min-h-11 items-start gap-2 text-sm">
-                        <input
-                          type="radio"
-                          className="mt-1 size-5"
-                          name={`admission-${person.key}`}
-                          checked={person.admissionId === ticket.id}
-                          disabled={blocked}
-                          required
-                          onChange={() =>
-                            updateAttendee(person.key, {
-                              admissionId: ticket.id,
-                              ...(ticket.for_minors ? { under18: true } : {}),
-                            })
-                          }
-                        />
-                        <span>
-                          {ticket.name}
-                          {note ? <span className="text-muted"> · {note}</span> : null}
-                        </span>
-                      </span>
-                      {ticket.description ? (
-                        <PublicCopy text={ticket.description} className="mt-1 pl-7 text-sm text-ink-soft" />
-                      ) : null}
-                    </label>
-                  );
-                })}
-              </fieldset>
-              {addOns.length ? (
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium text-ink-soft">Add-ons</legend>
-                  {addOns.map((ticket) => {
-                    const blocked = ticketBlocked(ticket, guardianOpen);
-                    const note = ticketNote(ticket, guardianOpen);
-                    const checked = person.addOnIds.includes(ticket.id);
-                    return (
-                      <label key={ticket.id} className="block">
-                        <span className="flex min-h-11 items-start gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            className="mt-1 size-5"
-                            checked={checked}
-                            disabled={blocked}
-                            onChange={() =>
-                              updateAttendee(person.key, {
-                                addOnIds: checked
-                                  ? person.addOnIds.filter((id) => id !== ticket.id)
-                                  : [...person.addOnIds, ticket.id],
-                                ...(!checked && ticket.for_minors ? { under18: true } : {}),
-                              })
-                            }
-                          />
-                          <span>
-                            {ticket.name}
-                            {note ? <span className="text-muted"> · {note}</span> : null}
-                          </span>
-                        </span>
-                        {ticket.description ? (
-                          <PublicCopy text={ticket.description} className="mt-1 pl-7 text-sm text-ink-soft" />
-                        ) : null}
-                      </label>
-                    );
-                  })}
-                </fieldset>
-              ) : null}
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-5"
-                  checked={person.under18}
-                  onChange={(event) => {
-                    const under18 = event.target.checked;
-                    if (under18) {
-                      updateAttendee(person.key, { under18: true });
-                      return;
-                    }
-                    const admission = page.tickets.find((ticket) => ticket.id === person.admissionId);
-                    updateAttendee(person.key, {
-                      under18: false,
-                      consent: "now",
-                      admissionId: admission?.for_minors ? "" : person.admissionId,
-                      addOnIds: person.addOnIds.filter((id) => !page.tickets.find((ticket) => ticket.id === id)?.for_minors),
-                    });
-                  }}
-                />
-                Under 18
-              </label>
-              {person.under18 ? (
-                page.guardianConsent ? (
-                  <GuardianFields
-                    person={person}
-                    html={page.guardianConsent.html}
-                    onChange={(patch) => updateAttendee(person.key, patch)}
-                  />
-                ) : (
-                  <p className="text-sm text-ink-soft">Registration for students under 18 is not open yet.</p>
-                )
-              ) : null}
+              <PersonFields
+                person={person}
+                admissions={admissions}
+                addOns={addOns}
+                tickets={page.tickets}
+                guardianOpen={guardianOpen}
+                guardianHtml={page.guardianConsent?.html ?? null}
+                housingInfo={page.housing_info}
+                nights={nightOptions(page.housing_nights)}
+                onChange={(patch) => updateAttendee(person.key, patch)}
+              />
             </section>
           ))}
 
@@ -718,6 +1010,7 @@ function RegisterPage() {
             </Button>
           ) : null}
 
+          {page.agreements.length ? <h2 className="font-display text-2xl">Agreements</h2> : null}
           {page.agreements.map((agreement) => (
             <section key={agreement.id} className="space-y-3">
               <div className="max-h-48 overflow-auto rounded-md border border-line bg-surface p-3">
@@ -734,6 +1027,48 @@ function RegisterPage() {
                 {AGREEMENT_LABEL[agreement.kind] ?? "I agree"}
               </label>
             </section>
+          ))}
+
+          {attendees.map((person) => {
+            const admission = admissions.find((ticket) => ticket.id === person.admissionId);
+            if (!page.refund_policy?.trim() || !admission || admission.price_cents <= 0) return null;
+            return (
+              <section key={`refund-${person.key}`} className="space-y-3">
+                {attendees.length > 1 ? (
+                  <h2 className="font-display text-2xl">
+                    {person.givenName.trim() || "Person"} {person.familyName.trim()}
+                  </h2>
+                ) : null}
+                <PublicCopy text={page.refund_policy} className="text-sm text-ink-soft" />
+                <label className="flex min-h-11 items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1 size-5"
+                    required
+                    checked={person.refundAcknowledged}
+                    onChange={(event) => updateAttendee(person.key, { refundAcknowledged: event.target.checked })}
+                  />
+                  I have read the refund policy
+                </label>
+              </section>
+            );
+          })}
+
+          {attendees.map((person) => (
+            <div key={`notes-${person.key}`} className="space-y-3">
+              {attendees.length > 1 ? (
+                <h2 className="font-display text-2xl">
+                  {person.givenName.trim() || "Person"} {person.familyName.trim()}
+                </h2>
+              ) : null}
+              <Field label="Anything else we should know?">
+                <Textarea
+                  value={person.notes}
+                  maxLength={500}
+                  onChange={(event) => updateAttendee(person.key, { notes: event.target.value })}
+                />
+              </Field>
+            </div>
           ))}
 
           <label className="flex min-h-11 items-center gap-2 text-sm">

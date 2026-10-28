@@ -4,6 +4,7 @@ import { CopyPreview } from "@/components/copy-preview";
 import { Gated } from "@/components/gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { PERSON_ROLES } from "@/lib/crm/constants";
 import { DEFAULT_TZ, fromDatetimeLocal, toDatetimeLocal } from "@/lib/crm/format";
 import {
   getRegistrationSetup,
@@ -60,12 +61,17 @@ type TicketDraft = {
   sortOrder: number;
   partIds: string[];
   paymentLink: string;
+  affiliationPrompt: string;
+  personRole: string;
 };
 
 type PageDraft = {
   intro: string;
   forSchools: string;
   manageMessage: string;
+  housingInfo: string;
+  housingNights: string;
+  refundPolicy: string;
 };
 
 type AgreementDraft = {
@@ -132,6 +138,8 @@ function toTicketDrafts(data: Setup, timeZone: string): TicketDraft[] {
     sortOrder: ticket.sort_order,
     partIds: ticket.partIds,
     paymentLink: ticket.payment_link ?? "",
+    affiliationPrompt: ticket.affiliation_prompt ?? "",
+    personRole: ticket.person_role ?? "",
   }));
 }
 
@@ -160,7 +168,14 @@ function RegistrationInner() {
   const [timeZone, setTimeZone] = useState(DEFAULT_TZ);
   const [parts, setParts] = useState<PartDraft[]>([]);
   const [tickets, setTickets] = useState<TicketDraft[]>([]);
-  const [page, setPage] = useState<PageDraft>({ intro: "", forSchools: "", manageMessage: "" });
+  const [page, setPage] = useState<PageDraft>({
+    intro: "",
+    forSchools: "",
+    manageMessage: "",
+    housingInfo: "",
+    housingNights: "",
+    refundPolicy: "",
+  });
   const [bookOn, setBookOn] = useState(false);
   const [hostAllows, setHostAllows] = useState(false);
   const [publicSlug, setPublicSlug] = useState<string | null>(null);
@@ -179,6 +194,9 @@ function RegistrationInner() {
         intro: data.page.intro ?? "",
         forSchools: data.page.for_schools ?? "",
         manageMessage: data.page.manage_message ?? "",
+        housingInfo: data.page.housing_info ?? "",
+        housingNights: data.page.housing_nights ?? "",
+        refundPolicy: data.page.refund_policy ?? "",
       });
       setBookOn(data.page.use_book_registration);
       setHostAllows(data.bookRegistrationAllowed);
@@ -263,6 +281,8 @@ function RegistrationInner() {
         sortOrder: nextSort(list),
         partIds: [],
         paymentLink: "",
+        affiliationPrompt: "",
+        personRole: "",
       },
     ]);
   }
@@ -526,6 +546,37 @@ function RegistrationInner() {
                   />
                 </Field>
               ) : null}
+              <Field label="Extra question for this ticket">
+                <Input
+                  value={ticket.affiliationPrompt}
+                  maxLength={80}
+                  placeholder="Your school"
+                  onChange={(event) =>
+                    setTickets((list) =>
+                      list.map((row) =>
+                        row.key === ticket.key ? { ...row, affiliationPrompt: event.target.value } : row,
+                      ),
+                    )
+                  }
+                />
+              </Field>
+              <Field label="Role in People">
+                <Select
+                  value={ticket.personRole}
+                  onChange={(event) =>
+                    setTickets((list) =>
+                      list.map((row) => (row.key === ticket.key ? { ...row, personRole: event.target.value } : row)),
+                    )
+                  }
+                >
+                  <option value="">None</option>
+                  {PERSON_ROLES.map((role) => (
+                    <option key={role.key} value={role.key}>
+                      {role.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               <Field label="Description">
                 <Textarea
                   value={ticket.description}
@@ -665,6 +716,10 @@ function RegistrationInner() {
                           ...(cents != null && cents > 0 && ticket.paymentLink.trim()
                             ? { paymentLink: ticket.paymentLink.trim() }
                             : {}),
+                          ...(ticket.affiliationPrompt.trim()
+                            ? { affiliationPrompt: ticket.affiliationPrompt.trim() }
+                            : {}),
+                          ...(ticket.personRole ? { personRole: ticket.personRole } : {}),
                         },
                       }),
                     );
@@ -712,6 +767,29 @@ function RegistrationInner() {
           />
         </Field>
         <CopyPreview value={page.manageMessage} />
+        <Field label="Housing information">
+          <Textarea
+            value={page.housingInfo}
+            onChange={(event) => setPage({ ...page, housingInfo: event.target.value })}
+          />
+        </Field>
+        <p className="text-sm text-muted">Shown on the form. Start with &lt;section&gt; for HTML.</p>
+        <CopyPreview value={page.housingInfo} />
+        <Field label="Housing nights">
+          <Textarea
+            value={page.housingNights}
+            onChange={(event) => setPage({ ...page, housingNights: event.target.value })}
+          />
+        </Field>
+        <p className="text-sm text-muted">One night per line, for example Thursday, April 15. Up to 7.</p>
+        <Field label="Refund policy">
+          <Textarea
+            value={page.refundPolicy}
+            onChange={(event) => setPage({ ...page, refundPolicy: event.target.value })}
+          />
+        </Field>
+        <p className="text-sm text-muted">Shown when a paid ticket is chosen. Start with &lt;section&gt; for HTML.</p>
+        <CopyPreview value={page.refundPolicy} />
         <Button
           type="button"
           disabled={busy}
@@ -723,6 +801,9 @@ function RegistrationInner() {
                   intro: page.intro,
                   forSchools: page.forSchools,
                   manageMessage: page.manageMessage,
+                  housingInfo: page.housingInfo,
+                  housingNights: page.housingNights,
+                  refundPolicy: page.refundPolicy,
                 },
               }),
             )

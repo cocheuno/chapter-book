@@ -9,6 +9,7 @@ import {
   RELATIONSHIP_MAX,
   SIGNATURE_MAX,
 } from "../payments/consent-rules.ts";
+import { detailsRequest } from "../payments/registration-details.ts";
 
 const attendeeInput = z.object({
   givenName: z.string().max(100),
@@ -31,6 +32,7 @@ const attendeeInput = z.object({
   photoRelease: z.boolean().optional(),
   agreed: z.boolean().optional(),
   signature: z.string().max(SIGNATURE_MAX).optional(),
+  details: detailsRequest.optional(),
 });
 
 export const registrationInput = z.object({
