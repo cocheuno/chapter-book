@@ -52,6 +52,7 @@ describe("AUDIT_ACTIONS", () => {
       "conference_session_removed",
       "event_web_page_set",
       "registration_setup_saved",
+      "ticket_price_changed",
       "registration_created",
       "registration_switch",
       "registration_cancelled",
@@ -200,6 +201,9 @@ describe("auditSummary", () => {
   });
 
   it("names the registration code and how consent was received", () => {
+    assert.equal(auditSummary("ticket_price_changed", { name: "Student" }), "Student");
+    assert.equal(AUDIT_ACTIONS.ticket_price_changed.label, "Ticket price or link changed");
+    assert.equal(AUDIT_ACTIONS.ticket_price_changed.group, "registration");
     assert.equal(auditSummary("registration_marked_paid", { code: "R27-ABCD", amountCents: 2500 }), "R27-ABCD, 2500");
     assert.equal(auditSummary("registration_refunded", { code: "R27-ABCD", amountCents: 2500 }), "R27-ABCD, 2500");
     assert.equal(auditSummary("consent_received", { code: "R27-ABCD", method: "paper" }), "R27-ABCD, paper");

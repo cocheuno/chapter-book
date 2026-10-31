@@ -1,4 +1,7 @@
+import { formatCents } from "./pricing.ts";
+
 const STRIPE_LINK = "https://buy.stripe.com/";
+const STRIPE_BODY = /^[A-Za-z0-9]{10,}$/;
 
 export const PAYMENT_LINK_PASTE =
   "Paste the Stripe Payment Link (it starts with https://buy.stripe.com/).";
@@ -50,6 +53,63 @@ export function paidRegistrationError(plan: PaidRegistrationPlan): string | null
     return PAID_UNAVAILABLE;
   }
   return null;
+}
+
+export type PriceChangeInput = {
+  issued: boolean;
+  pendingHolds: number;
+  isAdmin: boolean;
+  linkChanged: boolean;
+  priceChanged: boolean;
+  confirmMatches: boolean;
+};
+
+/**
+ * Null when the save may store the price and payment link.
+ * An editor may change other fields. A link always needs an admin.
+ * An issued ticket's price or link also needs the new price typed back.
+ */
+export function priceChangeCheck(input: PriceChangeInput): string | null {
+  if (input.linkChanged && !input.isAdmin) return "Only an admin can set a payment link.";
+  if (!input.issued || (!input.priceChanged && !input.linkChanged)) return null;
+  if (input.priceChanged && input.pendingHolds > 0) {
+    return `${input.pendingHolds} registrations are still awaiting payment at the current price. Wait for them to be paid or to lapse first.`;
+  }
+  if (!input.isAdmin || !input.confirmMatches) {
+    return "Tickets were already issued. Type the new price to confirm.";
+  }
+  return null;
+}
+
+/** `pi_` is a payment intent. `ch_` and `py_` are charges. Null when the text is empty or malformed. */
+export function parseStripePaymentId(
+  text: string,
+): { column: "stripe_payment_intent_id" | "stripe_charge_id"; id: string } | null {
+  const id = text.trim();
+  const body = id.slice(3);
+  if (!STRIPE_BODY.test(body)) return null;
+  if (id.startsWith("pi_")) return { column: "stripe_payment_intent_id", id };
+  if (id.startsWith("ch_") || id.startsWith("py_")) return { column: "stripe_charge_id", id };
+  return null;
+}
+
+/** Null when the text is empty or a Stripe refund id. A non-empty other value is refused. */
+export function refundIdError(text: string): string | null {
+  const id = text.trim();
+  if (!id) return null;
+  if (id.startsWith("re_") && STRIPE_BODY.test(id.slice(3))) return null;
+  return "Enter the Stripe refund ID (it starts with re_).";
+}
+
+/** Null when the typed amount is the registration total. */
+export function amountMismatch(totalCents: number, amountCents: number): string | null {
+  if (totalCents === amountCents) return null;
+  return `The total is ${formatCents(totalCents)} but you entered ${formatCents(amountCents)}.`;
+}
+
+/** The manage page shows a pay link only while the event is open, the registration is pending, and the hold has not lapsed. */
+export function payLinkVisible(input: { open: boolean; status: string; lapsed: boolean }): boolean {
+  return input.open && input.status === "pending" && !input.lapsed;
 }
 
 /** Desk and manage-page words for a stored registration status. */

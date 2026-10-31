@@ -211,12 +211,25 @@ function keyPresent(value: string | undefined): boolean {
   return (value ?? "").trim() !== "";
 }
 
-export function turnstileMode(env: { siteKey?: string; secretKey?: string }): "skip" | "verify" | "misconfigured" {
+/**
+ * Both keys verify. One key is misconfigured.
+ * No keys are misconfigured on Production and skipped everywhere else.
+ * Callers pass `VERCEL_ENV` as `vercelEnv`.
+ */
+export function turnstileMode(
+  env: { siteKey?: string; secretKey?: string },
+  vercelEnv?: string | null,
+): "skip" | "verify" | "misconfigured" {
   const site = keyPresent(env.siteKey);
   const secret = keyPresent(env.secretKey);
   if (site && secret) return "verify";
-  if (!site && !secret) return "skip";
-  return "misconfigured";
+  if (site !== secret) return "misconfigured";
+  return vercelEnv === "production" ? "misconfigured" : "skip";
+}
+
+/** True when this address has already used its attempts for the hour. */
+export function throttleRefuses(count: number): boolean {
+  return Number.isFinite(count) && count >= THROTTLE_LIMIT;
 }
 
 export function agreementsAccepted(latestIds: string[], acceptedIds: string[]): boolean {

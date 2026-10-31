@@ -4,7 +4,8 @@ import { z } from "zod";
 import { getSql, withSavepoint, withTransaction } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
-import { bookRegistrationAllowed } from "./book-registration";
+import { registrationOpen } from "./book-registration";
+import { eventRegistrationOpen, recordThrottleFailure, spamModeNow, throttleCount } from "./registration-gate";
 import { calendarHref } from "./calendar-file";
 import { todayIn } from "./dates";
 import { lowerEmail, nid } from "./ids";
@@ -14,7 +15,7 @@ import { findPersonByEmail } from "./person-emails";
 import { hashInviteToken, newInviteToken } from "./operator-rules";
 import { publicOrigin } from "./page-head";
 import { guardianConsentErrors, type GuardianConsentInput } from "@/lib/payments/consent-rules";
-import { paymentLinkError, paidRegistrationError, payUrl } from "@/lib/payments/payment-link-rules";
+import { paidRegistrationError, payLinkVisible, payUrl, paymentLinkError } from "@/lib/payments/payment-link-rules";
 import {
   blankDetails,
   detailsErrors,
@@ -35,7 +36,6 @@ import {
 } from "@/lib/payments/person-sync";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
-  THROTTLE_LIMIT,
   agreementsAccepted,
   duplicateAttendees,
   duplicateRegistrationMessage,
@@ -45,6 +45,7 @@ import {
   registrationCode,
   reviewChanges,
   shownTextMismatch,
+  throttleRefuses,
   turnstileMode,
   type RegistrationCatalog,
 } from "@/lib/payments/registration-rules";
@@ -256,10 +257,11 @@ export async function findRegistrationEvent(
     startsAt: row.starts_at,
     timezone: row.timezone,
     chapterTimezone: row.chapter_timezone,
-    enabled:
-      bookRegistrationAllowed(
-        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
-      ) && row.use_book_registration === true,
+    enabled: registrationOpen({
+      flag: readEnv("BOOK_REGISTRATION"),
+      spamMode: spamModeNow(),
+      eventSwitch: row.use_book_registration === true,
+    }),
     intro: row.intro,
     forSchools: row.for_schools,
     manageMessage: row.manage_message,
@@ -739,26 +741,23 @@ function keepRegistrationError(message: string): boolean {
 export const createRegistration = createServerFn({ method: "POST" })
   .validator(registrationInput.parse)
   .handler(async ({ data }) => {
-    if ((data.website ?? "").trim()) throw new Error("Please try again.");
     const sql = await getSql();
     const ip = clientIp();
-    // A raw IP is never stored. The throttle key is a hash.
+    // A raw IP is never stored. The throttle key is a hash. Only failures count.
     const throttleKey = `register:${hashInviteToken(ip)}`;
-    const throttled = await sql<{ count: number | string }>`
-      insert into public_throttle (key, window_start, count) values (${throttleKey}, now(), 1)
-      on conflict (key) do update set
-        count = case when public_throttle.window_start < now() - interval '1 hour' then 1 else public_throttle.count + 1 end,
-        window_start = case when public_throttle.window_start < now() - interval '1 hour' then now() else public_throttle.window_start end
-      returning count
-    `;
-    if (asNumber(throttled[0]?.count) > THROTTLE_LIMIT) {
+    if (throttleRefuses(await throttleCount(sql, throttleKey))) {
       throw new Error("Too many attempts. Please try again in an hour.");
     }
+    try {
+    if ((data.website ?? "").trim()) throw new Error("Please try again.");
 
-    const mode = turnstileMode({
-      siteKey: readEnv("TURNSTILE_SITE_KEY"),
-      secretKey: readEnv("TURNSTILE_SECRET_KEY"),
-    });
+    const mode = turnstileMode(
+      {
+        siteKey: readEnv("TURNSTILE_SITE_KEY"),
+        secretKey: readEnv("TURNSTILE_SECRET_KEY"),
+      },
+      readEnv("VERCEL_ENV"),
+    );
     if (mode === "misconfigured") throw new Error("Registration is not available right now.");
     if (mode === "verify") await verifyTurnstile(data.turnstileToken, ip, readEnv("TURNSTILE_SECRET_KEY") ?? "");
 
@@ -1167,6 +1166,10 @@ export const createRegistration = createServerFn({ method: "POST" })
       if (err instanceof Error && keepRegistrationError(err.message)) throw err;
       throw new Error("Registration could not be completed. Please try again.");
     }
+    } catch (err) {
+      await recordThrottleFailure(sql, throttleKey);
+      throw err;
+    }
   });
 
 async function placeParticipation(
@@ -1247,7 +1250,9 @@ export const getManagePage = createServerFn({ method: "GET" })
       total_cents: number | string;
       purchaser_email: string;
       created_at: Date | string;
+      event_id: string;
       event_title: string;
+      hold_hours: number | string | null;
       when_label: string | null;
       location: string | null;
       kind: string | null;
@@ -1258,9 +1263,10 @@ export const getManagePage = createServerFn({ method: "GET" })
       contact_line: string | null;
       public_title: string | null;
     }>`
-      select r.id, r.code, r.status, r.total_cents, r.purchaser_email, r.created_at, e.title as event_title,
+      select r.id, r.code, r.status, r.total_cents, r.purchaser_email, r.created_at, e.id as event_id,
+             e.title as event_title,
              i.when_label, i.location, i.kind, i.slug, i.starts_on, i.published,
-             rp.manage_message, c.contact_line, s.public_title
+             rp.manage_message, rp.hold_hours, c.contact_line, s.public_title
       from registrations r
       join events e on e.id = r.event_id and e.chapter_id = r.chapter_id
       join chapters c on c.id = r.chapter_id
@@ -1272,7 +1278,13 @@ export const getManagePage = createServerFn({ method: "GET" })
     `;
     const row = rows[0];
     if (!row) return null;
-    const payLinks = await sql<{ payment_link: string | null }>`
+    const open = await eventRegistrationOpen(sql, chapterId, row.event_id);
+    const rawHours = row.hold_hours;
+    const holdHours = rawHours == null || rawHours === "" ? null : Number(rawHours);
+    const lapsed = row.status === "pending" && holdLapsed(row.created_at, new Date(), holdHours);
+    const showPay = payLinkVisible({ open, status: row.status, lapsed });
+    const payLinks = showPay
+      ? await sql<{ payment_link: string | null }>`
       select t.payment_link
       from registration_attendees a
       join attendee_items ai on ai.attendee_id = a.id
@@ -1284,8 +1296,9 @@ export const getManagePage = createServerFn({ method: "GET" })
         and t.kind = 'admission'
       order by t.sort_order, t.name
       limit 1
-    `;
-    const link = row.status === "pending" ? storedPaymentLink(payLinks[0]?.payment_link) : null;
+    `
+      : [];
+    const link = showPay ? storedPaymentLink(payLinks[0]?.payment_link) : null;
     const people = await sql<{
       id: string;
       given_name: string;
@@ -1329,6 +1342,7 @@ export const getManagePage = createServerFn({ method: "GET" })
       }),
       code: row.code,
       status: row.status,
+      holdLapsed: lapsed,
       totalCents: asNumber(row.total_cents),
       payUrl: link ? payUrl(link, row.code, row.purchaser_email) : null,
       created_at: iso(row.created_at) ?? "",

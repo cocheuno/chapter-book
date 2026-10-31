@@ -26,10 +26,10 @@ The database variables come from Vercel's Neon integration; the others are typed
 | `PRODUCTION_DB_ENDPOINT` | **Preview** only. Production's Neon endpoint id (`ep-…`); see H1 step 3 |
 | `FOUNDER_EMAIL` | **Production** only. The address of the chapter's admin account. Only that address can open an empty hosted book. |
 | `GROK_CHROME` | Optional. `off` always turns it off and `on` always turns it on. Unset means off on every Vercel deployment. Keep it set to `off` on Production and Preview. |
-| `BOOK_REGISTRATION` | Leave unset: tickets are sold through Stripe Payment Links. |
+| `BOOK_REGISTRATION` | `on` opens in-book registration on this deployment; an admin still turns it on per event. Unset or any other value keeps the register, consent and pay links closed. Set it on Production only when the chapter is ready (see PAYMENTS-RUNBOOK.md). |
 | `BROKER_SIGNIN` | Leave unset on Vercel (Production and Preview). Grok's Google/X sign-in service then stays off wherever `BETTER_AUTH_URL` is set. Set to `on` only for a deployment that must use it. |
-| `TURNSTILE_SITE_KEY` | **Production:** the real widget's site key. **Preview:** Cloudflare's test key `1x00000000000000000000AA`. When neither Turnstile key is set, the check is skipped. |
-| `TURNSTILE_SECRET_KEY` | **Production:** the real widget's secret key. **Preview:** Cloudflare's test key `1x0000000000000000000000000000000AA`. When neither Turnstile key is set, the check is skipped. |
+| `TURNSTILE_SITE_KEY` | **Production:** the real widget's site key. **Preview:** Cloudflare's test key `1x00000000000000000000AA`. On Production, registration and consent stay closed unless both keys are set. On Preview and locally, no keys means no check. |
+| `TURNSTILE_SECRET_KEY` | **Production:** the real widget's secret key. **Preview:** Cloudflare's test key `1x0000000000000000000000000000000AA`. On Production, registration and consent stay closed unless both keys are set. On Preview and locally, no keys means no check. |
 
 Do not paste these into GitHub, Slack, or chat.
 
@@ -142,9 +142,9 @@ Do not paste a password, connection string, or secret into git, GitHub, Slack, o
 
 **Monthly.** An admin opens Chapter → Export spreadsheets → Download full export, and saves the zip in the chapter's private storage (a folder only officers can open). Delete exports older than a year.
 
-**Monthly restore point.** The Neon free plan keeps only 6 hours of history, so once a month, in the Neon console, create a branch from main named `backup-YYYY-MM` (no compute needed). Keep the last three and delete older ones. To restore: first make a fresh `backup-YYYY-MM-DD` branch of the current main, then use Neon's Restore on main with the backup branch as the source, then check the site.
+**Monthly restore point.** The Neon free plan keeps only 6 hours of history, so once a month, in the Neon console, create a branch from main named `backup-YYYY-MM` (no compute needed). Keep the last three and delete older ones. To restore: first make a fresh `backup-YYYY-MM-DD` branch of the current main, then use Neon's Restore on main with the backup branch as the source, then redeploy Production in Vercel (Deployments, the latest Production row, the ⋯ menu, Redeploy), then check the site.
 
-**Once a quarter, restore drill.** In the Neon console, open the project → Branches → Create branch from main, named `restore-drill-<yyyy-mm>`, not connected to Vercel. Open its SQL Editor and compare a few counts with the book (people, events, participations). Then delete that branch. The free Neon plan keeps only a short restore window, which is why the monthly export matters.
+**Once a quarter, restore drill.** In the Neon console, create a branch from the latest `backup-YYYY-MM` branch (not from main), named `restore-drill-YYYY-MM`, not connected to Vercel. Compare its row count for every table with main, allowing for changes made since the backup. Then delete the drill branch. Last drill: October 19, 2026, from backup-2026-10: all 50 tables matched.
 
 ## Cloudflare (later)
 

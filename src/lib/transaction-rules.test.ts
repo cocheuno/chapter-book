@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { runInTransaction, runSavepoint, savepointName, type TransactionClient } from "./transaction-rules.ts";
+import { fileURLToPath } from "node:url";
+import {
+  busyError,
+  runInTransaction,
+  runSavepoint,
+  savepointName,
+  type TransactionClient,
+} from "./transaction-rules.ts";
 
 function fakeClient(opts?: { rollbackError?: string; releaseError?: string; commitCommand?: string }) {
   const calls: string[] = [];
@@ -66,6 +75,27 @@ describe("runInTransaction", () => {
     );
   });
 
+  it("runs setup statements after begin and before the work", async () => {
+    const { calls, client } = fakeClient();
+    const setup = [
+      "set local lock_timeout = '5s'",
+      "set local statement_timeout = '15s'",
+      "set local idle_in_transaction_session_timeout = '30s'",
+    ];
+    let during: string[] = [];
+    const value = await runInTransaction(
+      client,
+      async () => {
+        during = [...calls];
+        return "kept";
+      },
+      setup,
+    );
+    assert.equal(value, "kept");
+    assert.deepEqual(during, ["begin", ...setup]);
+    assert.deepEqual(calls, ["begin", ...setup, "commit", "release"]);
+  });
+
   it("throws when commit reports ROLLBACK", async () => {
     const { calls, client, released } = fakeClient({ commitCommand: "ROLLBACK" });
     await assert.rejects(
@@ -74,6 +104,28 @@ describe("runInTransaction", () => {
     );
     assert.deepEqual(calls, ["begin", "commit", "rollback", "release"]);
     assert.equal(released(), undefined);
+  });
+});
+
+describe("busyError", () => {
+  it("turns a lock or statement timeout into one sentence and leaves other errors alone", () => {
+    const busy = "The book is busy. Please try again in a moment.";
+    const lock = busyError({ code: "55P03" });
+    const statement = busyError({ code: "57014" });
+    assert.ok(lock instanceof Error && lock.message === busy);
+    assert.ok(statement instanceof Error && statement.message === busy);
+    const other = new Error("nope");
+    assert.equal(busyError(other), other);
+    assert.equal(busyError("nope"), "nope");
+  });
+
+  it("the postgres path sets the three timeouts, in order, and maps the busy error", () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "db.ts"), "utf8");
+    const lock = source.indexOf("set local lock_timeout = '5s'");
+    const statement = source.indexOf("set local statement_timeout = '15s'");
+    const idle = source.indexOf("set local idle_in_transaction_session_timeout = '30s'");
+    assert.ok(lock >= 0 && lock < statement && statement < idle);
+    assert.equal(source.includes("throw busyError(err)"), true);
   });
 });
 

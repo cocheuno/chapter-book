@@ -390,23 +390,48 @@ function RegistrationsInner() {
                 "Registration cancelled",
               );
             }}
-            onMarkPaid={(note) => {
+            onMarkPaid={(fields) => {
+              void (async () => {
+                setBusy(true);
+                try {
+                  const payload = {
+                    eventId,
+                    registrationId: registration.id,
+                    amount: fields.amount,
+                    stripePaymentId: fields.stripePaymentId,
+                    ...(fields.note.trim() ? { note: fields.note.trim() } : {}),
+                  };
+                  try {
+                    await markRegistrationPaid({ data: payload });
+                  } catch (err) {
+                    const message = err instanceof Error ? err.message : "Could not save";
+                    if (message.startsWith("The total is ") && window.confirm(`${message} Record anyway?`)) {
+                      await markRegistrationPaid({ data: { ...payload, amountConfirmed: true } });
+                    } else {
+                      toast.error(message);
+                      return;
+                    }
+                  }
+                  toast.success("Marked paid");
+                  await load();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not save");
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+            onRefund={(stripeRefundId) => {
+              if (!window.confirm("Refunded in Stripe — cancel this registration?")) return;
               void run(
                 () =>
-                  markRegistrationPaid({
+                  refundRegistration({
                     data: {
                       eventId,
                       registrationId: registration.id,
-                      ...(note.trim() ? { note: note.trim() } : {}),
+                      ...(stripeRefundId.trim() ? { stripeRefundId: stripeRefundId.trim() } : {}),
                     },
                   }),
-                "Marked paid",
-              );
-            }}
-            onRefund={() => {
-              if (!window.confirm("Refunded in Stripe — cancel this registration?")) return;
-              void run(
-                () => refundRegistration({ data: { eventId, registrationId: registration.id } }),
                 "Registration refunded",
               );
             }}
@@ -544,8 +569,8 @@ function RegistrationCard({
   onSaveRename: (attendeeId: string) => void;
   onCancelAttendee: (attendee: Attendee) => void;
   onCancelRegistration: () => void;
-  onMarkPaid: (note: string) => void;
-  onRefund: () => void;
+  onMarkPaid: (fields: { amount: string; stripePaymentId: string; note: string }) => void;
+  onRefund: (stripeRefundId: string) => void;
   onApplyChanges: (attendeeId: string) => void;
   onDismissChanges: (attendeeId: string) => void;
   onCopyEmail: () => void;
@@ -559,7 +584,11 @@ function RegistrationCard({
   const [paperPhone, setPaperPhone] = useState("");
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConsentDetail | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState(() => formatCents(registration.totalCents));
+  const [stripePaymentId, setStripePaymentId] = useState("");
   const [receiptNote, setReceiptNote] = useState("");
+  const [refundId, setRefundId] = useState("");
   const unpaid = registration.status === "free" || registration.status === "pending";
 
   return (
@@ -573,6 +602,11 @@ function RegistrationCard({
             </Badge>
           </div>
           <p className="text-sm text-muted">{formatCents(registration.totalCents)}</p>
+          {registration.status === "paid" && registration.netPaidCents !== registration.totalCents ? (
+            <p className="text-sm font-medium text-amber-800">
+              Paid {formatCents(registration.netPaidCents)} of {formatCents(registration.totalCents)}
+            </p>
+          ) : null}
           <p className="text-sm text-muted">{formatWhen(registration.createdAt, "date")}</p>
           <p>
             {registration.purchaserName} · {registration.purchaserEmail}
@@ -588,25 +622,70 @@ function RegistrationCard({
               </Button>
             ) : null}
             {registration.status === "pending" ? (
-              <div className="space-y-2">
-                <label className="block text-sm text-ink-soft">
-                  Stripe receipt or note
-                  <Input
-                    value={receiptNote}
-                    maxLength={200}
-                    aria-label="Stripe receipt or note"
-                    onChange={(event) => setReceiptNote(event.target.value)}
-                  />
-                </label>
-                <Button type="button" variant="secondary" disabled={busy} onClick={() => onMarkPaid(receiptNote)}>
+              payOpen ? (
+                <div className="space-y-2">
+                  <label className="block text-sm text-ink-soft">
+                    Amount
+                    <Input
+                      value={payAmount}
+                      inputMode="decimal"
+                      aria-label="Amount"
+                      onChange={(event) => setPayAmount(event.target.value)}
+                    />
+                  </label>
+                  <label className="block text-sm text-ink-soft">
+                    Stripe payment ID
+                    <Input
+                      value={stripePaymentId}
+                      aria-label="Stripe payment ID"
+                      placeholder="pi_"
+                      onChange={(event) => setStripePaymentId(event.target.value)}
+                    />
+                  </label>
+                  <label className="block text-sm text-ink-soft">
+                    Note
+                    <Input
+                      value={receiptNote}
+                      maxLength={200}
+                      aria-label="Note"
+                      onChange={(event) => setReceiptNote(event.target.value)}
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => onMarkPaid({ amount: payAmount, stripePaymentId, note: receiptNote })}
+                    >
+                      Mark paid
+                    </Button>
+                    <Button type="button" variant="ghost" disabled={busy} onClick={() => setPayOpen(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => setPayOpen(true)}>
                   Mark paid
                 </Button>
-              </div>
+              )
             ) : null}
             {registration.status === "paid" ? (
-              <Button type="button" variant="secondary" disabled={busy} onClick={onRefund}>
-                Refunded in Stripe — cancel
-              </Button>
+              <div className="space-y-2">
+                <label className="block text-sm text-ink-soft">
+                  Stripe refund ID
+                  <Input
+                    value={refundId}
+                    aria-label="Stripe refund ID"
+                    placeholder="re_"
+                    onChange={(event) => setRefundId(event.target.value)}
+                  />
+                </label>
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => onRefund(refundId)}>
+                  Refunded in Stripe — cancel
+                </Button>
+              </div>
             ) : null}
             <Button type="button" variant="ghost" disabled={busy} onClick={onCopyEmail}>
               Copy confirmation email

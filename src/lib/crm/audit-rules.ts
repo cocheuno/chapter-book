@@ -28,6 +28,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   conference_session_removed: { label: "Session removed", group: "website" },
   event_web_page_set: { label: "Event web page set", group: "website" },
   registration_setup_saved: { label: "Registration setup saved", group: "registration" },
+  ticket_price_changed: { label: "Ticket price or link changed", group: "registration" },
   registration_created: { label: "Registration created", group: "registration" },
   registration_switch: { label: "Registration switch", group: "registration" },
   registration_cancelled: { label: "Registration cancelled", group: "registration" },
@@ -139,6 +140,7 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "conference_session_removed":
       return text(row.name || row.title);
     case "registration_setup_saved":
+    case "ticket_price_changed":
       return [text(row.what), text(row.name)].filter(Boolean).join(": ");
     case "registration_switch":
     case "event_web_page_set":

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { bookRegistrationAllowed } from "./book-registration.ts";
+import { bookRegistrationAllowed, registrationOpen } from "./book-registration.ts";
 
 describe("bookRegistrationAllowed", () => {
   const cases: Array<[string, string | undefined, boolean]> = [
@@ -19,4 +19,16 @@ describe("bookRegistrationAllowed", () => {
       assert.equal(bookRegistrationAllowed(value), expected);
     });
   }
+});
+
+describe("registrationOpen", () => {
+  it("needs the host flag, a working spam check, and the event switch", () => {
+    assert.equal(registrationOpen({ flag: "on", spamMode: "verify", eventSwitch: true }), true);
+    assert.equal(registrationOpen({ flag: "on", spamMode: "skip", eventSwitch: true }), true);
+    assert.equal(registrationOpen({ flag: "ON", spamMode: "skip", eventSwitch: true }), true);
+    assert.equal(registrationOpen({ flag: "on", spamMode: "misconfigured", eventSwitch: true }), false);
+    assert.equal(registrationOpen({ flag: "off", spamMode: "verify", eventSwitch: true }), false);
+    assert.equal(registrationOpen({ flag: undefined, spamMode: "verify", eventSwitch: true }), false);
+    assert.equal(registrationOpen({ flag: "on", spamMode: "verify", eventSwitch: false }), false);
+  });
 });

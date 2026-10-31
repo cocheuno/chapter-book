@@ -188,12 +188,13 @@ Code changes must not change the chapter's current data, or what the public webs
 | 43 | SEO fields, sitemap, robots | 12, 40 | Ready | §9 |
 | 44 | Option A: page and menu hooks for GoDaddy | 40, 42 | Needs D1 = A | §9 |
 | 45 | Option B: the book serves the public site | 40–43 | Needs D1 = B, H13 | §9 |
-| 46 | Conference page section order | — | | |
-| 47 | Registration integrity before switching on (F05–F07) | 20 | | |
-| 48 | Pay with a Stripe Payment Link | 47 | | |
-| 49 | Registration form details | 48 | | |
-| 49b | Registrations update People (fill blanks; one-click apply) | 49 | | |
-| 81 | Registration safety before switching on (R3-01, R3-02, R3-07, R3-12) | 49b | | |
+| 46 | Conference page section order | — | Done (PR 57) | |
+| 47 | Registration integrity before switching on (F05–F07) | 20 | Done (PR 58) | |
+| 48 | Pay with a Stripe Payment Link | 47 | Done (PR 59) | |
+| 49 | Registration form details | 48 | Done (PR 60) | |
+| 49b | Registrations update People (fill blanks; one-click apply) | 49 | Done (PR 61) | |
+| 81 | Registration safety before switching on (R3-01, R3-02, R3-07, R3-12) | 49b | Done (PR 62) | |
+| 82 | Money, spam and docs before switching on (R3-04, R3-06, R3-10, R3-11, R3-14) | 81 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -772,7 +773,7 @@ Follow `docs/PAYMENTS.md`, **Phase 1**, with the Phase 1 prompt there, and `docs
 
 `docs/PAYMENTS.md`, **Phase 2**. Also add `offers` to the event JSON-LD (WP-12): price range, `availability`, `validFrom`.
 
-Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book registration stays off.
+October 2026: the chapter uses in-book registration with a Stripe Payment Link hand-off (WP-47–49b, 81, 82); see PAYMENTS.md, Current model.
 
 ### WP-22 Minors, groups, safe-environment records
 
@@ -806,7 +807,7 @@ Add an admin-only "Activity" list on the Chapter desk, with filters by action an
 
 **Done when:** an admin cannot use the book until enrolled; editors and viewers are unaffected.
 
-Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book registration stays off.
+October 2026: the chapter uses in-book registration with a Stripe Payment Link hand-off (WP-47–49b, 81, 82); see PAYMENTS.md, Current model.
 
 ### WP-25 Go live
 
@@ -817,7 +818,49 @@ Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book 
 
 Code: a small "Test mode" banner on the registrations desk whenever the Stripe key starts with `sk_test_`.
 
-Deferred (October 2026): tickets are sold through Stripe Payment Links; in-book registration stays off.
+October 2026: the chapter uses in-book registration with a Stripe Payment Link hand-off (WP-47–49b, 81, 82); see PAYMENTS.md, Current model.
+
+### WP-46 Conference page section order
+
+`site_items.section_order` (migration 0032) sets the order of sections on the conference page. An empty value keeps the default order.
+
+**Done when:** a filled order is what the page shows, and a blank order leaves the default.
+
+### WP-47 Registration integrity before switching on
+
+One transaction locks the event row. The duplicate check runs inside that lock. Agreement and consent texts are bound to the version the visitor was shown.
+
+**Done when:** two submissions cannot pass the duplicate check outside the lock, and the stored texts are the ones on the page.
+
+### WP-48 Pay with a Stripe Payment Link
+
+Ticket payment links (migration 0033). A paid registration stays 'pending' until the desk marks it paid.
+
+**Done when:** each paid ticket can store a Payment Link, and a paid registration is 'pending' until marked paid.
+
+### WP-49 Registration form details
+
+Housing, meals, accessibility, emergency contact, badge affiliation, and the refund acknowledgement (migration 0034). Emergency fields stay hidden from viewers.
+
+**Done when:** the form stores those details, and a viewer never receives the emergency fields.
+
+### WP-49b Registrations update People
+
+Blank People fields fill from the registration. A difference goes to one-click Apply or Dismiss.
+
+**Done when:** a blank field is filled, and a difference waits for Apply or Dismiss.
+
+### WP-81 Registration safety before switching on
+
+Holds lapse after hold_hours. Cancel restores the earlier RSVP. A role from the form goes to review. Duplicates match on the attendee email (migration 0035).
+
+**Done when:** a hold older than hold_hours can be released, cancel puts the earlier RSVP back, and the same attendee email cannot register twice.
+
+### WP-82 Money, spam and docs before switching on
+
+An admin sets a ticket's payment link. An issued ticket's price waits out pending holds and needs the new price typed back. On Production, registration stays closed unless both spam-check keys are set. Mark paid and refund record the Stripe id. Register, consent, and pay links share one gate.
+
+**Done when:** those rules are in the book, PAYMENTS-RUNBOOK.md is the treasurer's note, and in-book registration stays off until the chapter turns it on.
 
 ---
 
