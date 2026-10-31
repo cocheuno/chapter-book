@@ -72,7 +72,17 @@ type PageDraft = {
   housingInfo: string;
   housingNights: string;
   refundPolicy: string;
+  holdHours: string;
 };
+
+function holdHoursDraft(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const n = Number(trimmed);
+  if (n < 1 || n > 336) return undefined;
+  return n;
+}
 
 type AgreementDraft = {
   kind: (typeof AGREEMENTS)[number]["kind"];
@@ -175,6 +185,7 @@ function RegistrationInner() {
     housingInfo: "",
     housingNights: "",
     refundPolicy: "",
+    holdHours: "",
   });
   const [bookOn, setBookOn] = useState(false);
   const [hostAllows, setHostAllows] = useState(false);
@@ -197,6 +208,7 @@ function RegistrationInner() {
         housingInfo: data.page.housing_info ?? "",
         housingNights: data.page.housing_nights ?? "",
         refundPolicy: data.page.refund_policy ?? "",
+        holdHours: data.page.hold_hours == null ? "" : String(data.page.hold_hours),
       });
       setBookOn(data.page.use_book_registration);
       setHostAllows(data.bookRegistrationAllowed);
@@ -790,10 +802,26 @@ function RegistrationInner() {
         </Field>
         <p className="text-sm text-muted">Shown when a paid ticket is chosen. Start with &lt;section&gt; for HTML.</p>
         <CopyPreview value={page.refundPolicy} />
+        <Field label="Hold unpaid registrations for (hours)">
+          <Input
+            type="number"
+            min={1}
+            max={336}
+            step={1}
+            value={page.holdHours}
+            onChange={(event) => setPage({ ...page, holdHours: event.target.value })}
+          />
+        </Field>
+        <p className="text-sm text-muted">Blank means 72 hours. Use 1 to 336.</p>
         <Button
           type="button"
           disabled={busy}
-          onClick={() =>
+          onClick={() => {
+            const holdHours = holdHoursDraft(page.holdHours);
+            if (holdHours === undefined) {
+              toast.error("Hold hours must be a whole number from 1 to 336, or blank.");
+              return;
+            }
             void run(() =>
               saveRegistrationPage({
                 data: {
@@ -804,10 +832,11 @@ function RegistrationInner() {
                   housingInfo: page.housingInfo,
                   housingNights: page.housingNights,
                   refundPolicy: page.refundPolicy,
+                  holdHours,
                 },
               }),
-            )
-          }
+            );
+          }}
         >
           Save
         </Button>

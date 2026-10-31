@@ -80,6 +80,12 @@ function capacityOrNull(value: number | null | undefined): number | null {
   return value;
 }
 
+function storedHoldHours(value: number | string | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : null;
+}
+
 function requireText(value: string, message: string): string {
   const text = value.trim();
   if (!text) throw new Error(message);
@@ -187,9 +193,10 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
       housing_info: string | null;
       housing_nights: string | null;
       refund_policy: string | null;
+      hold_hours: number | string | null;
     }>`
       select use_book_registration, intro, for_schools, manage_message,
-             housing_info, housing_nights, refund_policy
+             housing_info, housing_nights, refund_policy, hold_hours
       from registration_pages
       where event_id = ${eventId} and chapter_id = ${member.chapterId}
     `;
@@ -244,6 +251,7 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
             housing_info: page.housing_info,
             housing_nights: page.housing_nights,
             refund_policy: page.refund_policy,
+            hold_hours: storedHoldHours(page.hold_hours),
           }
         : {
             use_book_registration: false,
@@ -253,6 +261,7 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
             housing_info: null,
             housing_nights: null,
             refund_policy: null,
+            hold_hours: null,
           },
       bookRegistrationAllowed: bookRegistrationAllowed(
         typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
@@ -616,6 +625,7 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
       housingInfo: z.string().nullable().optional(),
       housingNights: z.string().nullable().optional(),
       refundPolicy: z.string().nullable().optional(),
+      holdHours: z.number().int().min(1).max(336).nullable(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
@@ -628,6 +638,7 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
     const housingInfo = blankToNull(data.housingInfo);
     const housingNights = blankToNull(data.housingNights);
     const refundPolicy = blankToNull(data.refundPolicy);
+    const holdHours = data.holdHours;
     const existing = await sql<{
       intro: string | null;
       for_schools: string | null;
@@ -635,8 +646,9 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
       housing_info: string | null;
       housing_nights: string | null;
       refund_policy: string | null;
+      hold_hours: number | string | null;
     }>`
-      select intro, for_schools, manage_message, housing_info, housing_nights, refund_policy
+      select intro, for_schools, manage_message, housing_info, housing_nights, refund_policy, hold_hours
       from registration_pages
       where event_id = ${data.eventId} and chapter_id = ${member.chapterId}
     `;
@@ -647,15 +659,16 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
       housing_info: null,
       housing_nights: null,
       refund_policy: null,
+      hold_hours: null,
     };
     // The on/off switch stays untouched. setBookRegistration is the only writer.
     await sql`
       insert into registration_pages (
         event_id, chapter_id, intro, for_schools, manage_message,
-        housing_info, housing_nights, refund_policy, updated_at, updated_by
+        housing_info, housing_nights, refund_policy, hold_hours, updated_at, updated_by
       ) values (
         ${data.eventId}, ${member.chapterId}, ${intro}, ${forSchools}, ${manageMessage},
-        ${housingInfo}, ${housingNights}, ${refundPolicy}, now(), ${member.userId}
+        ${housingInfo}, ${housingNights}, ${refundPolicy}, ${holdHours}, now(), ${member.userId}
       )
       on conflict (event_id) do update set
         chapter_id = excluded.chapter_id,
@@ -665,6 +678,7 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
         housing_info = excluded.housing_info,
         housing_nights = excluded.housing_nights,
         refund_policy = excluded.refund_policy,
+        hold_hours = excluded.hold_hours,
         updated_at = now(),
         updated_by = excluded.updated_by
     `;
@@ -678,8 +692,9 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
           housing_info: housingInfo,
           housing_nights: housingNights,
           refund_policy: refundPolicy,
+          hold_hours: holdHours,
         },
-        ["intro", "for_schools", "manage_message", "housing_info", "housing_nights", "refund_policy"],
+        ["intro", "for_schools", "manage_message", "housing_info", "housing_nights", "refund_policy", "hold_hours"],
       ).length
     ) {
       await auditSetup(sql, member, data.eventId, { what: "page", name: event.title });

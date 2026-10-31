@@ -8,10 +8,12 @@ import {
   changesTaskTitle,
   reviewForDesk,
   reviewLineText,
+  pendingRoleKey,
   reviewLines,
   reviewRecord,
   reviewUpdates,
   syncPlan,
+  withRoleReview,
 } from "./person-sync.ts";
 
 const empty = {};
@@ -143,6 +145,20 @@ describe("review lines", () => {
 
   it("names the open task the desk closes", () => {
     assert.equal(changesTaskTitle("Ann Lee"), `${CHANGES_TASK_PREFIX}Ann Lee`);
+  });
+
+  it("holds a ticket role for an editor and shows the label", () => {
+    const review = withRoleReview(null, "student");
+    assert.deepEqual(review, { role: { book: null, typed: "student" } });
+    assert.equal(reviewLineText(reviewLines(review)[0]!), "Role: (none) → Student");
+    assert.equal(pendingRoleKey(review), "student");
+    assert.deepEqual(reviewUpdates(review), []);
+    const kept = { given_name: { book: "Ann", typed: "Anne" } };
+    assert.equal(withRoleReview(kept, " "), kept);
+    assert.deepEqual(withRoleReview(kept, "friend"), {
+      given_name: { book: "Ann", typed: "Anne" },
+      role: { book: null, typed: "friend" },
+    });
   });
 });
 

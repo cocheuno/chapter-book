@@ -254,8 +254,36 @@ export function duplicateAttendees(
   return null;
 }
 
-export function duplicateRegistrationMessage(email: string): string {
-  return `There is already a registration for ${email} for this event. Use the link on your confirmation page to see it, or contact the chapter.`;
+export const DEFAULT_HOLD_HOURS = 72;
+
+/**
+ * True when a pending registration is older than its hold.
+ * A null hold means 72 hours. A registration exactly that old has not lapsed.
+ * SQL twin, for a pending row: created_at + (coalesce(hold_hours, 72) * interval '1 hour') < now().
+ */
+export function holdLapsed(
+  createdAt: Date | string | null | undefined,
+  now: Date | string,
+  holdHours: number | null | undefined,
+): boolean {
+  if (createdAt == null || createdAt === "") return false;
+  const created = createdAt instanceof Date ? createdAt.getTime() : Date.parse(String(createdAt));
+  const current = now instanceof Date ? now.getTime() : Date.parse(String(now));
+  if (!Number.isFinite(created) || !Number.isFinite(current)) return false;
+  const hours = holdHours == null ? DEFAULT_HOLD_HOURS : holdHours;
+  if (!Number.isFinite(hours) || hours < 0) return false;
+  return current - created > hours * 60 * 60 * 1000;
+}
+
+/** Guest status to write when a registration lets go of the seat. */
+export function restoredGuestStatus(priorStatus: string | null, createdParticipation: boolean): string {
+  if (createdParticipation) return "declined";
+  const prior = (priorStatus ?? "").trim();
+  return prior || "declined";
+}
+
+export function duplicateRegistrationMessage(): string {
+  return "This person may already be registered for this event. Use the link on your confirmation page, or contact the chapter.";
 }
 
 /**

@@ -193,6 +193,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | 48 | Pay with a Stripe Payment Link | 47 | | |
 | 49 | Registration form details | 48 | | |
 | 49b | Registrations update People (fill blanks; one-click apply) | 49 | | |
+| 81 | Registration safety before switching on (R3-01, R3-02, R3-07, R3-12) | 49b | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |

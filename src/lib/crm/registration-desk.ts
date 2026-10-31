@@ -9,7 +9,13 @@ import { issueConsentLink, readConsentDetail, recordPaperConsent } from "./conse
 import { nid } from "./ids";
 import { assertAdmin, assertEditor, loadMember } from "./member";
 import { composePersonName } from "./names";
-import { CHANGES_TASK_PREFIX, reviewForDesk, reviewUpdates, type ReviewField } from "@/lib/payments/person-sync";
+import {
+  CHANGES_TASK_PREFIX,
+  pendingRoleKey,
+  reviewForDesk,
+  reviewUpdates,
+  type ReviewField,
+} from "@/lib/payments/person-sync";
 import { consentDetailsPurgeOpen, eventLastDay } from "@/lib/payments/consent-rules";
 import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
@@ -19,8 +25,10 @@ import {
   badgePrintName,
   dietaryTagCounts,
   lodgingLabel,
+  personRoleKey,
   readDetails,
 } from "@/lib/payments/registration-details";
+import { holdLapsed, restoredGuestStatus } from "@/lib/payments/registration-rules";
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
 
@@ -128,14 +136,70 @@ async function releaseAttendee(sql: Sql, chapterId: string, eventId: string, att
       continue;
     }
   }
+  const flags = await sql<{ prior_guest_status: string | null; created_participation: boolean | null }>`
+    select prior_guest_status, created_participation
+    from registration_attendees
+    where id = ${attendeeId} and chapter_id = ${chapterId}
+  `;
+  const nextStatus = restoredGuestStatus(
+    flags[0]?.prior_guest_status ?? null,
+    flags[0]?.created_participation === true,
+  );
   await sql`
-    update participations set guest_status = 'declined'
+    update participations set guest_status = ${nextStatus}
     where chapter_id = ${chapterId}
       and registration_attendee_id = ${attendeeId}
       and guest_status in ('attending', 'no_response', 'waitlisted')
     returning id
   `;
   return true;
+}
+
+/**
+ * Expires this event's pending registrations whose hold has lapsed.
+ * Caller runs this inside a transaction, after locking the event.
+ */
+export async function expireLapsedHolds(
+  sql: Sql,
+  input: { chapterId: string; eventId: string; actor: string },
+): Promise<number> {
+  const pages = await sql<{ hold_hours: number | string | null }>`
+    select hold_hours from registration_pages
+    where event_id = ${input.eventId} and chapter_id = ${input.chapterId}
+  `;
+  const rawHours = pages[0]?.hold_hours;
+  const holdHours = rawHours == null || rawHours === "" ? null : Number(rawHours);
+  const pending = await sql<{ id: string; code: string; created_at: Date | string }>`
+    select id, code, created_at
+    from registrations
+    where chapter_id = ${input.chapterId}
+      and event_id = ${input.eventId}
+      and status = 'pending'
+    for update
+  `;
+  const now = new Date();
+  let expired = 0;
+  for (const row of pending) {
+    if (!holdLapsed(row.created_at, now, holdHours)) continue;
+    const saved = await sql<{ id: string }>`
+      update registrations set status = 'expired'
+      where id = ${row.id} and chapter_id = ${input.chapterId} and status = 'pending'
+      returning id
+    `;
+    if (!saved[0]) continue;
+    await cancelOpenAttendees(sql, input.chapterId, input.eventId, row.id);
+    await cancelHeldMail(sql, input.chapterId, row.id);
+    await recordAudit(sql, {
+      chapterId: input.chapterId,
+      actor: input.actor,
+      action: "registration_hold_expired",
+      entity: "registration",
+      entityId: row.id,
+      detail: { code: row.code },
+    });
+    expired += 1;
+  }
+  return expired;
 }
 
 async function cancelOpenAttendees(sql: Sql, chapterId: string, eventId: string, registrationId: string) {
@@ -172,9 +236,10 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       starts_at: Date | string | null;
       ends_at: Date | string | null;
       timezone: string;
+      hold_hours: number | string | null;
     }>`
       select e.id, e.title, i.slug, coalesce(rp.use_book_registration, false) as switch_on,
-        e.starts_at, e.ends_at, e.timezone
+        e.starts_at, e.ends_at, e.timezone, rp.hold_hours
       from events e
       left join site_items i on i.id = e.public_item_id and i.chapter_id = e.chapter_id
       left join registration_pages rp on rp.event_id = e.id and rp.chapter_id = e.chapter_id
@@ -216,13 +281,20 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
     const ticketRows = await sql<{ id: string; name: string; kind: string; count: number }>`
       select t.id, t.name, t.kind,
         count(distinct case
-          when a.cancelled_at is null and r.status in ('free', 'paid', 'pending') then a.id
+          when a.cancelled_at is null
+            and r.status in ('free', 'paid', 'pending')
+            and (
+              r.status <> 'pending'
+              or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+            )
+          then a.id
         end)::int as count
       from ticket_types t
       left join attendee_items ai on ai.ticket_type_id = t.id
       left join registration_attendees a on a.id = ai.attendee_id and a.chapter_id = t.chapter_id
       left join registrations r
         on r.id = a.registration_id and r.chapter_id = a.chapter_id and r.event_id = t.event_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       where t.chapter_id = ${member.chapterId} and t.event_id = ${eventId}
       group by t.id, t.name, t.kind, t.sort_order
       order by t.sort_order, t.name
@@ -235,10 +307,15 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       join attendee_items ai on ai.attendee_id = a.id
       join ticket_type_parts tp on tp.ticket_type_id = ai.ticket_type_id
       join event_parts p on p.id = tp.part_id and p.chapter_id = a.chapter_id and p.event_id = r.event_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       where a.chapter_id = ${member.chapterId}
         and r.event_id = ${eventId}
         and a.cancelled_at is null
         and r.status in ('free', 'paid', 'pending')
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
       group by p.id
     `;
     const counted: Record<string, number> = {};
@@ -251,10 +328,15 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       join attendee_items ai on ai.attendee_id = a.id
       join ticket_type_parts tp on tp.ticket_type_id = ai.ticket_type_id
       join event_parts p on p.id = tp.part_id and p.chapter_id = a.chapter_id and p.event_id = r.event_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       where a.chapter_id = ${member.chapterId}
         and r.event_id = ${eventId}
         and a.cancelled_at is null
         and r.status in ('free', 'paid', 'pending')
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
         and p.is_meal
     `;
 
@@ -373,24 +455,28 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       if (row.ticket_name) attendee.tickets.push(row.ticket_name);
     }
 
-    const totals = await sql<{ active_registrations: number; since_yesterday: number }>`
-      select
-        count(*) filter (where status in ('free', 'paid', 'pending'))::int as active_registrations,
-        count(*) filter (
-          where status in ('free', 'paid', 'pending') and created_at >= now() - interval '24 hours'
-        )::int as since_yesterday
-      from registrations
-      where chapter_id = ${member.chapterId} and event_id = ${eventId}
-    `;
-    const people = await sql<{ n: number }>`
-      select count(*)::int as n
-      from registration_attendees a
-      join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
-      where a.chapter_id = ${member.chapterId}
-        and r.event_id = ${eventId}
-        and a.cancelled_at is null
-        and r.status in ('free', 'paid', 'pending')
-    `;
+    const now = new Date();
+    const rawHours = event.hold_hours;
+    const holdHours = rawHours == null || rawHours === "" ? null : Number(rawHours);
+    const lapsed = (status: string, createdAt: string) =>
+      status === "pending" && holdLapsed(createdAt, now, holdHours);
+    const activeRows = registrationRows.filter(
+      (row) =>
+        (row.status === "free" || row.status === "paid" || row.status === "pending") &&
+        !lapsed(row.status, row.created_at),
+    );
+    const dayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+    const sinceYesterday = activeRows.filter((row) => {
+      const created = Date.parse(row.created_at);
+      return Number.isFinite(created) && created >= dayAgo;
+    }).length;
+    const activeIds = new Set(activeRows.map((row) => row.id));
+    const activeAttendeeIds = new Set<string>();
+    for (const row of attendeeRows) {
+      if (row.cancelled_at != null) continue;
+      if (!activeIds.has(row.registration_id)) continue;
+      activeAttendeeIds.add(row.id);
+    }
 
     return {
       event: {
@@ -425,6 +511,7 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         id: row.id,
         code: row.code,
         status: row.status,
+        holdLapsed: lapsed(row.status, row.created_at),
         createdAt: row.created_at,
         purchaserName: row.purchaser_name,
         purchaserEmail: row.purchaser_email,
@@ -437,9 +524,9 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         ),
       })),
       totals: {
-        activeRegistrations: asNumber(totals[0]?.active_registrations),
-        activeAttendees: asNumber(people[0]?.n),
-        sinceYesterday: asNumber(totals[0]?.since_yesterday),
+        activeRegistrations: activeRows.length,
+        activeAttendees: activeAttendeeIds.size,
+        sinceYesterday,
       },
     };
   });
@@ -738,6 +825,25 @@ export const refundRegistration = createServerFn({ method: "POST" })
     });
   });
 
+export const releaseLapsedHolds = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((eventId: string) => z.string().min(1).parse(eventId))
+  .handler(async ({ context, data: eventId }) => {
+    const member = await editor(context.userId);
+    return withTransaction(async (tx) => {
+      const locked = await tx<{ id: string }>`
+        select id from events where id = ${eventId} and chapter_id = ${member.chapterId} for update
+      `;
+      if (!locked[0]) throw new Error("Event not found");
+      const released = await expireLapsedHolds(tx, {
+        chapterId: member.chapterId,
+        eventId,
+        actor: member.userId,
+      });
+      return { released };
+    });
+  });
+
 export const applyRegistrationChanges = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -769,7 +875,8 @@ export const applyRegistrationChanges = createServerFn({ method: "POST" })
         const attendee = attendees[0];
         if (!attendee) throw new Error("Attendee not found.");
         const updates = reviewUpdates(attendee.review_changes);
-        if (!attendee.person_id || updates.length === 0) continue;
+        const roleKey = personRoleKey(pendingRoleKey(attendee.review_changes));
+        if (!attendee.person_id || (updates.length === 0 && !roleKey)) continue;
         const people = await tx<{
           id: string;
           forgotten_at: Date | string | null;
@@ -797,53 +904,63 @@ export const applyRegistrationChanges = createServerFn({ method: "POST" })
         `;
         const person = people[0];
         if (!person || person.forgotten_at) continue;
-        const given = keptOrTyped(updates, "given_name", person.given_name);
-        const family = keptOrTyped(updates, "family_name", person.family_name);
-        const religious = keptOrTyped(updates, "religious_title", person.religious_title);
-        const academic = keptOrTyped(updates, "academic_title", person.academic_title);
-        const nameChanged = updates.some((row) => row.field === "given_name" || row.field === "family_name");
-        let displayName = person.display_name;
-        if (nameChanged) {
-          const composed = composePersonName({
-            religiousTitle: religious,
-            academicTitle: academic,
-            honorific: person.honorific,
-            givenName: given,
-            familyName: family,
-            middleName: person.middle_name,
-            middleInitial: person.middle_initial,
-            suffix: person.suffix,
-            postNominals: person.post_nominals,
-          }).trim();
-          if (composed) displayName = composed;
+        if (updates.length > 0) {
+          const given = keptOrTyped(updates, "given_name", person.given_name);
+          const family = keptOrTyped(updates, "family_name", person.family_name);
+          const religious = keptOrTyped(updates, "religious_title", person.religious_title);
+          const academic = keptOrTyped(updates, "academic_title", person.academic_title);
+          const nameChanged = updates.some((row) => row.field === "given_name" || row.field === "family_name");
+          let displayName = person.display_name;
+          if (nameChanged) {
+            const composed = composePersonName({
+              religiousTitle: religious,
+              academicTitle: academic,
+              honorific: person.honorific,
+              givenName: given,
+              familyName: family,
+              middleName: person.middle_name,
+              middleInitial: person.middle_initial,
+              suffix: person.suffix,
+              postNominals: person.post_nominals,
+            }).trim();
+            if (composed) displayName = composed;
+          }
+          const saved = await tx<{ id: string }>`
+            update persons set
+              given_name = ${given},
+              family_name = ${family},
+              religious_title = ${religious},
+              academic_title = ${academic},
+              city = ${keptOrTyped(updates, "city", person.city)},
+              state = ${keptOrTyped(updates, "state", person.state)},
+              phone = ${keptOrTyped(updates, "phone", person.phone)},
+              dietary = ${keptOrTyped(updates, "dietary", person.dietary)},
+              display_name = ${displayName}
+            where id = ${person.id} and chapter_id = ${member.chapterId} and forgotten_at is null
+            returning id
+          `;
+          if (!saved[0]) continue;
         }
-        const saved = await tx<{ id: string }>`
-          update persons set
-            given_name = ${given},
-            family_name = ${family},
-            religious_title = ${religious},
-            academic_title = ${academic},
-            city = ${keptOrTyped(updates, "city", person.city)},
-            state = ${keptOrTyped(updates, "state", person.state)},
-            phone = ${keptOrTyped(updates, "phone", person.phone)},
-            dietary = ${keptOrTyped(updates, "dietary", person.dietary)},
-            display_name = ${displayName}
-          where id = ${person.id} and chapter_id = ${member.chapterId} and forgotten_at is null
-          returning id
-        `;
-        if (!saved[0]) continue;
+        if (roleKey) {
+          await tx`
+            insert into person_roles (person_id, role_key) values (${person.id}, ${roleKey})
+            on conflict do nothing
+          `;
+        }
         await tx`
           update registration_attendees set review_changes = null
           where id = ${attendee.id} and chapter_id = ${member.chapterId}
         `;
         await completeChangesTask(tx, member.chapterId, data.eventId, person.id);
+        const fields: string[] = updates.map((row) => row.field);
+        if (roleKey) fields.push("role");
         await recordAudit(tx, {
           chapterId: member.chapterId,
           actor: member.userId,
           action: "registration_changes_applied",
           entity: "person",
           entityId: person.id,
-          detail: { code: attendee.code, fields: updates.map((row) => row.field) },
+          detail: { code: attendee.code, fields },
         });
       }
       return { ok: true as const };
@@ -968,9 +1085,15 @@ export const exportRegistrationAttendees = createServerFn({ method: "POST" })
         case when a.cancelled_at is null then 'active' else 'cancelled' end as attendee_status
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       left join attendee_items ai on ai.attendee_id = a.id
       left join ticket_types t on t.id = ai.ticket_type_id and t.chapter_id = a.chapter_id
-      where a.chapter_id = ${member.chapterId} and r.event_id = ${eventId}
+      where a.chapter_id = ${member.chapterId}
+        and r.event_id = ${eventId}
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
       group by r.id, a.id
       order by r.created_at desc, r.id, a.family_name, a.given_name, a.id
     `;
@@ -1028,10 +1151,15 @@ export const exportCatererCounts = createServerFn({ method: "POST" })
       join attendee_items ai on ai.attendee_id = a.id
       join ticket_type_parts tp on tp.ticket_type_id = ai.ticket_type_id
       join event_parts p on p.id = tp.part_id and p.chapter_id = a.chapter_id and p.event_id = r.event_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       where a.chapter_id = ${member.chapterId}
         and r.event_id = ${eventId}
         and a.cancelled_at is null
         and r.status in ('free', 'paid', 'pending')
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
         and p.is_meal
     `;
     const counts = mealCounts(
@@ -1056,10 +1184,15 @@ export const exportCatererCounts = createServerFn({ method: "POST" })
       select a.details
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       where a.chapter_id = ${member.chapterId}
         and r.event_id = ${eventId}
         and a.cancelled_at is null
         and r.status in ('free', 'paid', 'pending')
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
     `;
     for (const tag of dietaryTagCounts(tagRows.map((row) => readDetails(row.details)?.dietaryTags ?? []))) {
       body.push(["Dietary tag", tag.label, tag.count]);
@@ -1088,12 +1221,17 @@ export const exportBadges = createServerFn({ method: "POST" })
         coalesce(string_agg(t.name, '; ' order by t.sort_order, t.name), '') as tickets
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       left join attendee_items ai on ai.attendee_id = a.id
       left join ticket_types t on t.id = ai.ticket_type_id and t.chapter_id = a.chapter_id
       where a.chapter_id = ${member.chapterId}
         and r.event_id = ${eventId}
         and a.cancelled_at is null
         and r.status in ('free', 'paid', 'pending')
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
       group by r.id, a.id
       order by a.family_name, a.given_name, a.id
     `;
@@ -1127,10 +1265,15 @@ export const exportHousingList = createServerFn({ method: "POST" })
       select a.given_name, a.family_name, a.email, a.details
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
       where a.chapter_id = ${member.chapterId}
         and r.event_id = ${eventId}
         and a.cancelled_at is null
         and r.status in ('free', 'paid', 'pending')
+        and (
+          r.status <> 'pending'
+          or r.created_at + (coalesce(rp.hold_hours, 72) * interval '1 hour') >= now()
+        )
       order by a.family_name, a.given_name, a.id
     `;
     const csv = csvFile(

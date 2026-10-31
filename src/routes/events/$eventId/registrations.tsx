@@ -21,6 +21,7 @@ import {
   markPaperConsent,
   mintConsentLink,
   purgeConsentDetails,
+  releaseLapsedHolds,
   renameAttendee,
 } from "@/lib/crm/registration-desk";
 import { formatWhen } from "@/lib/crm/format";
@@ -232,6 +233,16 @@ function RegistrationsInner() {
 
       {canEdit ? (
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => {
+              void run(() => releaseLapsedHolds({ data: eventId }), "Lapsed holds released");
+            }}
+          >
+            Release lapsed holds
+          </Button>
           {pendingChangeIds.length ? (
             <Button
               type="button"
@@ -254,7 +265,9 @@ function RegistrationsInner() {
             disabled={busy}
             onClick={() => {
               const emails = uniqueEmails(
-                data.registrations.filter((registration) => isActiveRegistration(registration.status)).map((registration) => registration.purchaserEmail),
+                data.registrations
+                  .filter((registration) => isActiveRegistration(registration.status) && !registration.holdLapsed)
+                  .map((registration) => registration.purchaserEmail),
               );
               void run(async () => {
                 await navigator.clipboard.writeText(emails.join(", "));
@@ -365,11 +378,11 @@ function RegistrationsInner() {
               void run(() => cancelAttendee({ data: { eventId, attendeeId: attendee.id } }), "Attendee cancelled");
             }}
             onCancelRegistration={() => {
-              if (
-                !window.confirm(
-                  `Cancel registration ${registration.code}? It has ${registration.attendees.length} attendees.`,
-                )
-              ) {
+              const message =
+                registration.status === "pending"
+                  ? "Check Stripe first: was this paid? Cancel anyway?"
+                  : `Cancel registration ${registration.code}? It has ${registration.attendees.length} attendees.`;
+              if (!window.confirm(message)) {
                 return;
               }
               void run(
@@ -555,7 +568,9 @@ function RegistrationCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-display text-xl">{registration.code}</p>
-            <Badge tone={statusTone(registration.status)}>{paymentStateLabel(registration.status)}</Badge>
+            <Badge tone={registration.holdLapsed ? "warn" : statusTone(registration.status)}>
+              {registration.holdLapsed ? "Hold lapsed" : paymentStateLabel(registration.status)}
+            </Badge>
           </div>
           <p className="text-sm text-muted">{formatCents(registration.totalCents)}</p>
           <p className="text-sm text-muted">{formatWhen(registration.createdAt, "date")}</p>

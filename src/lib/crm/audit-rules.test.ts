@@ -57,6 +57,7 @@ describe("AUDIT_ACTIONS", () => {
       "registration_cancelled",
       "registration_marked_paid",
       "registration_refunded",
+      "registration_hold_expired",
       "attendee_cancelled",
       "attendee_renamed",
       "confirmation_viewed",
@@ -77,6 +78,7 @@ describe("AUDIT_ACTIONS", () => {
       "safe_env_saved",
       "registration_changes_applied",
       "registration_changes_dismissed",
+      "person_filled_from_registration",
     ];
     for (const action of required) {
       const meta = AUDIT_ACTIONS[action];
@@ -99,6 +101,7 @@ describe("AUDIT_ACTIONS", () => {
       "safe_env_saved",
       "registration_changes_applied",
       "registration_changes_dismissed",
+      "person_filled_from_registration",
     ]);
     assert.equal(actionsInGroup("chapter").includes("person_merged"), false);
   });
@@ -177,6 +180,11 @@ describe("auditSummary", () => {
       "R27-ABCD: city, phone",
     );
     assert.equal(auditSummary("registration_changes_dismissed", { code: "R27-ABCD" }), "R27-ABCD");
+    assert.equal(auditSummary("registration_hold_expired", { code: "R27-ABCD" }), "R27-ABCD");
+    assert.equal(
+      auditSummary("person_filled_from_registration", { code: "R27-ABCD", fields: ["city", "phone"] }),
+      "R27-ABCD: city, phone",
+    );
   });
 
   it("shows the address when an other email is added or removed", () => {

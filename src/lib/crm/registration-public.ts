@@ -25,13 +25,21 @@ import {
   storedDietary,
   type RegistrationDetails,
 } from "@/lib/payments/registration-details";
-import { changesTaskTitle, reviewRecord, syncPlan, type SyncPlan } from "@/lib/payments/person-sync";
+import {
+  SYNC_FIELDS,
+  changesTaskTitle,
+  reviewRecord,
+  syncPlan,
+  withRoleReview,
+  type SyncPlan,
+} from "@/lib/payments/person-sync";
 import { seatsLeft, ticketOnSale } from "@/lib/payments/pricing";
 import {
   THROTTLE_LIMIT,
   agreementsAccepted,
   duplicateAttendees,
   duplicateRegistrationMessage,
+  holdLapsed,
   matchAttendee,
   planRegistration,
   registrationCode,
@@ -41,6 +49,7 @@ import {
   type RegistrationCatalog,
 } from "@/lib/payments/registration-rules";
 import { latestGuardianText, writeOnlineConsent } from "./consent";
+import { expireLapsedHolds } from "./registration-desk";
 import { registrationInput } from "./registration-input";
 
 export { registrationInput };
@@ -576,9 +585,16 @@ async function personByEmail(sql: Sql, chapterId: string, email: string): Promis
   return rows[0] ?? null;
 }
 
-async function fillBlankFields(sql: Sql, chapterId: string, personId: string, fill: SyncPlan["fill"]) {
-  if (Object.keys(fill).length === 0) return;
-  await sql`
+async function fillBlankFields(
+  sql: Sql,
+  chapterId: string,
+  personId: string,
+  fill: SyncPlan["fill"],
+  code: string,
+) {
+  const fields = SYNC_FIELDS.filter((field) => Boolean(fill[field]));
+  if (fields.length === 0) return;
+  const saved = await sql<{ id: string }>`
     update persons set
       religious_title = coalesce(${fill.religious_title ?? null}, religious_title),
       academic_title = coalesce(${fill.academic_title ?? null}, academic_title),
@@ -587,16 +603,17 @@ async function fillBlankFields(sql: Sql, chapterId: string, personId: string, fi
       phone = coalesce(${fill.phone ?? null}, phone),
       dietary = coalesce(${fill.dietary ?? null}, dietary)
     where id = ${personId} and chapter_id = ${chapterId} and forgotten_at is null
+    returning id
   `;
-}
-
-async function addTicketRole(sql: Sql, personId: string, roleKey: string | null | undefined) {
-  const role = personRoleKey(roleKey);
-  if (!role) return;
-  await sql`
-    insert into person_roles (person_id, role_key) values (${personId}, ${role})
-    on conflict do nothing
-  `;
+  if (!saved[0]) return;
+  await recordAudit(sql, {
+    chapterId,
+    actor: "public",
+    action: "person_filled_from_registration",
+    entity: "person",
+    entityId: personId,
+    detail: { code, fields },
+  });
 }
 
 /** Fill blanks and collect conflicts for a person matched by email. New people are not passed here. */
@@ -614,8 +631,9 @@ async function syncEmailMatch(
     givenName: string;
     familyName: string;
     roleKey: string | null;
+    code: string;
   },
-): Promise<ReturnType<typeof reviewChanges>> {
+): Promise<ReturnType<typeof withRoleReview>> {
   if (person.forgotten_at) return null;
   const plan = syncPlan(person, {
     title: typed.title,
@@ -625,13 +643,12 @@ async function syncEmailMatch(
     dietaryTags: typed.dietaryTags,
     dietaryText: typed.dietaryText,
   });
-  await fillBlankFields(sql, chapterId, person.id, plan.fill);
-  await addTicketRole(sql, person.id, typed.roleKey);
+  await fillBlankFields(sql, chapterId, person.id, plan.fill, typed.code);
   const names = reviewChanges(
     { given_name: person.given_name, family_name: person.family_name, dietary: person.dietary },
     { givenName: typed.givenName, familyName: typed.familyName, dietary: typed.dietaryText },
   );
-  return reviewRecord(names, plan.differ);
+  return withRoleReview(reviewRecord(names, plan.differ), typed.roleKey);
 }
 
 async function addTask(
@@ -714,7 +731,7 @@ export const getRegisterPreview = createServerFn({ method: "GET" })
 function keepRegistrationError(message: string): boolean {
   return (
     message === "The same person is listed twice." ||
-    message.startsWith("There is already a registration for ") ||
+    message === duplicateRegistrationMessage() ||
     message.endsWith(" is full.")
   );
 }
@@ -828,39 +845,48 @@ export const createRegistration = createServerFn({ method: "POST" })
         `;
         if (!locked[0]) throw new Error("Registration could not be completed. Please try again.");
 
+        await expireLapsedHolds(tx, { chapterId, eventId: event.eventId, actor: "public" });
+
         const repeated = duplicateAttendees(data.attendees);
         if (repeated) throw new Error(repeated);
 
         const purchaserEmail = lowerEmail(data.purchaser.email);
         if (!purchaserEmail) throw new Error("Registration could not be completed. Please try again.");
-        const emails = [purchaserEmail];
+        const emails: string[] = [];
         for (const person of data.attendees) {
           const email = lowerEmail(person.email);
           if (email && !emails.includes(email)) emails.push(email);
         }
-        const conflicts = await tx<{ email: string }>`
-          select lower(r.purchaser_email) as email
-          from registrations r
-          where r.chapter_id = ${chapterId}
-            and r.event_id = ${event.eventId}
-            and r.status <> 'cancelled'
-            and r.status <> 'expired'
-            and lower(r.purchaser_email) = any(${emails}::text[])
-          union
-          select lower(a.email) as email
-          from registration_attendees a
-          join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
-          where a.chapter_id = ${chapterId}
-            and r.event_id = ${event.eventId}
-            and r.status <> 'cancelled'
-            and r.status <> 'expired'
-            and a.cancelled_at is null
-            and a.email is not null
-            and lower(a.email) = any(${emails}::text[])
-        `;
-        const found = new Set(conflicts.map((row) => (row.email ?? "").toLowerCase()));
+        const conflicts = emails.length
+          ? await tx<{
+              email: string;
+              status: string;
+              created_at: Date | string;
+              hold_hours: number | string | null;
+            }>`
+              select lower(a.email) as email, r.status, r.created_at, rp.hold_hours
+              from registration_attendees a
+              join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+              left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
+              where a.chapter_id = ${chapterId}
+                and r.event_id = ${event.eventId}
+                and r.status in ('free', 'paid', 'pending')
+                and a.cancelled_at is null
+                and a.email is not null
+                and lower(a.email) = any(${emails}::text[])
+            `
+          : [];
+        const found = new Set(
+          conflicts
+            .filter((row) => {
+              if (row.status !== "pending") return true;
+              const hours = row.hold_hours == null || row.hold_hours === "" ? null : Number(row.hold_hours);
+              return !holdLapsed(row.created_at, now, hours);
+            })
+            .map((row) => (row.email ?? "").toLowerCase()),
+        );
         const hit = emails.find((email) => found.has(email));
-        if (hit) throw new Error(duplicateRegistrationMessage(hit));
+        if (hit) throw new Error(duplicateRegistrationMessage());
 
         await takeSeats(tx, chapterId, plan.partNeeds, titles);
 
@@ -943,7 +969,7 @@ export const createRegistration = createServerFn({ method: "POST" })
           `;
           const matched = matchAttendee({ email, givenName: given, familyName: family }, byEmail, sameName);
           let person: WebPerson | PersonSnap;
-          let review: ReturnType<typeof reviewChanges> = null;
+          let review: ReturnType<typeof withRoleReview> = null;
           if (matched.action === "link" && byEmail) {
             person = byEmail;
             if (!freshPeople.has(byEmail.id)) {
@@ -959,6 +985,7 @@ export const createRegistration = createServerFn({ method: "POST" })
                 givenName: given,
                 familyName: family,
                 roleKey: prepared[index]?.roleKey ?? null,
+                code,
               });
               if (review) {
                 await addTask(tx, chapterId, changesTaskTitle(byEmail.display_name), dueOn, event.eventId, byEmail.id);
@@ -996,14 +1023,18 @@ export const createRegistration = createServerFn({ method: "POST" })
                 givenName: given,
                 familyName: family,
                 roleKey: prepared[index]?.roleKey ?? null,
+                code,
               });
               if (review) {
                 await addTask(tx, chapterId, changesTaskTitle(created.display_name), dueOn, event.eventId, created.id);
               }
             } else if (!created.created) {
-              review = reviewChanges(
-                { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
-                { givenName: given, familyName: family, dietary: typed.dietary },
+              review = withRoleReview(
+                reviewChanges(
+                  { given_name: created.given_name, family_name: created.family_name, dietary: created.dietary },
+                  { givenName: given, familyName: family, dietary: typed.dietary },
+                ),
+                prepared[index]?.roleKey,
               );
               await addTask(
                 tx,
@@ -1076,7 +1107,7 @@ export const createRegistration = createServerFn({ method: "POST" })
 
         if (!purchaserSynced) {
           const phonePlan = syncPlan(purchaser, { phone: data.purchaser.phone });
-          await fillBlankFields(tx, chapterId, purchaser.id, phonePlan.fill);
+          await fillBlankFields(tx, chapterId, purchaser.id, phonePlan.fill, code);
         }
 
         const origin = publicOrigin({
@@ -1148,19 +1179,24 @@ async function placeParticipation(
     dietary: string | null;
   },
 ): Promise<string> {
-  const existing = await sql<{ id: string }>`
-    select id
+  const existing = await sql<{ id: string; guest_status: string | null }>`
+    select id, guest_status
     from participations
     where chapter_id = ${input.chapterId} and event_id = ${input.eventId}
       and person_id = ${input.personId} and party_type = 'person'
     limit 1
   `;
-  const updateRow = async (row: { id: string }) => {
+  const updateRow = async (row: { id: string; guest_status: string | null }) => {
+    await sql`
+      update registration_attendees set
+        prior_guest_status = ${row.guest_status},
+        created_participation = false
+      where id = ${input.attendeeId} and chapter_id = ${input.chapterId}
+    `;
     await sql`
       update participations set
         guest_status = 'attending',
-        registration_attendee_id = ${input.attendeeId},
-        dietary_for_this_event = coalesce(dietary_for_this_event, ${input.dietary})
+        registration_attendee_id = ${input.attendeeId}
       where id = ${row.id} and chapter_id = ${input.chapterId}
     `;
     return row.id;
@@ -1181,8 +1217,8 @@ async function placeParticipation(
     });
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
-    const again = await sql<{ id: string }>`
-      select id
+    const again = await sql<{ id: string; guest_status: string | null }>`
+      select id, guest_status
       from participations
       where chapter_id = ${input.chapterId} and event_id = ${input.eventId}
         and person_id = ${input.personId} and party_type = 'person'
@@ -1191,6 +1227,10 @@ async function placeParticipation(
     if (!again[0]) throw err;
     return updateRow(again[0]);
   }
+  await sql`
+    update registration_attendees set created_participation = true
+    where id = ${input.attendeeId} and chapter_id = ${input.chapterId}
+  `;
   return id;
 }
 
