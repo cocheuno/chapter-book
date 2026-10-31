@@ -10,9 +10,11 @@ import { PERSON_ROLES } from "./constants";
 import { maySetBookRegistration } from "./handler-roles";
 import { nid } from "./ids";
 import { assertAdmin, assertEditor, loadMember } from "./member";
-import { paymentLinkError } from "@/lib/payments/payment-link-rules";
+import { paymentLinkError, priceChangeCheck } from "@/lib/payments/payment-link-rules";
 import { parsePriceCents } from "@/lib/payments/pricing";
 import { ticketPartsUnchanged } from "@/lib/payments/registration-desk";
+import { holdLapsed } from "@/lib/payments/registration-rules";
+import { spamModeNow } from "./registration-gate";
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
 
@@ -206,6 +208,13 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
       where event_id = ${eventId} and chapter_id = ${member.chapterId}
       order by kind, created_at desc, id desc
     `;
+    const issuedRows = await sql<{ ticket_type_id: string }>`
+      select distinct ai.ticket_type_id
+      from attendee_items ai
+      join ticket_types t on t.id = ai.ticket_type_id
+      where t.chapter_id = ${member.chapterId} and t.event_id = ${eventId}
+    `;
+    const issuedIds = new Set(issuedRows.map((row) => row.ticket_type_id));
     const page = pages[0];
     return {
       event: { title: event.title, timezone: event.timezone, slug: event.slug },
@@ -240,6 +249,7 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
         payment_link: ticket.payment_link,
         affiliation_prompt: ticket.affiliation_prompt,
         person_role: ticket.person_role,
+        issued: issuedIds.has(ticket.id),
         partIds: links.filter((link) => link.ticket_type_id === ticket.id).map((link) => link.part_id),
       })),
       page: page
@@ -266,6 +276,8 @@ export const getRegistrationSetup = createServerFn({ method: "GET" })
       bookRegistrationAllowed: bookRegistrationAllowed(
         typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
       ),
+      isAdmin: member.role === "admin",
+      spamCheck: spamModeNow(),
       agreements: agreements.map((row) => ({
         id: row.id,
         kind: row.kind,
@@ -389,6 +401,28 @@ export const removePart = createServerFn({ method: "POST" })
     return { id: data.partId };
   });
 
+async function pendingHoldsForTicket(sql: Sql, chapterId: string, eventId: string, ticketTypeId: string) {
+  const rows = await sql<{ id: string; created_at: Date | string; hold_hours: number | string | null }>`
+    select distinct r.id, r.created_at, rp.hold_hours
+    from attendee_items ai
+    join registration_attendees a on a.id = ai.attendee_id and a.chapter_id = ${chapterId}
+    join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+    left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
+    where ai.ticket_type_id = ${ticketTypeId}
+      and r.chapter_id = ${chapterId}
+      and r.event_id = ${eventId}
+      and r.status = 'pending'
+  `;
+  const now = new Date();
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const raw = row.hold_hours;
+    const hours = raw == null || raw === "" ? null : Number(raw);
+    if (!holdLapsed(row.created_at, now, hours)) ids.add(row.id);
+  }
+  return ids.size;
+}
+
 function ticketPaymentLink(cents: number, raw: string | null | undefined): string | null {
   if (cents <= 0) return null;
   const url = (raw ?? "").trim();
@@ -416,6 +450,7 @@ export const saveTicketType = createServerFn({ method: "POST" })
       sortOrder: z.number().int(),
       partIds: z.array(z.string()),
       paymentLink: z.string().max(500).optional(),
+      confirmPrice: z.string().max(40).optional(),
       affiliationPrompt: z.string().max(80).optional(),
       personRole: z.string().max(40).optional(),
     }).parse,
@@ -434,9 +469,15 @@ export const saveTicketType = createServerFn({ method: "POST" })
     const paymentLink = ticketPaymentLink(cents, data.paymentLink);
     const affiliationPrompt = blankToNull(data.affiliationPrompt);
     const personRole = storedPersonRole(data.personRole);
+    const isAdmin = member.role === "admin";
+    const confirmMatches = parsePriceCents(data.confirmPrice ?? "") === cents;
     let id = data.ticketTypeId;
     let replaceParts = true;
     let changed = true;
+    let priceAudit: {
+      from: { price_cents: number; payment_link: string | null };
+      to: { price_cents: number; payment_link: string | null };
+    } | null = null;
     if (id) {
       const current = await sql<{
         kind: string;
@@ -479,6 +520,28 @@ export const saveTicketType = createServerFn({ method: "POST" })
       if (issued[0] && !sameParts) {
         throw new Error("Tickets were already issued, so its parts can't change. Add a new ticket instead.");
       }
+      const stored = current[0];
+      const storedLink = (stored?.payment_link ?? "").trim() || null;
+      const linkChanged = storedLink !== paymentLink;
+      const priceChanged = stored != null && Number(stored.price_cents) !== cents;
+      const alreadyIssued = Boolean(issued[0]);
+      const pendingHolds =
+        alreadyIssued && priceChanged ? await pendingHoldsForTicket(sql, member.chapterId, data.eventId, id) : 0;
+      const refusal = priceChangeCheck({
+        issued: alreadyIssued,
+        pendingHolds,
+        isAdmin,
+        linkChanged,
+        priceChanged,
+        confirmMatches,
+      });
+      if (refusal) throw new Error(refusal);
+      if (alreadyIssued && stored && (priceChanged || linkChanged)) {
+        priceAudit = {
+          from: { price_cents: Number(stored.price_cents), payment_link: stored.payment_link },
+          to: { price_cents: cents, payment_link: paymentLink },
+        };
+      }
       replaceParts = !sameParts;
       const saved = await sql<{ id: string }>`
         update ticket_types set
@@ -499,6 +562,16 @@ export const saveTicketType = createServerFn({ method: "POST" })
         returning id
       `;
       if (!saved[0]) throw new Error("Ticket not found");
+      if (priceAudit) {
+        await recordAudit(sql, {
+          chapterId: member.chapterId,
+          actor: member.userId,
+          action: "ticket_price_changed",
+          entity: "event",
+          entityId: data.eventId,
+          detail: { name, from: priceAudit.from, to: priceAudit.to },
+        });
+      }
       const row = current[0];
       const columnChanges = row
         ? changedFields(
@@ -551,6 +624,15 @@ export const saveTicketType = createServerFn({ method: "POST" })
         : [];
       changed = columnChanges.length > 0 || !sameParts;
     } else {
+      const refusal = priceChangeCheck({
+        issued: false,
+        pendingHolds: 0,
+        isAdmin,
+        linkChanged: paymentLink != null,
+        priceChanged: false,
+        confirmMatches,
+      });
+      if (refusal) throw new Error(refusal);
       id = nid();
       await sql`
         insert into ticket_types (
@@ -713,6 +795,7 @@ export const saveAgreement = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const member = await editor(context.userId);
+    if (data.kind === "refund") throw new Error("Use the Refund policy box under Page copy.");
     const sql = await getSql();
     await requireEvent(sql, member.chapterId, data.eventId);
     const trimmed = data.html.trim();
@@ -744,6 +827,14 @@ export const setBookRegistration = createServerFn({ method: "POST" })
     const event = await requireEvent(sql, member.chapterId, data.eventId);
     if (!event.public_item_id) throw new Error("This event has no public page.");
     if (data.enabled) {
+      if (
+        !bookRegistrationAllowed(typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION)
+      ) {
+        throw new Error("Set BOOK_REGISTRATION=on on this deployment first.");
+      }
+      if (spamModeNow() === "misconfigured") {
+        throw new Error("Add the spam check keys on this deployment first.");
+      }
       const tickets = await sql<{ id: string }>`
         select id from ticket_types
         where event_id = ${data.eventId} and chapter_id = ${member.chapterId}
@@ -763,12 +854,13 @@ export const setBookRegistration = createServerFn({ method: "POST" })
         updated_at = now(),
         updated_by = excluded.updated_by
     `;
-    await sql`
-      insert into audit_log (id, chapter_id, actor, action, entity, entity_id, detail)
-      values (
-        ${nid()}, ${member.chapterId}, ${member.userId}, ${"registration_switch"}, ${"event"}, ${data.eventId},
-        ${JSON.stringify({ enabled: data.enabled })}::jsonb
-      )
-    `;
+    await recordAudit(sql, {
+      chapterId: member.chapterId,
+      actor: member.userId,
+      action: "registration_switch",
+      entity: "event",
+      entityId: data.eventId,
+      detail: { enabled: data.enabled },
+    });
     return { ok: true };
   });

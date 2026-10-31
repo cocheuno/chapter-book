@@ -17,8 +17,8 @@ import {
   type ReviewField,
 } from "@/lib/payments/person-sync";
 import { consentDetailsPurgeOpen, eventLastDay } from "@/lib/payments/consent-rules";
-import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
-import { seatsLeft } from "@/lib/payments/pricing";
+import { amountMismatch, parseStripePaymentId, paymentStateLabel, refundIdError } from "@/lib/payments/payment-link-rules";
+import { parsePriceCents, seatsLeft } from "@/lib/payments/pricing";
 import { mealCounts, partReleases, seatDrift } from "@/lib/payments/registration-desk";
 import {
   attendeeForRole,
@@ -358,6 +358,18 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
       where r.chapter_id = ${member.chapterId} and r.event_id = ${eventId}
       order by r.created_at desc, r.id desc
     `;
+    const paymentRows = await sql<{ registration_id: string; charges: number | string; refunds: number | string }>`
+      select p.registration_id,
+        coalesce(sum(case when p.kind = 'charge' then p.amount_cents else 0 end), 0)::int as charges,
+        coalesce(sum(case when p.kind = 'refund' then p.amount_cents else 0 end), 0)::int as refunds
+      from payments p
+      join registrations r on r.id = p.registration_id and r.chapter_id = p.chapter_id
+      where p.chapter_id = ${member.chapterId} and r.event_id = ${eventId}
+      group by p.registration_id
+    `;
+    const netPaid = new Map(
+      paymentRows.map((row) => [row.registration_id, asNumber(row.charges) - asNumber(row.refunds)]),
+    );
 
     const attendeeRows = await sql<{
       id: string;
@@ -518,6 +530,7 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         purchaserPhone: row.purchaser_phone,
         needsReview: row.needs_review,
         totalCents: asNumber(row.total_cents),
+        netPaidCents: netPaid.get(row.id) ?? 0,
         confirmationStatus: confirmation.get(row.id) ?? null,
         attendees: (attendeesByRegistration.get(row.id) ?? []).map((attendee) =>
           attendeeForRole(member.role, attendee),
@@ -716,11 +729,18 @@ export const markRegistrationPaid = createServerFn({ method: "POST" })
     z.object({
       eventId: z.string().min(1),
       registrationId: z.string().min(1),
+      amount: z.string().max(40),
+      stripePaymentId: z.string().max(80),
       note: z.string().trim().max(200).optional(),
+      amountConfirmed: z.boolean().optional(),
     }).parse,
   )
   .handler(async ({ context, data }) => {
     const member = await editor(context.userId);
+    const amountCents = parsePriceCents(data.amount);
+    if (amountCents == null) throw new Error("Enter a price like 25 or 25.50.");
+    const stripePayment = parseStripePaymentId(data.stripePaymentId);
+    if (!stripePayment) throw new Error("Enter the Stripe payment ID (it starts with pi_).");
     const note = data.note?.trim() ? data.note.trim() : null;
     return withTransaction(async (tx) => {
       const locked = await tx<{ id: string }>`
@@ -743,13 +763,31 @@ export const markRegistrationPaid = createServerFn({ method: "POST" })
       if (!current || current.event_id !== data.eventId || current.status !== "pending") {
         throw new Error("This registration is not awaiting payment.");
       }
-      const amountCents = asNumber(current.total_cents);
+      const expectedCents = asNumber(current.total_cents);
+      if (data.amountConfirmed !== true) {
+        const mismatch = amountMismatch(expectedCents, amountCents);
+        if (mismatch) throw new Error(mismatch);
+      }
+      const existing = await tx<{ code: string }>`
+        select r.code
+        from payments p
+        join registrations r on r.id = p.registration_id and r.chapter_id = p.chapter_id
+        where p.chapter_id = ${member.chapterId}
+          and (p.stripe_payment_intent_id = ${stripePayment.id} or p.stripe_charge_id = ${stripePayment.id})
+        limit 1
+      `;
+      if (existing[0]) {
+        throw new Error(`That Stripe payment is already recorded for registration ${existing[0].code}.`);
+      }
       await tx`
         insert into payments (
-          id, chapter_id, registration_id, kind, method, amount_cents, currency, recorded_by, note
+          id, chapter_id, registration_id, kind, method, amount_cents, currency, recorded_by, note,
+          stripe_payment_intent_id, stripe_charge_id
         ) values (
           ${nid()}, ${member.chapterId}, ${current.id}, ${"charge"}, ${"stripe"},
-          ${amountCents}, ${current.currency || "usd"}, ${member.userId}, ${note}
+          ${amountCents}, ${current.currency || "usd"}, ${member.userId}, ${note},
+          ${stripePayment.column === "stripe_payment_intent_id" ? stripePayment.id : null},
+          ${stripePayment.column === "stripe_charge_id" ? stripePayment.id : null}
         )
       `;
       const saved = await tx<{ id: string }>`
@@ -764,7 +802,13 @@ export const markRegistrationPaid = createServerFn({ method: "POST" })
         action: "registration_marked_paid",
         entity: "registration",
         entityId: current.id,
-        detail: { code: current.code, amountCents, eventId: data.eventId },
+        detail: {
+          code: current.code,
+          eventId: data.eventId,
+          expectedCents,
+          amountCents,
+          stripePaymentId: stripePayment.id,
+        },
       });
       return { ok: true as const };
     });
@@ -772,9 +816,18 @@ export const markRegistrationPaid = createServerFn({ method: "POST" })
 
 export const refundRegistration = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator(z.object({ eventId: z.string().min(1), registrationId: z.string().min(1) }).parse)
+  .validator(
+    z.object({
+      eventId: z.string().min(1),
+      registrationId: z.string().min(1),
+      stripeRefundId: z.string().max(80).optional(),
+    }).parse,
+  )
   .handler(async ({ context, data }) => {
     const member = await editor(context.userId);
+    const refundId = (data.stripeRefundId ?? "").trim();
+    const refundError = refundIdError(refundId);
+    if (refundError) throw new Error(refundError);
     return withTransaction(async (tx) => {
       const locked = await tx<{ id: string }>`
         select id from registrations where id = ${data.registrationId} and chapter_id = ${member.chapterId} for update
@@ -796,13 +849,28 @@ export const refundRegistration = createServerFn({ method: "POST" })
       if (!current || current.event_id !== data.eventId) throw new Error("This registration is not paid.");
       if (current.status === "refunded") return { ok: true as const };
       if (current.status !== "paid") throw new Error("This registration is not paid.");
-      const amountCents = asNumber(current.total_cents);
+      if (refundId) {
+        const recorded = await tx<{ id: string }>`
+          select id from payments
+          where chapter_id = ${member.chapterId} and stripe_refund_id = ${refundId}
+          limit 1
+        `;
+        if (recorded[0]) throw new Error("That Stripe refund is already recorded.");
+      }
+      const sums = await tx<{ charges: number | string; refunds: number | string }>`
+        select
+          coalesce(sum(case when kind = 'charge' then amount_cents else 0 end), 0)::int as charges,
+          coalesce(sum(case when kind = 'refund' then amount_cents else 0 end), 0)::int as refunds
+        from payments
+        where registration_id = ${current.id} and chapter_id = ${member.chapterId}
+      `;
+      const amountCents = Math.max(0, asNumber(sums[0]?.charges) - asNumber(sums[0]?.refunds));
       await tx`
         insert into payments (
-          id, chapter_id, registration_id, kind, method, amount_cents, currency, recorded_by
+          id, chapter_id, registration_id, kind, method, amount_cents, currency, recorded_by, stripe_refund_id
         ) values (
           ${nid()}, ${member.chapterId}, ${current.id}, ${"refund"}, ${"stripe"},
-          ${amountCents}, ${current.currency || "usd"}, ${member.userId}
+          ${amountCents}, ${current.currency || "usd"}, ${member.userId}, ${refundId || null}
         )
       `;
       const saved = await tx<{ id: string }>`
@@ -819,7 +887,7 @@ export const refundRegistration = createServerFn({ method: "POST" })
         action: "registration_refunded",
         entity: "registration",
         entityId: current.id,
-        detail: { code: current.code, amountCents, eventId: data.eventId },
+        detail: { code: current.code, amountCents, eventId: data.eventId, stripeRefundId: refundId || null },
       });
       return { ok: true as const };
     });

@@ -1,5 +1,9 @@
 # Conference registration and payments (Stripe)
 
+## Current model (October 2026): Stripe Payment Link hand-off
+
+The book collects the form and creates the registration. Free tickets are confirmed at once. A paid registration is 'pending' and holds its seats for hold_hours (default 72). The confirmation and manage pages link to the ticket's Stripe Payment Link with client_reference_id = the registration code and the purchaser's email prefilled. There is no webhook. The treasurer matches Stripe payments and presses Mark paid with the amount and Stripe payment ID. Refunds happen in Stripe first, then on the desk. Lapsed holds are released. See PAYMENTS-RUNBOOK.md.
+
 **Status:** Proposed design, to be built in phases (see the end of this document). No mailbox is needed. Read with `docs/REVIEW-2026-09.md`.
 
 **Rule 1 applies** (`docs/BUILD-PLAN.md`): this design only adds tables and columns. It never changes existing people, events, or website content, except when an editor acts.
@@ -54,7 +58,7 @@ scs-wisconsin-usa.org ─► /p/ai-conference            conference page (exists
                                        → payments row, outbox row, audit row
 ```
 
-## Why Stripe's hosted Checkout
+## Why Stripe's hosted Checkout (not built)
 
 - **No card data touches Chapter Book.** That keeps the chapter at the lightest PCI level (SAQ A).
 - **Stripe handles the hard parts:** Apple Pay, Google Pay, 3-D Secure, receipts, declines, and fraud screening.
@@ -451,7 +455,7 @@ const session = await stripe().checkout.sessions.create(
 
 `origin` comes from a host variable (for example `PUBLIC_ORIGIN`), not from the request's `Host` header.
 
-## Webhook
+## Webhook (not built)
 
 Route: `src/routes/api/stripe/webhook.ts`. It follows the pattern of `src/routes/api/public-site.ts`. It has no `authMiddleware` and no CORS. It must read the **raw** body before anything parses it.
 

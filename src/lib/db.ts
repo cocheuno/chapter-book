@@ -1,6 +1,6 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
 import { databaseSource } from "./database-source";
-import { runInTransaction, runSavepoint, savepointName } from "./transaction-rules";
+import { busyError, runInTransaction, runSavepoint, savepointName } from "./transaction-rules";
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite" | "missing";
@@ -258,15 +258,24 @@ export async function withTransaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T
     const result = await client.query(text, params);
     return result.rows as Row[];
   });
-  return runInTransaction(
-    {
-      query: (text, params) => client.query(text, params),
-      release: (err) => {
-        client.release(err);
+  try {
+    return await runInTransaction(
+      {
+        query: (text, params) => client.query(text, params),
+        release: (err) => {
+          client.release(err);
+        },
       },
-    },
-    () => fn(tx),
-  );
+      () => fn(tx),
+      [
+        "set local lock_timeout = '5s'",
+        "set local statement_timeout = '15s'",
+        "set local idle_in_transaction_session_timeout = '30s'",
+      ],
+    );
+  } catch (err) {
+    throw busyError(err);
+  }
 }
 
 /**

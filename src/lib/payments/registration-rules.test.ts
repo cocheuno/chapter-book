@@ -12,6 +12,7 @@ import {
   registrationCode,
   reviewChanges,
   shownTextMismatch,
+  throttleRefuses,
   turnstileMode,
   type CatalogTicket,
   type RegistrationCatalog,
@@ -294,6 +295,32 @@ describe("turnstileMode", () => {
     assert.equal(turnstileMode({ siteKey: "site", secretKey: "secret" }), "verify");
     assert.equal(turnstileMode({ siteKey: "site" }), "misconfigured");
     assert.equal(turnstileMode({ secretKey: "secret" }), "misconfigured");
+  });
+
+  it("follows the deployment: both keys verify, one key is broken, no keys close Production", () => {
+    for (const vercelEnv of ["production", "preview", "development", "", undefined]) {
+      assert.equal(turnstileMode({ siteKey: "site", secretKey: "secret" }, vercelEnv), "verify");
+      assert.equal(turnstileMode({ siteKey: "site" }, vercelEnv), "misconfigured");
+      assert.equal(turnstileMode({ secretKey: "secret" }, vercelEnv), "misconfigured");
+    }
+    assert.equal(turnstileMode({}, "production"), "misconfigured");
+    assert.equal(turnstileMode({ siteKey: " ", secretKey: "" }, "production"), "misconfigured");
+    assert.equal(turnstileMode({}, "preview"), "skip");
+    assert.equal(turnstileMode({}, "development"), "skip");
+    assert.equal(turnstileMode({}, ""), "skip");
+    assert.equal(turnstileMode({}, undefined), "skip");
+    assert.equal(turnstileMode({ siteKey: " ", secretKey: " " }, "preview"), "skip");
+  });
+});
+
+describe("throttleRefuses", () => {
+  it("refuses only once the hour's attempts are used up", () => {
+    assert.equal(throttleRefuses(0), false);
+    assert.equal(throttleRefuses(9), false);
+    assert.equal(throttleRefuses(10), true);
+    assert.equal(throttleRefuses(11), true);
+    assert.equal(throttleRefuses(Number.NaN), false);
+    assert.equal(throttleRefuses(-1), false);
   });
 });
 

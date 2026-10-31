@@ -24,6 +24,7 @@ function commandOf(result: unknown): string | null {
 export async function runInTransaction<T>(
   client: TransactionClient,
   work: () => Promise<T>,
+  setup?: readonly string[],
 ): Promise<T> {
   let failed = false;
   let error: unknown;
@@ -31,6 +32,9 @@ export async function runInTransaction<T>(
   let rollbackError: unknown;
   try {
     await client.query("begin");
+    for (const statement of setup ?? []) {
+      await client.query(statement);
+    }
     value = await work();
     const committed = await client.query("commit");
     if (commandOf(committed) === "ROLLBACK") {
@@ -54,6 +58,15 @@ export async function runInTransaction<T>(
   }
   if (failed) throw error;
   return value as T;
+}
+
+/** Lock and statement timeouts become one sentence. Any other error is unchanged. */
+export function busyError(err: unknown): unknown {
+  const code = err && typeof err === "object" && "code" in err ? (err as { code?: unknown }).code : undefined;
+  if (code === "55P03" || code === "57014") {
+    return new Error("The book is busy. Please try again in a moment.");
+  }
+  return err;
 }
 
 /** `sp_` plus the hex (or other letters and digits) from `random`. */

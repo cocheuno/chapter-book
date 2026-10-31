@@ -48,7 +48,9 @@ function ManageRegistration() {
         <p className="text-sm text-muted">{paymentStateLabel(page.status)}</p>
         <h1 className="font-display text-4xl">{heading}</h1>
         <p className="font-display text-5xl tracking-wide">{page.code}</p>
-        {pending && page.payUrl ? (
+        {page.holdLapsed ? (
+          <p>This registration was not paid in time, so its place was released. Contact the chapter if you already paid.</p>
+        ) : pending && page.payUrl ? (
           <div className="space-y-3">
             <a
               href={page.payUrl}

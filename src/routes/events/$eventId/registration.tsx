@@ -25,7 +25,6 @@ export const Route = createFileRoute("/events/$eventId/registration")({ componen
 
 const AGREEMENTS = [
   { kind: "privacy", label: "Privacy notice" },
-  { kind: "refund", label: "Refund policy" },
   { kind: "conduct", label: "Code of conduct" },
   { kind: "guardian", label: "Guardian consent" },
   { kind: "photo", label: "Photo release" },
@@ -61,6 +60,10 @@ type TicketDraft = {
   sortOrder: number;
   partIds: string[];
   paymentLink: string;
+  savedPrice: string;
+  savedPaymentLink: string;
+  confirmPrice: string;
+  issued: boolean;
   affiliationPrompt: string;
   personRole: string;
 };
@@ -148,6 +151,10 @@ function toTicketDrafts(data: Setup, timeZone: string): TicketDraft[] {
     sortOrder: ticket.sort_order,
     partIds: ticket.partIds,
     paymentLink: ticket.payment_link ?? "",
+    savedPrice: dollarsText(ticket.price_cents),
+    savedPaymentLink: ticket.payment_link ?? "",
+    confirmPrice: "",
+    issued: ticket.issued,
     affiliationPrompt: ticket.affiliation_prompt ?? "",
     personRole: ticket.person_role ?? "",
   }));
@@ -189,6 +196,8 @@ function RegistrationInner() {
   });
   const [bookOn, setBookOn] = useState(false);
   const [hostAllows, setHostAllows] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [spamCheck, setSpamCheck] = useState<"verify" | "skip" | "misconfigured">("skip");
   const [publicSlug, setPublicSlug] = useState<string | null>(null);
   const [agreements, setAgreements] = useState<AgreementDraft[]>(
     AGREEMENTS.map((item) => ({ kind: item.kind, label: item.label, html: "", createdAt: null })),
@@ -212,6 +221,8 @@ function RegistrationInner() {
       });
       setBookOn(data.page.use_book_registration);
       setHostAllows(data.bookRegistrationAllowed);
+      setIsAdmin(data.isAdmin);
+      setSpamCheck(data.spamCheck);
       setPublicSlug(data.event.slug);
       setAgreements(toAgreements(data));
       setReady(true);
@@ -293,6 +304,10 @@ function RegistrationInner() {
         sortOrder: nextSort(list),
         partIds: [],
         paymentLink: "",
+        savedPrice: "0",
+        savedPaymentLink: "",
+        confirmPrice: "",
+        issued: false,
         affiliationPrompt: "",
         personRole: "",
       },
@@ -327,8 +342,18 @@ function RegistrationInner() {
 
       <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
         <p className="text-sm text-ink-soft">
-          Tickets are sold through Stripe Payment Links (October 2026). Leave this off.
+          Turn this on when tickets, parts, page copy and agreements are ready. People fill in the form here, then
+          pay with the ticket's Stripe payment link. Only an admin can turn it on.
         </p>
+        {spamCheck === "verify" ? <p className="text-sm text-ink-soft">Spam check: on.</p> : null}
+        {spamCheck === "skip" ? (
+          <p className="text-sm text-ink-soft">Spam check: off on this test deployment.</p>
+        ) : null}
+        {spamCheck === "misconfigured" ? (
+          <p className="text-sm text-danger">
+            Spam check keys are missing on this deployment, so the register page stays closed.
+          </p>
+        ) : null}
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -550,9 +575,30 @@ function RegistrationInner() {
                     value={ticket.paymentLink}
                     inputMode="url"
                     placeholder="https://buy.stripe.com/…"
+                    readOnly={!isAdmin}
                     onChange={(event) =>
                       setTickets((list) =>
                         list.map((row) => (row.key === ticket.key ? { ...row, paymentLink: event.target.value } : row)),
+                      )
+                    }
+                  />
+                </Field>
+              ) : null}
+              {cents != null && cents > 0 && !isAdmin ? (
+                <p className="text-sm text-muted">Only an admin can set a payment link.</p>
+              ) : null}
+              {ticket.issued &&
+              ((parsePriceCents(ticket.price) ?? -1) !== (parsePriceCents(ticket.savedPrice) ?? -2) ||
+                ticket.paymentLink.trim() !== ticket.savedPaymentLink.trim()) ? (
+                <Field label="Type the new price to confirm">
+                  <Input
+                    value={ticket.confirmPrice}
+                    inputMode="decimal"
+                    onChange={(event) =>
+                      setTickets((list) =>
+                        list.map((row) =>
+                          row.key === ticket.key ? { ...row, confirmPrice: event.target.value } : row,
+                        ),
                       )
                     }
                   />
@@ -727,6 +773,11 @@ function RegistrationInner() {
                           partIds,
                           ...(cents != null && cents > 0 && ticket.paymentLink.trim()
                             ? { paymentLink: ticket.paymentLink.trim() }
+                            : {}),
+                          ...(ticket.issued &&
+                          ((parsePriceCents(ticket.price) ?? -1) !== (parsePriceCents(ticket.savedPrice) ?? -2) ||
+                            ticket.paymentLink.trim() !== ticket.savedPaymentLink.trim())
+                            ? { confirmPrice: ticket.confirmPrice }
                             : {}),
                           ...(ticket.affiliationPrompt.trim()
                             ? { affiliationPrompt: ticket.affiliationPrompt.trim() }

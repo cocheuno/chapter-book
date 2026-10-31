@@ -16,8 +16,9 @@ import {
   studentPublicName,
   type GuardianConsentInput,
 } from "@/lib/payments/consent-rules";
-import { AGREEMENT_TEXT_UPDATED, THROTTLE_LIMIT, turnstileMode } from "@/lib/payments/registration-rules";
+import { AGREEMENT_TEXT_UPDATED, throttleRefuses, turnstileMode } from "@/lib/payments/registration-rules";
 import { bookRegistrationAllowed } from "./book-registration";
+import { eventRegistrationOpen, recordThrottleFailure, throttleCount } from "./registration-gate";
 import { lowerEmail, nid } from "./ids";
 import { composePersonName, splitWalkupName } from "./names";
 import { hashInviteToken, newInviteToken } from "./operator-rules";
@@ -86,18 +87,6 @@ function clientIp(): string {
 async function firstChapterId(sql: Sql): Promise<string | null> {
   const rows = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
   return rows[0]?.id ?? null;
-}
-
-async function bumpThrottle(sql: Sql, key: string) {
-  const throttled = await sql<{ count: number | string }>`
-    insert into public_throttle (key, window_start, count) values (${key}, now(), 1)
-    on conflict (key) do update set
-      count = case when public_throttle.window_start < now() - interval '1 hour' then 1 else public_throttle.count + 1 end,
-      window_start = case when public_throttle.window_start < now() - interval '1 hour' then now() else public_throttle.window_start end
-    returning count
-  `;
-  const count = Number(throttled[0]?.count ?? 0);
-  if (count > THROTTLE_LIMIT) throw new Error("Too many attempts. Please try again in an hour.");
 }
 
 async function verifyTurnstile(token: string | undefined, ip: string, secret: string) {
@@ -419,19 +408,13 @@ export async function readConsentDetail(
 export const getConsentPage = createServerFn({ method: "GET" })
   .validator((token: unknown) => (typeof token === "string" ? token.trim().slice(0, 200) : ""))
   .handler(async ({ data: token }) => {
-    if (
-      !bookRegistrationAllowed(
-        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
-      )
-    ) {
-      return { valid: false as const };
-    }
     if (!token) return { valid: false as const };
     const sql = await getSql();
     const chapterId = await firstChapterId(sql);
     if (!chapterId) return { valid: false as const };
     const open = await openConsent(sql, chapterId, hashInviteToken(token));
     if (!open) return { valid: false as const };
+    if (!(await eventRegistrationOpen(sql, chapterId, open.eventId))) return { valid: false as const };
     const text = await latestGuardianText(sql, chapterId, open.eventId);
     if (!text) return { valid: false as const };
     return {
@@ -463,27 +446,33 @@ const consentSubmit = z.object({
 export const submitConsent = createServerFn({ method: "POST" })
   .validator(consentSubmit.parse)
   .handler(async ({ data }) => {
+    const sql = await getSql();
+    const ip = clientIp();
+    const throttleKey = `consent:${hashInviteToken(ip)}`;
+    if (throttleRefuses(await throttleCount(sql, throttleKey))) {
+      throw new Error("Too many attempts. Please try again in an hour.");
+    }
+    try {
     if (
-      !bookRegistrationAllowed(
-        typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION,
-      )
+      !bookRegistrationAllowed(typeof process === "undefined" ? undefined : process.env.BOOK_REGISTRATION)
     ) {
       throw new Error(INVALID_LINK);
     }
-    const sql = await getSql();
-    const ip = clientIp();
-    await bumpThrottle(sql, `consent:${hashInviteToken(ip)}`);
-    const mode = turnstileMode({
-      siteKey: readEnv("TURNSTILE_SITE_KEY"),
-      secretKey: readEnv("TURNSTILE_SECRET_KEY"),
-    });
-    if (mode === "misconfigured") throw new Error("This page is not available right now.");
+    const mode = turnstileMode(
+      {
+        siteKey: readEnv("TURNSTILE_SITE_KEY"),
+        secretKey: readEnv("TURNSTILE_SECRET_KEY"),
+      },
+      readEnv("VERCEL_ENV"),
+    );
+    if (mode === "misconfigured") throw new Error(INVALID_LINK);
     if (mode === "verify") await verifyTurnstile(data.turnstileToken, ip, readEnv("TURNSTILE_SECRET_KEY") ?? "");
 
     const chapterId = await firstChapterId(sql);
     const tokenHash = hashInviteToken(data.token.trim());
     const open = chapterId ? await openConsent(sql, chapterId, tokenHash) : null;
     if (!chapterId || !open) throw new Error(INVALID_LINK);
+    if (!(await eventRegistrationOpen(sql, chapterId, open.eventId))) throw new Error(INVALID_LINK);
     const text = await latestGuardianText(sql, chapterId, open.eventId);
     if (!text) throw new Error(INVALID_LINK);
     if (data.consentTextId !== text.id) {
@@ -534,6 +523,10 @@ export const submitConsent = createServerFn({ method: "POST" })
       throw new Error(INVALID_LINK);
     }
     return { ok: true as const };
+    } catch (err) {
+      await recordThrottleFailure(sql, throttleKey);
+      throw err;
+    }
   });
 
 /** Purchaser manage page. The manage token is the proof; no operator sign-in. */
@@ -548,8 +541,8 @@ export const mintConsentLink = createServerFn({ method: "POST" })
     const sql = await getSql();
     const chapterId = await firstChapterId(sql);
     if (!chapterId) throw new Error("We couldn't find that registration.");
-    const rows = await sql<{ id: string }>`
-      select a.id
+    const rows = await sql<{ id: string; event_id: string }>`
+      select a.id, r.event_id
       from registration_attendees a
       join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
       where a.id = ${data.attendeeId}
@@ -557,6 +550,9 @@ export const mintConsentLink = createServerFn({ method: "POST" })
         and r.manage_token_hash = ${hashInviteToken(data.token.trim())}
     `;
     if (!rows[0]) throw new Error("We couldn't find that registration.");
+    if (!(await eventRegistrationOpen(sql, chapterId, rows[0].event_id))) {
+      throw new Error("We couldn't find that registration.");
+    }
     const path = await issueConsentLink(sql, chapterId, data.attendeeId);
     return { path };
   });
