@@ -1,3 +1,4 @@
+import { roleLabel } from "../crm/constants.ts";
 import { personTitles, storedDietary, TITLES } from "./registration-details.ts";
 
 /** Person columns a registration may fill or hold for review. Names stay out of this list. */
@@ -17,7 +18,11 @@ export const REVIEW_FIELDS = ["given_name", "family_name", ...SYNC_FIELDS] as co
 
 export type ReviewField = (typeof REVIEW_FIELDS)[number];
 
-const FIELD_LABELS: Record<ReviewField, string> = {
+export type ReviewKey = ReviewField | "role";
+
+const REVIEW_KEYS: readonly ReviewKey[] = [...REVIEW_FIELDS, "role"];
+
+const FIELD_LABELS: Record<ReviewKey, string> = {
   given_name: "Given name",
   family_name: "Family name",
   religious_title: "Religious title",
@@ -26,6 +31,7 @@ const FIELD_LABELS: Record<ReviewField, string> = {
   state: "State",
   phone: "Phone",
   dietary: "Dietary",
+  role: "Role",
 };
 
 export const CHANGES_TASK_PREFIX = "Web registration: check changes for ";
@@ -119,8 +125,18 @@ export function reviewRecord(
   return Object.keys(changes).length ? changes : null;
 }
 
+/** Ticket role for an existing person. The editor applies it; registration does not. */
+export function withRoleReview(
+  review: Record<string, { book: string | null; typed: string }> | null,
+  roleKey: string | null | undefined,
+): Record<string, { book: string | null; typed: string }> | null {
+  const key = (roleKey ?? "").trim();
+  if (!key) return review;
+  return { ...(review ?? {}), role: { book: null, typed: key } };
+}
+
 export type ReviewLine = {
-  field: ReviewField;
+  field: ReviewKey;
   label: string;
   stored: string;
   typed: string;
@@ -130,7 +146,7 @@ export function reviewLineText(line: Pick<ReviewLine, "label" | "stored" | "type
   return `${line.label}: ${line.stored} → ${line.typed}`;
 }
 
-function readReview(value: unknown): Partial<Record<ReviewField, { stored: string; typed: string }>> {
+function readReview(value: unknown): Partial<Record<ReviewKey, { stored: string; typed: string }>> {
   let raw = value;
   if (typeof value === "string") {
     try {
@@ -141,8 +157,8 @@ function readReview(value: unknown): Partial<Record<ReviewField, { stored: strin
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const source = raw as Record<string, unknown>;
-  const entries: Partial<Record<ReviewField, { stored: string; typed: string }>> = {};
-  for (const field of REVIEW_FIELDS) {
+  const entries: Partial<Record<ReviewKey, { stored: string; typed: string }>> = {};
+  for (const field of REVIEW_KEYS) {
     const item = source[field];
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const row = item as { book?: unknown; stored?: unknown; typed?: unknown };
@@ -155,18 +171,24 @@ function readReview(value: unknown): Partial<Record<ReviewField, { stored: strin
   return entries;
 }
 
-/** One line per pending field, in review order. */
+/** One line per pending field, in review order. A role with nothing in the book reads "(none)". */
 export function reviewLines(value: unknown): ReviewLine[] {
   const entries = readReview(value);
-  return REVIEW_FIELDS.filter((field) => entries[field]).map((field) => {
+  return REVIEW_KEYS.filter((field) => entries[field]).map((field) => {
     const entry = entries[field]!;
+    const role = field === "role";
     return {
       field,
       label: FIELD_LABELS[field],
-      stored: entry.stored,
-      typed: entry.typed,
+      stored: role && !entry.stored ? "(none)" : entry.stored,
+      typed: role ? roleLabel(entry.typed) : entry.typed,
     };
   });
+}
+
+/** Role key waiting for an editor, or null when this review has none. */
+export function pendingRoleKey(value: unknown): string | null {
+  return readReview(value).role?.typed || null;
 }
 
 /** Values an editor apply may write. Unknown keys and blank typed values are dropped. */

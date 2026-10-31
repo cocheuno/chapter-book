@@ -85,7 +85,10 @@ function CheckInInner() {
         {people.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
             <div>
-              <p className="font-medium">{p.display_name}</p>
+              <p className="font-medium">
+                {p.display_name}
+                {p.registrationPayment ? ` · ${p.registrationPayment}` : ""}
+              </p>
               <p className="text-sm text-muted">
                 {[p.coming_to_mass ? "Mass" : null, p.coming_to_dinner ? "Dinner" : null, p.coming_to_lecture ? "Lecture" : null]
                   .filter(Boolean)

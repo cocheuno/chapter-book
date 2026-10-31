@@ -27,7 +27,9 @@ import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
 import { readSafeEnvironment, safeEnvironmentView, withoutSafeEnvironment } from "./safe-environment";
 import { parseSegmentFilter, segmentWhere } from "./segment-rules";
+import { paymentStateLabel } from "@/lib/payments/payment-link-rules";
 import { seatsLeft } from "@/lib/payments/pricing";
+import { holdLapsed } from "@/lib/payments/registration-rules";
 import { withAssignee } from "./task-assign-rules";
 
 type Row = Record<string, string | number | boolean | null>;
@@ -1738,13 +1740,45 @@ export const listInvites = createServerFn({ method: "GET" })
         and g.id is null
     `;
     const missingConsentIds = new Set(missingConsent.map((row) => row.id));
+    // Separate select. Another event join here would fail the chapter-scope count.
+    const throughRegistration = await sql<{
+      id: string;
+      status: string;
+      created_at: string;
+      hold_hours: number | string | null;
+    }>`
+      select p.id, r.status,
+        to_char(r.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
+        rp.hold_hours
+      from participations p
+      join registration_attendees a
+        on a.id = p.registration_attendee_id and a.chapter_id = p.chapter_id
+      join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      left join registration_pages rp on rp.event_id = r.event_id and rp.chapter_id = r.chapter_id
+      where p.event_id = ${eventId} and p.chapter_id = ${m.chapterId} and p.party_type = 'person'
+    `;
+    const now = new Date();
+    const hidden = new Set<string>();
+    const payment = new Map<string, "Paid" | "Awaiting payment" | "Free">();
+    for (const row of throughRegistration) {
+      const hours = row.hold_hours == null || row.hold_hours === "" ? null : Number(row.hold_hours);
+      if (row.status === "pending" && holdLapsed(row.created_at, now, hours)) {
+        hidden.add(row.id);
+        continue;
+      }
+      const label = paymentStateLabel(row.status);
+      if (label === "Paid" || label === "Awaiting payment" || label === "Free") payment.set(row.id, label);
+    }
     return {
       title: titled[0]?.title ?? "",
-      people: people.map((p) => ({
-        ...p,
-        display_name: p.person_id ? listedName(p) : p.guest_name || p.display_name,
-        consentMissing: missingConsentIds.has(p.id),
-      })),
+      people: people
+        .filter((p) => !hidden.has(p.id))
+        .map((p) => ({
+          ...p,
+          display_name: p.person_id ? listedName(p) : p.guest_name || p.display_name,
+          consentMissing: missingConsentIds.has(p.id),
+          registrationPayment: payment.get(p.id) ?? null,
+        })),
       partners,
     };
   });

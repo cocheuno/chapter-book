@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   registration_cancelled: { label: "Registration cancelled", group: "registration" },
   registration_marked_paid: { label: "Registration marked paid", group: "registration" },
   registration_refunded: { label: "Registration refunded", group: "registration" },
+  registration_hold_expired: { label: "Registration hold expired", group: "registration" },
   attendee_cancelled: { label: "Attendee cancelled", group: "registration" },
   attendee_renamed: { label: "Attendee renamed", group: "registration" },
   confirmation_viewed: { label: "Confirmation viewed", group: "registration" },
@@ -53,6 +54,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   safe_env_saved: { label: "Safe environment saved", group: "people" },
   registration_changes_applied: { label: "Registration changes applied", group: "people" },
   registration_changes_dismissed: { label: "Registration changes dismissed", group: "people" },
+  person_filled_from_registration: { label: "Person filled from registration", group: "people" },
 };
 
 const SECRET_KEY = /token|hash|password|secret|html|body|link|url/i;
@@ -147,6 +149,7 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "registration_cancelled":
     case "attendee_cancelled":
     case "confirmation_viewed":
+    case "registration_hold_expired":
       return text(row.code);
     case "registration_marked_paid":
     case "registration_refunded":
@@ -169,6 +172,7 @@ export function auditSummary(action: string, detail: Record<string, unknown> | n
     case "safe_env_saved":
       return changedLine(row);
     case "registration_changes_applied":
+    case "person_filled_from_registration":
       return [text(row.code), Array.isArray(row.fields) ? row.fields.map((field) => String(field)).join(", ") : ""]
         .filter(Boolean)
         .join(": ");

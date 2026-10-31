@@ -5,6 +5,8 @@ import {
   agreementsAccepted,
   duplicateAttendees,
   duplicateRegistrationMessage,
+  holdLapsed,
+  restoredGuestStatus,
   matchAttendee,
   planRegistration,
   registrationCode,
@@ -344,12 +346,40 @@ describe("duplicateAttendees", () => {
   });
 });
 
+describe("holdLapsed", () => {
+  const now = new Date("2026-10-13T12:00:00.000Z");
+  const hour = 60 * 60 * 1000;
+
+  it("lapses a pending registration only after the hold, and a blank hold means 72 hours", () => {
+    assert.equal(holdLapsed(new Date(now.getTime() - 72 * hour), now, null), false);
+    assert.equal(holdLapsed(new Date(now.getTime() - 72 * hour - 1), now, null), true);
+    assert.equal(holdLapsed(new Date(now.getTime() - 71 * hour), now, undefined), false);
+    assert.equal(holdLapsed(new Date(now.getTime() - 2 * hour), now, 1), true);
+    assert.equal(holdLapsed(new Date(now.getTime() - 30 * 60 * 1000), now, 1), false);
+    assert.equal(holdLapsed("2026-10-13T09:00:00.000Z", now, 3), false);
+    assert.equal(holdLapsed("not-a-date", now, 72), false);
+    assert.equal(holdLapsed(null, now, null), false);
+  });
+});
+
+describe("restoredGuestStatus", () => {
+  it("declines a participation this registration created, and puts the others back", () => {
+    assert.equal(restoredGuestStatus("no_response", true), "declined");
+    assert.equal(restoredGuestStatus("attended", true), "declined");
+    assert.equal(restoredGuestStatus("no_response", false), "no_response");
+    assert.equal(restoredGuestStatus("waitlisted", false), "waitlisted");
+    assert.equal(restoredGuestStatus(null, false), "declined");
+    assert.equal(restoredGuestStatus("  ", false), "declined");
+  });
+});
+
 describe("duplicateRegistrationMessage", () => {
-  it("names the address that already has a registration", () => {
+  it("does not name the address", () => {
     assert.equal(
-      duplicateRegistrationMessage("ada@example.com"),
-      "There is already a registration for ada@example.com for this event. Use the link on your confirmation page to see it, or contact the chapter.",
+      duplicateRegistrationMessage(),
+      "This person may already be registered for this event. Use the link on your confirmation page, or contact the chapter.",
     );
+    assert.equal(duplicateRegistrationMessage().includes("@"), false);
   });
 });
 

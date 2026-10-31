@@ -270,7 +270,10 @@ function InvitesInner() {
             <li key={p.id} className="flex flex-col gap-2 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-medium">{p.display_name}</p>
+                  <p className="font-medium">
+                    {p.display_name}
+                    {p.registrationPayment ? ` · ${p.registrationPayment}` : ""}
+                  </p>
                   <p className="text-sm text-muted">
                     {p.person_id ? "In People" : "Named guest"}
                     {p.org_name ? ` · ${p.org_name}` : ""}
