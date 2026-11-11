@@ -45,6 +45,18 @@ When the chapter is live:
 - Visitors read the public site without an account.
 - Nobody clones the repo in order to get the membership list — they cannot; it is not there.
 
+## Forget and the after-event purge
+
+An admin runs these from the desk. Nothing else rewrites these rows.
+
+**Forget** removes the person's name, contact details, notes and dietary needs, other emails, tags, relationships, roles and offices, and their registration details: form answers, emergency contacts, grade, school, the consent link, and their name in confirmation emails (replaced with "Removed person"). Where they signed a consent as a guardian, their name and contact details are removed. The consent row stays, with the consent date, method, consent text, and photo release. Purchaser source fields and payment notes are cleared. Their attendance stays in event counts as "Removed person".
+
+**After-event purge** runs 30 days after the event's last day. For every attendee of that event it clears emergency contacts, medical notes, dietary needs and allergies, accessibility needs, form notes, roommate names, dietary tags, and guardians' phone and email. It keeps guardian name, relationship, signed name, signed date, method, photo release, consent text, attendee names, tickets, payments, and housing nights.
+
+## Viewers
+
+On the registration desk a viewer sees the purchaser's name, the code, the status, and the totals, plus each attendee's name, tickets, and cancelled status, and a Needs care badge when a dietary need, an accessibility need, a note, or a dietary tag is present. A viewer does not receive form answers, dietary text, accessibility text, emergency contacts, email, phone, minor or consent flags, or review changes. A viewer cannot open a mailing.
+
 ## Before every push (short checklist)
 
 - [ ] No `.env` or key files

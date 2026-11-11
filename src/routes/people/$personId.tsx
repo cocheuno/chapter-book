@@ -521,8 +521,11 @@ function PersonInner() {
         <section className="rounded-xl border border-danger bg-surface p-4">
           <h2 className="font-display text-xl">Forget this person</h2>
           <p className="mt-2 text-sm text-ink-soft">
-            Removes their name, contact details, notes and dietary needs, other emails, tags, relationships and
-            offices. Their attendance stays in event counts as &apos;Removed person&apos;. This cannot be undone.
+            Removes their name, contact details, notes and dietary needs, other emails, tags, relationships,
+            roles and offices, and their registration details: form answers, emergency contacts, and their name
+            in confirmation emails. Where they signed a consent as a guardian, their name and contact details
+            are removed and the consent date stays. Their attendance stays in event counts as &apos;Removed
+            person&apos;. This cannot be undone.
           </p>
           <form
             className="mt-3 flex flex-wrap items-end gap-2"

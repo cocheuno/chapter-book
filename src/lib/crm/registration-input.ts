@@ -14,7 +14,7 @@ import { detailsRequest } from "../payments/registration-details.ts";
 const attendeeInput = z.object({
   givenName: z.string().max(100),
   familyName: z.string().max(100),
-  email: z.string().max(200).optional(),
+  email: z.union([z.literal(""), z.string().trim().email().max(200)]).optional(),
   under18: z.boolean(),
   admissionId: z.string().max(64),
   addOnIds: z.array(z.string().max(64)).max(20),

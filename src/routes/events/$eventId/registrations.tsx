@@ -139,11 +139,36 @@ function RegistrationsInner() {
 
   const canEdit = data.role !== "viewer";
   const pendingChangeIds = data.registrations.flatMap((registration) =>
-    registration.attendees.filter((attendee) => attendee.changes.length > 0).map((attendee) => attendee.id),
+    registration.attendees.flatMap((attendee) =>
+      "changes" in attendee && attendee.changes.length > 0 ? [attendee.id] : [],
+    ),
   );
-  const visible = data.registrations.filter(
-    (registration) => deskFilter(registration, filter) && deskSearch(registration, search),
-  );
+  const visible = data.registrations.filter((registration) => {
+    const attendees = registration.attendees.map((attendee) =>
+      "review" in attendee
+        ? attendee
+        : { review: false, cancelled: attendee.cancelled },
+    );
+    return (
+      deskFilter(
+        {
+          status: registration.status,
+          needsReview: "needsReview" in registration ? registration.needsReview : null,
+          attendees,
+        },
+        filter,
+      ) &&
+      deskSearch(
+        {
+          code: registration.code,
+          purchaserName: registration.purchaserName,
+          purchaserEmail: "purchaserEmail" in registration ? registration.purchaserEmail : "",
+          attendees: registration.attendees,
+        },
+        search,
+      )
+    );
+  });
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -267,7 +292,7 @@ function RegistrationsInner() {
               const emails = uniqueEmails(
                 data.registrations
                   .filter((registration) => isActiveRegistration(registration.status) && !registration.holdLapsed)
-                  .map((registration) => registration.purchaserEmail),
+                  .map((registration) => ("purchaserEmail" in registration ? registration.purchaserEmail : null)),
               );
               void run(async () => {
                 await navigator.clipboard.writeText(emails.join(", "));
@@ -334,11 +359,31 @@ function RegistrationsInner() {
             variant="secondary"
             disabled={!data.event.purgeReady || busy}
             onClick={() => {
-              if (!window.confirm("Delete medical notes and emergency contacts for this event?")) return;
-              void run(() => purgeConsentDetails({ data: { eventId } }), "Medical and emergency details deleted");
+              if (
+                !window.confirm(
+                  "Delete, for every attendee of this event: emergency contacts, medical notes, dietary needs and allergies, accessibility needs, notes, roommate names, and guardians' phone and email? Names, tickets, payments, housing nights, and signed consent names and dates stay.",
+                )
+              ) {
+                return;
+              }
+              void (async () => {
+                setBusy(true);
+                try {
+                  const cleared = await purgeConsentDetails({ data: { eventId } });
+                  toast.success(
+                    `Deleted for ${cleared.attendees} attendees and ${cleared.consents} consents`,
+                  );
+                  await load();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not save");
+                } finally {
+                  setBusy(false);
+                  setRenameId(null);
+                }
+              })();
             }}
           >
-            Delete medical and emergency details
+            Delete health and emergency details
           </Button>
           {!data.event.purgeReady ? (
             <p className="text-sm text-muted">Available 30 days after the event's last day.</p>
@@ -501,7 +546,11 @@ function CountTable({ headers, rows, empty }: { headers: string[]; rows: (string
   );
 }
 
-function AttendeeDetails({ attendee }: { attendee: Attendee }) {
+function isViewerAttendee(attendee: Attendee): attendee is Extract<Attendee, { needsCare: boolean }> {
+  return "needsCare" in attendee;
+}
+
+function AttendeeDetails({ attendee }: { attendee: Exclude<Attendee, { needsCare: boolean }> }) {
   const details = attendee.details;
   const lines: string[] = [];
   if (details?.badgeName) lines.push(`Badge: ${details.badgeName}`);
@@ -609,9 +658,13 @@ function RegistrationCard({
           ) : null}
           <p className="text-sm text-muted">{formatWhen(registration.createdAt, "date")}</p>
           <p>
-            {registration.purchaserName} · {registration.purchaserEmail}
+            {"purchaserEmail" in registration
+              ? `${registration.purchaserName} · ${registration.purchaserEmail}`
+              : registration.purchaserName}
           </p>
-          {registration.needsReview ? <p className="text-sm text-danger">{registration.needsReview}</p> : null}
+          {"needsReview" in registration && registration.needsReview ? (
+            <p className="text-sm text-danger">{registration.needsReview}</p>
+          ) : null}
           {registration.confirmationStatus === "held" ? <p className="text-sm text-muted">Held — not sent</p> : null}
         </div>
         {canEdit ? (
@@ -718,15 +771,25 @@ function RegistrationCard({
                 <div>
                   <p>
                     {attendee.givenName} {attendee.familyName}
-                    {attendee.review ? (
+                    {isViewerAttendee(attendee) ? (
+                      attendee.needsCare ? (
+                        <span className="ml-2">
+                          <Badge tone="warn">Needs care</Badge>
+                        </span>
+                      ) : null
+                    ) : attendee.review ? (
                       <span className="ml-2">
                         <Badge tone="warn">check</Badge>
                       </span>
                     ) : null}
                   </p>
                   <p className="text-sm text-muted">{attendee.tickets.join(", ") || "No ticket"}</p>
-                  {attendee.dietary ? <p className="text-sm text-muted">{attendee.dietary}</p> : null}
-                  <AttendeeDetails attendee={attendee} />
+                  {isViewerAttendee(attendee) ? null : (
+                    <>
+                      {attendee.dietary ? <p className="text-sm text-muted">{attendee.dietary}</p> : null}
+                      <AttendeeDetails attendee={attendee} />
+                    </>
+                  )}
                 </div>
                 {canEdit && isActiveRegistration(registration.status) && !attendee.cancelled ? (
                   <div className="flex gap-2">
@@ -742,8 +805,10 @@ function RegistrationCard({
                 ) : null}
               </div>
             )}
-            {attendee.changesWaiting ? <p className="text-sm">Changes waiting for an editor</p> : null}
-            {attendee.changes.length ? (
+            {isViewerAttendee(attendee) || !attendee.changesWaiting ? null : (
+              <p className="text-sm">Changes waiting for an editor</p>
+            )}
+            {isViewerAttendee(attendee) || attendee.changes.length === 0 ? null : (
               <div className="space-y-2">
                 <p className="text-sm font-medium">Changes to review</p>
                 <ul className="space-y-1">
@@ -769,13 +834,13 @@ function RegistrationCard({
                   </div>
                 ) : null}
               </div>
-            ) : null}
-            {attendee.isMinor ? (
+            )}
+            {isViewerAttendee(attendee) || !attendee.isMinor ? null : (
               <p className={attendee.consentOnFile ? "text-sm font-medium text-ok" : "text-sm font-medium text-danger"}>
                 {attendee.consentOnFile ? "Consent on file" : "Consent missing"}
               </p>
-            ) : null}
-            {canEdit && attendee.isMinor && !attendee.cancelled ? (
+            )}
+            {!isViewerAttendee(attendee) && canEdit && attendee.isMinor && !attendee.cancelled ? (
               <div className="flex flex-wrap gap-2">
                 {attendee.consentOnFile ? (
                   <Button

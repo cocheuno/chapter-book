@@ -233,12 +233,63 @@ export function readDetails(value: unknown): RegistrationDetails | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** Editors and admins see emergency contacts. Anyone else does not receive the fields. */
-export function attendeeForRole<T>(role: string, attendee: T): T {
+/** Same shape, with notes, roommate, and dietary tags cleared. Null stays null. */
+export function purgedDetails(details: unknown): unknown {
+  if (details == null) return null;
+  if (typeof details !== "object" || Array.isArray(details)) return details;
+  return {
+    ...(details as Record<string, unknown>),
+    notes: "",
+    roommate: "",
+    dietaryTags: [],
+  };
+}
+
+type AttendeeCare = {
+  id?: unknown;
+  givenName?: unknown;
+  familyName?: unknown;
+  tickets?: unknown;
+  cancelled?: unknown;
+  dietary?: unknown;
+  accessibility?: unknown;
+  details?: unknown;
+};
+
+/** What a viewer may see of one attendee. Editors and admins receive the row unchanged. */
+export type ViewerAttendee = {
+  id: string;
+  givenName: string;
+  familyName: string;
+  tickets: string[];
+  cancelled: boolean;
+  needsCare: boolean;
+};
+
+function textPresent(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function needsCare(attendee: AttendeeCare): boolean {
+  if (textPresent(attendee.dietary) || textPresent(attendee.accessibility)) return true;
+  const details = attendee.details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) return false;
+  const record = details as { notes?: unknown; dietaryTags?: unknown };
+  if (textPresent(record.notes)) return true;
+  return Array.isArray(record.dietaryTags) && record.dietaryTags.some((tag) => textPresent(tag));
+}
+
+export function attendeeView<T extends AttendeeCare>(role: string, attendee: T): T | ViewerAttendee {
   if (role === "admin" || role === "editor") return attendee;
-  if (!attendee || typeof attendee !== "object") return attendee;
-  const copy = { ...(attendee as Record<string, unknown>) };
-  delete copy.emergencyName;
-  delete copy.emergencyPhone;
-  return copy as T;
+  const tickets = Array.isArray(attendee.tickets)
+    ? attendee.tickets.filter((ticket): ticket is string => typeof ticket === "string")
+    : [];
+  return {
+    id: typeof attendee.id === "string" ? attendee.id : "",
+    givenName: typeof attendee.givenName === "string" ? attendee.givenName : "",
+    familyName: typeof attendee.familyName === "string" ? attendee.familyName : "",
+    tickets,
+    cancelled: attendee.cancelled === true,
+    needsCare: needsCare(attendee),
+  };
 }

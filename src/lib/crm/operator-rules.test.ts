@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   disableBlockedReason,
   founderAllowed,
   hashInviteToken,
+  ipKey,
   isOperatorRole,
   newPasswordError,
   normalizeOperatorEmail,
@@ -29,6 +30,27 @@ describe("invite token", () => {
     assert.equal(a, createHash("sha256").update("secret-token", "utf8").digest("hex"));
     assert.notEqual(a, "secret-token");
     assert.equal(a.length, 64);
+  });
+});
+
+describe("ipKey", () => {
+  const ip = "203.0.113.10";
+
+  it("is deterministic and differs from the plain hash", () => {
+    const key = ipKey(ip, "desk-test-secret");
+    assert.equal(key, ipKey(ip, "desk-test-secret"));
+    assert.equal(key, createHmac("sha256", "desk-test-secret").update(ip, "utf8").digest("hex"));
+    assert.notEqual(key, hashInviteToken(ip));
+    assert.equal(key.length, 64);
+  });
+
+  it("changes when the secret changes", () => {
+    assert.notEqual(ipKey(ip, "desk-test-secret"), ipKey(ip, "other-desk-secret"));
+  });
+
+  it("falls back to the plain hash when the secret is unset", () => {
+    assert.equal(ipKey(ip, ""), hashInviteToken(ip));
+    assert.equal(ipKey(ip, "   "), hashInviteToken(ip));
   });
 });
 

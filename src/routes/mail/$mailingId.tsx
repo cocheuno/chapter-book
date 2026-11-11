@@ -20,18 +20,26 @@ function MailingInner() {
   const { mailingId } = Route.useParams();
   const mailHref = useListHref("mail", "/mail");
   const [data, setData] = useState<Awaited<ReturnType<typeof getMailing>> | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const latestId = useRef(mailingId);
   if (latestId.current !== mailingId) {
     latestId.current = mailingId;
     setData(null);
+    setError(null);
   }
   function load() {
     const id = mailingId;
     setData(null);
-    getMailing({ data: id }).then((d) => {
-      if (latestId.current !== id) return;
-      setData(d);
-    });
+    setError(null);
+    getMailing({ data: id })
+      .then((d) => {
+        if (latestId.current !== id) return;
+        setData(d);
+      })
+      .catch((err: unknown) => {
+        if (latestId.current !== id) return;
+        setError(err instanceof Error ? err.message : "Only editors can open a mailing.");
+      });
   }
   useEffect(load, [mailingId]);
   useEffect(() => {
@@ -46,6 +54,7 @@ function MailingInner() {
       href: `/mail/${mailingId}`,
     });
   }, [data, mailingId]);
+  if (error) return <p className="text-muted">{error}</p>;
   if (!data) return <p className="text-muted">Loading…</p>;
   const m = data.mailing as Record<string, string | number | null>;
   const subject = String(m.subject_snapshot ?? "").trim();
