@@ -195,8 +195,9 @@ Code changes must not change the chapter's current data, or what the public webs
 | 49b | Registrations update People (fill blanks; one-click apply) | 49 | Done (PR 61) | |
 | 81 | Registration safety before switching on (R3-01, R3-02, R3-07, R3-12) | 49b | Done (PR 62) | |
 | 82 | Money, spam and docs before switching on (R3-04, R3-06, R3-10, R3-11, R3-14) | 81 | Done (PR 63) | |
-| 83 | Forget, purge and viewers reach registration data (R3-03, R3-05, R3-15, R3-17) | 81 | | |
+| 83 | Forget, purge and viewers reach registration data (R3-03, R3-05, R3-15, R3-17) | 81 | Done (PR 65) | |
 | 84 | Homepage control: top of page, order, sections, past events | 11, 12 | Done (PR 64) | |
+| 85 | Export attendee emails from an event | 23 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -875,6 +876,12 @@ Forget also clears registration form answers, emergency contacts, the consent li
 Editors choose the top of the public page (nothing, the next featured event, or one published item), the order of the five homepage sections, and the order of each shelf. Dated events stay in date order. An event with no start date stays on the homepage until it has a date or is unpublished. Past events can fill an optional embed hook. With the new columns empty, /site and the public feed stay as they are.
 
 **Done when:** an editor can set the top, the section order, and the list order, and an empty homepage setting leaves /site and the feed unchanged.
+
+### WP-85 Export attendee emails from an event
+
+An editor exports one event's guest emails from the event page. The list is people who said yes, people who came, or everyone who has not declined. Outlook gets a CSV. Bcc gets the addresses copied. Forgotten, unsubscribed, do-not-contact, and deceased people are left out, and so is a guest with no email address. The export writes one activity-log row and does not change the guest list.
+
+**Done when:** an editor can download the CSV or copy the Bcc list, a viewer does not see the button, opted-out people and guests without an email are left out, and the only write is that activity-log row.
 
 ---
 

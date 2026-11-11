@@ -3,6 +3,11 @@ export function mayExportNametags(role: string): boolean {
   return role === "admin" || role === "editor";
 }
 
+/** Attendee email export is an editor action. A viewer only looks. */
+export function mayExportAttendeeEmails(role: string): boolean {
+  return role === "admin" || role === "editor";
+}
+
 /** Mail preview lists addresses. A viewer only looks. */
 export function mayPreviewMail(role: string): boolean {
   return role === "admin" || role === "editor";

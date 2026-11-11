@@ -15,6 +15,7 @@ import {
   addProgramPiece,
   cloneEvent,
   closeDoor,
+  exportAttendeeEmails,
   exportNametags,
   getEvent,
   listClergy,
@@ -48,12 +49,24 @@ function EventInner() {
   const [pieceTitle, setPieceTitle] = useState("");
   const [webPage, setWebPage] = useState<{ id: string; slug: string | null; published: boolean } | null>(null);
   const [assignees, setAssignees] = useState<{ userId: string; name: string }[]>([]);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailWho, setEmailWho] = useState<"yes" | "came" | "open">("yes");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailResult, setEmailResult] = useState<{
+    included: number;
+    optedOut: number;
+    missing: { personId: string; displayName: string }[];
+  } | null>(null);
   const latestId = useRef(eventId);
   if (latestId.current !== eventId) {
     latestId.current = eventId;
     setData(null);
     setWebPage(null);
     setAssignees([]);
+    setEmailOpen(false);
+    setEmailWho("yes");
+    setEmailBusy(false);
+    setEmailResult(null);
   }
 
   function load() {
@@ -475,10 +488,99 @@ function EventInner() {
         >
           Export nametags
         </Button>
+        {data.role !== "viewer" ? (
+          <Button type="button" variant="ghost" onClick={() => setEmailOpen((open) => !open)}>
+            Export attendee emails
+          </Button>
+        ) : null}
         <a href={`/mail/compose?eventId=${eventId}`}>
           <Button variant="ghost">Write a letter</Button>
         </a>
       </div>
+      {emailOpen && data.role !== "viewer" ? (
+        <div className="max-w-md space-y-3 rounded-md border border-line bg-surface p-3">
+          <Field label="Who">
+            <Select
+              value={emailWho}
+              onChange={(ev) => {
+                setEmailWho(ev.target.value as "yes" | "came" | "open");
+                setEmailResult(null);
+              }}
+            >
+              <option value="yes">Said yes</option>
+              <option value="came">Came</option>
+              <option value="open">Everyone who hasn&apos;t declined</option>
+            </Select>
+          </Field>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={emailBusy}
+              onClick={async () => {
+                setEmailBusy(true);
+                try {
+                  const result = await exportAttendeeEmails({ data: { eventId, who: emailWho, format: "csv" } });
+                  setEmailResult(result);
+                  if (result.included === 0 || result.csv == null) return;
+                  const blob = new Blob(["\ufeff" + result.csv], { type: "text/csv;charset=utf-8" });
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = result.filename;
+                  a.click();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not export");
+                } finally {
+                  setEmailBusy(false);
+                }
+              }}
+            >
+              Download for Outlook (.csv)
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={emailBusy}
+              onClick={async () => {
+                setEmailBusy(true);
+                try {
+                  const result = await exportAttendeeEmails({ data: { eventId, who: emailWho, format: "bcc" } });
+                  setEmailResult(result);
+                  if (result.included === 0 || result.bcc == null) return;
+                  await navigator.clipboard.writeText(result.bcc);
+                  toast.success(`Copied ${result.included} addresses. Paste them into Bcc.`);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not copy");
+                } finally {
+                  setEmailBusy(false);
+                }
+              }}
+            >
+              Copy addresses for Bcc
+            </Button>
+          </div>
+          {emailResult ? (
+            <div className="space-y-2 text-sm">
+              {emailResult.included === 0 ? <p>No one to export.</p> : null}
+              <p>
+                {emailResult.included} included. Left out: {emailResult.missing.length} without an email,{" "}
+                {emailResult.optedOut} unsubscribed or do not contact.
+              </p>
+              {emailResult.missing.length > 0 ? (
+                <ul>
+                  {emailResult.missing.map((person) => (
+                    <li key={person.personId}>
+                      <Link to="/people/$personId" params={{ personId: person.personId }} className="underline">
+                        {person.displayName}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
