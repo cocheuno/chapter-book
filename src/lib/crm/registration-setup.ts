@@ -719,6 +719,15 @@ export const saveRegistrationPage = createServerFn({ method: "POST" })
     const manageMessage = blankToNull(data.manageMessage);
     const housingInfo = blankToNull(data.housingInfo);
     const housingNights = blankToNull(data.housingNights);
+    if (housingNights) {
+      const lines = housingNights
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      if (lines.length > 7 || lines.some((line) => line.length > 80)) {
+        throw new Error("Housing nights: up to 7 lines of 80 characters.");
+      }
+    }
     const refundPolicy = blankToNull(data.refundPolicy);
     const holdHours = data.holdHours;
     const existing = await sql<{

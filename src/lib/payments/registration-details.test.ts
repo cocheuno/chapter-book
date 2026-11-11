@@ -6,7 +6,8 @@ import {
   LODGING_REQUIRED,
   REFUND_REQUIRED,
   TITLES,
-  attendeeForRole,
+  attendeeView,
+  purgedDetails,
   badgePrintName,
   blankDetails,
   detailsErrors,
@@ -224,25 +225,97 @@ describe("desk details", () => {
     assert.equal(readDetails({ title: "Mx." }), null);
   });
 
-  it("strips emergency fields from a viewer desk payload", () => {
+  it("clears notes, roommate, and dietary tags and keeps the rest", () => {
+    const details = filled({
+      notes: "Arriving late",
+      roommate: "Pat Example",
+      dietaryTags: ["vegan"],
+      nights: ["Friday, April 16"],
+      parking: true,
+      lodging: "friends",
+    });
+    const purged = purgedDetails(details);
+    assert.deepEqual(purged, {
+      ...details,
+      notes: "",
+      roommate: "",
+      dietaryTags: [],
+    });
+    assert.equal(details.notes, "Arriving late");
+    assert.equal(details.roommate, "Pat Example");
+    assert.deepEqual(details.dietaryTags, ["vegan"]);
+    assert.equal(purgedDetails(null), null);
+  });
+
+  it("gives editors the attendee and everyone else only the desk line", () => {
     const attendee = {
+      id: "a1",
       givenName: "Ann",
       familyName: "Lee",
       email: "ann.lee@example.com",
+      tickets: ["General"],
+      cancelled: false,
+      dietary: null as string | null,
+      accessibility: null as string | null,
+      details: { notes: "", dietaryTags: [] as string[] },
       emergencyName: "Pat Example",
       emergencyPhone: "555-0100",
+      isMinor: true,
+      consentOnFile: false,
+      review: true,
+      changes: [{ field: "city", stored: "", typed: "Madison" }],
+      changesWaiting: true,
     };
-    const desk = {
-      registrations: [{ attendees: [attendeeForRole("viewer", attendee)] }],
-    };
-    const json = JSON.stringify(desk);
-    assert.equal(json.includes("emergencyName"), false);
-    assert.equal(json.includes("emergencyPhone"), false);
-    assert.equal(json.includes("Pat Example"), false);
-    assert.equal(json.includes("555-0100"), false);
-    assert.equal(json.includes("ann.lee@example.com"), true);
-    assert.deepEqual(attendeeForRole("editor", attendee).emergencyName, "Pat Example");
-    assert.deepEqual(attendeeForRole("admin", attendee).emergencyPhone, "555-0100");
-    assert.equal("emergencyName" in attendeeForRole("guest", attendee), false);
+    assert.equal(attendeeView("editor", attendee), attendee);
+    const adminView = attendeeView("admin", attendee);
+    assert.equal("emergencyPhone" in adminView ? adminView.emergencyPhone : null, "555-0100");
+
+    const roles = ["viewer", "guest"] as const;
+    for (const role of roles) {
+      const cared = attendeeView(role, { ...attendee, dietary: "peanuts" });
+      assert.equal("needsCare" in cared, true);
+      assert.deepEqual(cared, {
+        id: "a1",
+        givenName: "Ann",
+        familyName: "Lee",
+        tickets: ["General"],
+        cancelled: false,
+        needsCare: true,
+      });
+      const json = JSON.stringify(cared);
+      for (const hidden of [
+        "email",
+        "emergency",
+        "dietary",
+        "accessibility",
+        "details",
+        "isMinor",
+        "consent",
+        "review",
+        "peanuts",
+        "Pat Example",
+        "555-0100",
+        "ann.lee@example.com",
+        "Madison",
+      ]) {
+        assert.equal(json.includes(hidden), false, hidden);
+      }
+    }
+
+    const ramp = attendeeView("viewer", { ...attendee, accessibility: "A ramp" });
+    const late = attendeeView("viewer", { ...attendee, details: { notes: "Arriving late", dietaryTags: [] } });
+    const tagged = attendeeView("viewer", { ...attendee, details: { notes: "", dietaryTags: ["vegan"] } });
+    const blank = attendeeView("viewer", {
+      ...attendee,
+      dietary: "  ",
+      accessibility: "",
+      details: { notes: " ", dietaryTags: ["", "  "] },
+    });
+    const cancelled = attendeeView("viewer", { ...attendee, cancelled: true });
+    assert.equal("needsCare" in ramp && ramp.needsCare, true);
+    assert.equal("needsCare" in late && late.needsCare, true);
+    assert.equal("needsCare" in tagged && tagged.needsCare, true);
+    assert.equal("needsCare" in blank && blank.needsCare, false);
+    assert.equal("cancelled" in cancelled && cancelled.cancelled, true);
   });
 });

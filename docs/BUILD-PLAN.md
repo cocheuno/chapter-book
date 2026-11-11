@@ -194,8 +194,9 @@ Code changes must not change the chapter's current data, or what the public webs
 | 49 | Registration form details | 48 | Done (PR 60) | |
 | 49b | Registrations update People (fill blanks; one-click apply) | 49 | Done (PR 61) | |
 | 81 | Registration safety before switching on (R3-01, R3-02, R3-07, R3-12) | 49b | Done (PR 62) | |
-| 82 | Money, spam and docs before switching on (R3-04, R3-06, R3-10, R3-11, R3-14) | 81 | | |
-| 84 | Homepage control: top of page, order, sections, past events | 11, 12 | | |
+| 82 | Money, spam and docs before switching on (R3-04, R3-06, R3-10, R3-11, R3-14) | 81 | Done (PR 63) | |
+| 83 | Forget, purge and viewers reach registration data (R3-03, R3-05, R3-15, R3-17) | 81 | | |
+| 84 | Homepage control: top of page, order, sections, past events | 11, 12 | Done (PR 64) | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -862,6 +863,12 @@ Holds lapse after hold_hours. Cancel restores the earlier RSVP. A role from the 
 An admin sets a ticket's payment link. An issued ticket's price waits out pending holds and needs the new price typed back. On Production, registration stays closed unless both spam-check keys are set. Mark paid and refund record the Stripe id. Register, consent, and pay links share one gate.
 
 **Done when:** those rules are in the book, PAYMENTS-RUNBOOK.md is the treasurer's note, and in-book registration stays off until the chapter turns it on.
+
+### WP-83 Forget, purge and viewers reach registration data
+
+Forget also clears registration form answers, emergency contacts, the consent link, and that person's name in confirmation emails. A consent they signed as a guardian keeps its date and loses their name and contact details. The after-event purge stays admin-only and stays 30 days after the event. It clears health and emergency details, dietary and accessibility needs, notes, roommate names, and guardians' phone and email, and it keeps names, tickets, payments, housing nights, and signed consent names and dates. Viewers see a Needs care badge and do not receive contact, health, consent, or review fields. A paper consent clears the consent link. An attendee email is blank or a valid email. Housing nights are at most 7 lines of 80 characters. New throttle keys and new consent signed-ip values use a keyed hash when BETTER_AUTH_SECRET is set. Existing rows stay as they are until an admin runs Forget or the purge.
+
+**Done when:** an admin Forget and the after-event purge remove those fields and keep what this package lists, a viewer cannot open a mailing or see registration contact or health details, and existing rows stay unchanged until an admin runs Forget or the purge.
 
 ### WP-84 Homepage control
 

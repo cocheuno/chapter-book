@@ -53,6 +53,20 @@ export function hashInviteToken(token: string): string {
   return nodeCrypto().createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+/** Keyed hash for a visitor address. New throttle keys and new consent rows use this. */
+export function ipKey(ip: string, secret?: string): string {
+  const configured = secret !== undefined ? secret : readAuthSecret();
+  const key = configured.trim();
+  if (!key) return hashInviteToken(ip);
+  return nodeCrypto().createHmac("sha256", key).update(ip, "utf8").digest("hex");
+}
+
+function readAuthSecret(): string {
+  if (typeof process === "undefined") return "";
+  const value = process.env["BETTER_AUTH_SECRET"];
+  return typeof value === "string" ? value : "";
+}
+
 export function normalizeOperatorEmail(email: string): string {
   return email.trim().toLowerCase();
 }

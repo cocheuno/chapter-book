@@ -2574,6 +2574,11 @@ export const getMailing = createServerFn({ method: "GET" })
   .validator((id: string) => id)
   .handler(async ({ context, data: id }) => {
     const m = await ctx(context.userId);
+    try {
+      assertEditor(m.role);
+    } catch {
+      throw new Error("Only editors can open a mailing.");
+    }
     const sql = await getSql();
     const rows = await sql<Row>`
       select * from mailings where id = ${id} and chapter_id = ${m.chapterId}

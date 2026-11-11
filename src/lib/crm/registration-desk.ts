@@ -21,11 +21,12 @@ import { amountMismatch, parseStripePaymentId, paymentStateLabel, refundIdError 
 import { parsePriceCents, seatsLeft } from "@/lib/payments/pricing";
 import { mealCounts, partReleases, seatDrift } from "@/lib/payments/registration-desk";
 import {
-  attendeeForRole,
+  attendeeView,
   badgePrintName,
   dietaryTagCounts,
   lodgingLabel,
   personRoleKey,
+  purgedDetails,
   readDetails,
 } from "@/lib/payments/registration-details";
 import { holdLapsed, restoredGuestStatus } from "@/lib/payments/registration-rules";
@@ -519,23 +520,30 @@ export const getRegistrationDesk = createServerFn({ method: "GET" })
         mealRows.map((row) => ({ partId: row.part_id, partTitle: row.part_title, dietary: row.dietary })),
       ),
       drift: seatDrift(parts, counted),
-      registrations: registrationRows.map((row) => ({
-        id: row.id,
-        code: row.code,
-        status: row.status,
-        holdLapsed: lapsed(row.status, row.created_at),
-        createdAt: row.created_at,
-        purchaserName: row.purchaser_name,
-        purchaserEmail: row.purchaser_email,
-        purchaserPhone: row.purchaser_phone,
-        needsReview: row.needs_review,
-        totalCents: asNumber(row.total_cents),
-        netPaidCents: netPaid.get(row.id) ?? 0,
-        confirmationStatus: confirmation.get(row.id) ?? null,
-        attendees: (attendeesByRegistration.get(row.id) ?? []).map((attendee) =>
-          attendeeForRole(member.role, attendee),
-        ),
-      })),
+      registrations: registrationRows.map((row) => {
+        const attendees = (attendeesByRegistration.get(row.id) ?? []).map((attendee) =>
+          attendeeView(member.role, attendee),
+        );
+        const shared = {
+          id: row.id,
+          code: row.code,
+          status: row.status,
+          holdLapsed: lapsed(row.status, row.created_at),
+          createdAt: row.created_at,
+          purchaserName: row.purchaser_name,
+          totalCents: asNumber(row.total_cents),
+          netPaidCents: netPaid.get(row.id) ?? 0,
+          confirmationStatus: confirmation.get(row.id) ?? null,
+          attendees,
+        };
+        if (member.role !== "admin" && member.role !== "editor") return shared;
+        return {
+          ...shared,
+          purchaserEmail: row.purchaser_email,
+          purchaserPhone: row.purchaser_phone,
+          needsReview: row.needs_review,
+        };
+      }),
       totals: {
         activeRegistrations: activeRows.length,
         activeAttendees: activeAttendeeIds.size,
@@ -1443,24 +1451,50 @@ export const purgeConsentDetails = createServerFn({ method: "POST" })
     if (!consentDetailsPurgeOpen(eventLastDay(event.starts_at, event.ends_at, event.timezone), today)) {
       throw new Error("Medical and emergency details stay until 30 days after the event.");
     }
-    const cleared = await sql<{ id: string }>`
-      update guardian_consents
-      set medical_notes = null, emergency_name = null, emergency_phone = null
-      where chapter_id = ${member.chapterId}
-        and attendee_id in (
-          select a.id from registration_attendees a
-          join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
-          where r.event_id = ${data.eventId} and a.chapter_id = ${member.chapterId}
-        )
-      returning id
-    `;
-    await recordAudit(sql, {
-      chapterId: member.chapterId,
-      actor: member.userId,
-      action: "consent_details_purged",
-      entity: "event",
-      entityId: data.eventId,
-      detail: { rows: cleared.length, eventId: data.eventId },
+    return withTransaction(async (tx) => {
+      // guardian_phone is not null; a blank is the clear this package can store.
+      const consents = await tx<{ id: string }>`
+        update guardian_consents
+        set medical_notes = null,
+            emergency_name = null,
+            emergency_phone = null,
+            guardian_email = null,
+            guardian_phone = ''
+        where chapter_id = ${member.chapterId}
+          and attendee_id in (
+            select a.id from registration_attendees a
+            join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+            where r.event_id = ${data.eventId} and a.chapter_id = ${member.chapterId}
+          )
+        returning id
+      `;
+      const attendeeRows = await tx<{ id: string; details: unknown }>`
+        select a.id, a.details
+        from registration_attendees a
+        join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+        where a.chapter_id = ${member.chapterId} and r.event_id = ${data.eventId}
+      `;
+      for (const row of attendeeRows) {
+        const next = row.details == null ? null : purgedDetails(row.details);
+        const detailsJson = next == null ? null : JSON.stringify(next);
+        await tx`
+          update registration_attendees
+          set emergency_name = null,
+              emergency_phone = null,
+              dietary = null,
+              accessibility = null,
+              details = ${detailsJson}::jsonb
+          where id = ${row.id} and chapter_id = ${member.chapterId}
+        `;
+      }
+      await recordAudit(tx, {
+        chapterId: member.chapterId,
+        actor: member.userId,
+        action: "consent_details_purged",
+        entity: "event",
+        entityId: data.eventId,
+        detail: { eventId: data.eventId, consents: consents.length, attendees: attendeeRows.length },
+      });
+      return { consents: consents.length, attendees: attendeeRows.length };
     });
-    return { rows: cleared.length };
   });

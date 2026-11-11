@@ -50,6 +50,19 @@ export const forgetPerson = createServerFn({ method: "POST" })
         detail: { on: todayIn(member.timezone) },
       });
 
+      const addressRows = await tx<{ email: string }>`
+        select lower(btrim(email)) as email
+        from persons
+        where id = ${personId} and chapter_id = ${chapterId}
+          and email is not null and btrim(email) <> ''
+        union
+        select lower(btrim(email)) as email
+        from person_emails
+        where person_id = ${personId} and chapter_id = ${chapterId}
+          and btrim(email) <> ''
+      `;
+      const addresses = [...new Set(addressRows.map((row) => row.email).filter((email) => email.length > 0))];
+
       await tx`
         delete from person_emails
         where person_id = ${personId} and chapter_id = ${chapterId}
@@ -90,6 +103,32 @@ export const forgetPerson = createServerFn({ method: "POST" })
         set notes = null, dietary_for_this_event = null, guest_name = null
         where person_id = ${personId} and chapter_id = ${chapterId}
       `;
+      const nameRows = await tx<{ full_name: string }>`
+        select distinct given_name || ' ' || family_name as full_name
+        from registration_attendees
+        where person_id = ${personId} and chapter_id = ${chapterId}
+      `;
+      const attendeeNames = nameRows
+        .map((row) => row.full_name)
+        .filter((name) => name.trim().length > 0)
+        .sort((left, right) => right.length - left.length);
+      for (const fullName of attendeeNames) {
+        await tx`
+          update mail_outbox
+          set text_body = replace(text_body, ${fullName}, 'Removed person'),
+              html_body = case
+                when html_body is null then null
+                else replace(html_body, ${fullName}, 'Removed person')
+              end
+          where chapter_id = ${chapterId}
+            and template_key = 'registration_confirmation'
+            and registration_id in (
+              select a.registration_id
+              from registration_attendees a
+              where a.person_id = ${personId} and a.chapter_id = ${chapterId}
+            )
+        `;
+      }
       await tx`
         update registration_attendees
         set given_name = 'Removed',
@@ -98,8 +137,24 @@ export const forgetPerson = createServerFn({ method: "POST" })
             badge_affiliation = null,
             dietary = null,
             accessibility = null,
-            review_changes = null
+            review_changes = null,
+            details = null,
+            emergency_name = null,
+            emergency_phone = null,
+            grade = null,
+            school_organization_id = null,
+            consent_token_hash = null
         where person_id = ${personId} and chapter_id = ${chapterId}
+      `;
+      await tx`
+        update audit_log
+        set detail = '{"forgotten": true}'::jsonb
+        where chapter_id = ${chapterId}
+          and entity = 'registration_attendee'
+          and entity_id in (
+            select a.id from registration_attendees a
+            where a.person_id = ${personId} and a.chapter_id = ${chapterId}
+          )
       `;
       await tx`
         delete from guardian_consents
@@ -109,13 +164,42 @@ export const forgetPerson = createServerFn({ method: "POST" })
             where a.person_id = ${personId} and a.chapter_id = ${chapterId}
           )
       `;
+      if (addresses.length > 0) {
+        // guardian_phone is not null; a blank is the clear this package can store.
+        await tx`
+          update guardian_consents
+          set guardian_name = 'Removed person',
+              signed_name = 'Removed person',
+              guardian_email = null,
+              guardian_phone = '',
+              relationship = null,
+              emergency_name = null,
+              emergency_phone = null,
+              medical_notes = null,
+              signed_ip = null
+          where chapter_id = ${chapterId}
+            and guardian_email is not null
+            and lower(guardian_email) = any(${addresses}::text[])
+        `;
+      }
       await tx`
         update registrations
         set purchaser_name = 'Removed person',
             purchaser_email = ${REMOVED_ADDRESS},
             purchaser_phone = null,
-            notes = null
+            notes = null,
+            heard_from = null,
+            utm_source = null
         where purchaser_person_id = ${personId} and chapter_id = ${chapterId}
+      `;
+      await tx`
+        update payments
+        set note = null
+        where chapter_id = ${chapterId}
+          and registration_id in (
+            select r.id from registrations r
+            where r.purchaser_person_id = ${personId} and r.chapter_id = ${chapterId}
+          )
       `;
       await tx`
         update mail_messages
@@ -142,6 +226,15 @@ export const forgetPerson = createServerFn({ method: "POST" })
           and entity = 'person'
           and entity_id = ${personId}
           and id <> ${auditId}
+      `;
+
+      await tx`
+        delete from person_roles
+        where person_id = ${personId}
+          and exists (
+            select 1 from persons p
+            where p.id = person_roles.person_id and p.chapter_id = ${chapterId}
+          )
       `;
 
       await tx`

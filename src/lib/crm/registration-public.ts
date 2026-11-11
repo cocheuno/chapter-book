@@ -12,7 +12,7 @@ import { lowerEmail, nid } from "./ids";
 import { loadMember } from "./member";
 import { composePersonName, splitWalkupName } from "./names";
 import { findPersonByEmail } from "./person-emails";
-import { hashInviteToken, newInviteToken } from "./operator-rules";
+import { hashInviteToken, ipKey, newInviteToken } from "./operator-rules";
 import { publicOrigin } from "./page-head";
 import { guardianConsentErrors, type GuardianConsentInput } from "@/lib/payments/consent-rules";
 import { paidRegistrationError, payLinkVisible, payUrl, paymentLinkError } from "@/lib/payments/payment-link-rules";
@@ -743,8 +743,8 @@ export const createRegistration = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await getSql();
     const ip = clientIp();
-    // A raw IP is never stored. The throttle key is a hash. Only failures count.
-    const throttleKey = `register:${hashInviteToken(ip)}`;
+    // A raw IP is never stored. The throttle key is a keyed hash. Only failures count.
+    const throttleKey = `register:${ipKey(ip)}`;
     if (throttleRefuses(await throttleCount(sql, throttleKey))) {
       throw new Error("Too many attempts. Please try again in an hour.");
     }
@@ -833,8 +833,8 @@ export const createRegistration = createServerFn({ method: "POST" })
       const message = guardianConsentErrors(consentInput(person))[0];
       if (message) throw new Error(message);
     }
-    // Same hash the throttle stores. The address itself is not saved on the consent.
-    const signedIp = hashInviteToken(ip);
+    // Same keyed hash the throttle stores. The address itself is not saved on the consent.
+    const signedIp = ipKey(ip);
 
     const titles = new Map(catalog.parts.map((part) => [part.id, part.title]));
     try {

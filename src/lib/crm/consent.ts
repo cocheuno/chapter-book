@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { getSql, withSavepoint } from "@/lib/db";
+import { getSql, withSavepoint, withTransaction } from "@/lib/db";
 import {
   EMERGENCY_NAME_MAX,
   EMERGENCY_PHONE_MAX,
@@ -21,7 +21,7 @@ import { bookRegistrationAllowed } from "./book-registration";
 import { eventRegistrationOpen, recordThrottleFailure, throttleCount } from "./registration-gate";
 import { lowerEmail, nid } from "./ids";
 import { composePersonName, splitWalkupName } from "./names";
-import { hashInviteToken, newInviteToken } from "./operator-rules";
+import { hashInviteToken, ipKey, newInviteToken } from "./operator-rules";
 import { findPersonByEmail } from "./person-emails";
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
@@ -329,32 +329,41 @@ export async function recordPaperConsent(
   if (message) throw new Error(message);
   const text = await latestGuardianText(sql, input.chapterId, input.eventId);
   if (!text) throw new Error("Add the guardian consent text before recording consent.");
-  const rows = await sql<{ code: string }>`
-    select r.code
-    from registration_attendees a
-    join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
-    where a.id = ${input.attendeeId}
-      and a.chapter_id = ${input.chapterId}
-      and r.event_id = ${input.eventId}
-      and a.is_minor
-      and a.cancelled_at is null
-      and not exists (
-        select 1 from guardian_consents g
-        where g.attendee_id = a.id and g.chapter_id = a.chapter_id
+  return withTransaction(async (tx) => {
+    const rows = await tx<{ code: string }>`
+      select r.code
+      from registration_attendees a
+      join registrations r on r.id = a.registration_id and r.chapter_id = a.chapter_id
+      where a.id = ${input.attendeeId}
+        and a.chapter_id = ${input.chapterId}
+        and r.event_id = ${input.eventId}
+        and a.is_minor
+        and a.cancelled_at is null
+        and not exists (
+          select 1 from guardian_consents g
+          where g.attendee_id = a.id and g.chapter_id = a.chapter_id
+        )
+    `;
+    const attendee = rows[0];
+    if (!attendee) throw new Error("This student does not need a paper consent.");
+    await tx`
+      insert into guardian_consents (
+        id, chapter_id, attendee_id, guardian_name, guardian_phone, photo_release,
+        consent_text_id, method, received_by, received_at
+      ) values (
+        ${nid()}, ${input.chapterId}, ${input.attendeeId}, ${input.guardianName.trim()},
+        ${input.guardianPhone.trim()}, ${false}, ${text.id}, ${"paper"}, ${input.receivedBy}, now()
       )
-  `;
-  const attendee = rows[0];
-  if (!attendee) throw new Error("This student does not need a paper consent.");
-  await sql`
-    insert into guardian_consents (
-      id, chapter_id, attendee_id, guardian_name, guardian_phone, photo_release,
-      consent_text_id, method, received_by, received_at
-    ) values (
-      ${nid()}, ${input.chapterId}, ${input.attendeeId}, ${input.guardianName.trim()},
-      ${input.guardianPhone.trim()}, ${false}, ${text.id}, ${"paper"}, ${input.receivedBy}, now()
-    )
-  `;
-  return { code: attendee.code };
+    `;
+    const cleared = await tx<{ id: string }>`
+      update registration_attendees
+      set consent_token_hash = null
+      where id = ${input.attendeeId} and chapter_id = ${input.chapterId}
+      returning id
+    `;
+    if (!cleared[0]) throw new Error("This student does not need a paper consent.");
+    return { code: attendee.code };
+  });
 }
 
 /** Editors only. Medical notes and emergency contacts are not on the desk list. */
@@ -448,7 +457,7 @@ export const submitConsent = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await getSql();
     const ip = clientIp();
-    const throttleKey = `consent:${hashInviteToken(ip)}`;
+    const throttleKey = `consent:${ipKey(ip)}`;
     if (throttleRefuses(await throttleCount(sql, throttleKey))) {
       throw new Error("Too many attempts. Please try again in an hour.");
     }
@@ -500,7 +509,7 @@ export const submitConsent = createServerFn({ method: "POST" })
         attendeeId: open.attendeeId,
         studentPersonId: open.studentPersonId,
         textId: text.id,
-        signedIp: hashInviteToken(ip),
+        signedIp: ipKey(ip),
         consent,
         undos,
       });
