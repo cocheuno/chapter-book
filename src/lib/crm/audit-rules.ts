@@ -27,6 +27,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup }>
   conference_session_saved: { label: "Session saved", group: "website" },
   conference_session_removed: { label: "Session removed", group: "website" },
   event_web_page_set: { label: "Event web page set", group: "website" },
+  homepage_saved: { label: "Homepage saved", group: "website" },
+  site_items_reordered: { label: "Website list reordered", group: "website" },
   registration_setup_saved: { label: "Registration setup saved", group: "registration" },
   ticket_price_changed: { label: "Ticket price or link changed", group: "registration" },
   registration_created: { label: "Registration created", group: "registration" },

@@ -195,6 +195,7 @@ Code changes must not change the chapter's current data, or what the public webs
 | 49b | Registrations update People (fill blanks; one-click apply) | 49 | Done (PR 61) | |
 | 81 | Registration safety before switching on (R3-01, R3-02, R3-07, R3-12) | 49b | Done (PR 62) | |
 | 82 | Money, spam and docs before switching on (R3-04, R3-06, R3-10, R3-11, R3-14) | 81 | | |
+| 84 | Homepage control: top of page, order, sections, past events | 11, 12 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -861,6 +862,12 @@ Holds lapse after hold_hours. Cancel restores the earlier RSVP. A role from the 
 An admin sets a ticket's payment link. An issued ticket's price waits out pending holds and needs the new price typed back. On Production, registration stays closed unless both spam-check keys are set. Mark paid and refund record the Stripe id. Register, consent, and pay links share one gate.
 
 **Done when:** those rules are in the book, PAYMENTS-RUNBOOK.md is the treasurer's note, and in-book registration stays off until the chapter turns it on.
+
+### WP-84 Homepage control
+
+Editors choose the top of the public page (nothing, the next featured event, or one published item), the order of the five homepage sections, and the order of each shelf. Dated events stay in date order. An event with no start date stays on the homepage until it has a date or is unpublished. Past events can fill an optional embed hook. With the new columns empty, /site and the public feed stay as they are.
+
+**Done when:** an editor can set the top, the section order, and the list order, and an empty homepage setting leaves /site and the feed unchanged.
 
 ---
 

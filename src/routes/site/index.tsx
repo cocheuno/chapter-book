@@ -3,10 +3,12 @@ import { BookOpen } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { PublicText } from "@/components/public-copy";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
+import { parseHomeSections, type HomeSectionKey } from "@/lib/crm/homepage-rules";
 import { siteHead } from "@/lib/crm/page-head";
 import { getPublicOrigin } from "@/lib/crm/public-origin";
 import { getPublicSite } from "@/lib/crm/site";
 import type { SiteItemRow } from "@/lib/crm/site";
+import { siteImageSrc } from "@/lib/crm/site-image";
 
 export const Route = createFileRoute("/site/")({
   loader: async () => {
@@ -40,9 +42,10 @@ function pageHref(item: SiteItemRow) {
 
 function PublicSite() {
   const { data } = Route.useLoaderData();
+  const top = data.top ?? null;
 
   const grouped = useMemo(() => {
-    const items = data?.items ?? [];
+    const items = (data?.items ?? []).filter((item) => item.id !== top?.id);
     return {
       announcements: items.filter((i) => i.kind === "announcement"),
       events: items.filter((i) => i.kind === "event"),
@@ -50,7 +53,7 @@ function PublicSite() {
       documents: items.filter((i) => i.kind === "document"),
       courses: items.filter((i) => i.kind === "course"),
     };
-  }, [data]);
+  }, [data, top]);
 
   const { settings } = data;
 
@@ -74,6 +77,7 @@ function PublicSite() {
       </header>
 
       <main className="mx-auto max-w-3xl space-y-14 px-4 py-10">
+        {top ? <TopCard item={top} /> : null}
         {settings.about ? (
           <section>
             <h1 className="font-display text-3xl">The chapter</h1>
@@ -84,41 +88,9 @@ function PublicSite() {
           </section>
         ) : null}
 
-        <Section title="Upcoming Events" empty="No public gatherings posted yet.">
-          {grouped.events.map((e) => (
-            <EventCard key={e.id} item={e} />
-          ))}
-        </Section>
-
-        <Section title="Announcements" empty="No announcements posted yet.">
-          {grouped.announcements.map((e) => (
-            <EventCard key={e.id} item={e} />
-          ))}
-        </Section>
-
-        <Section title="Articles" empty="No articles posted yet.">
-          {grouped.articles.map((a) => (
-            <CopyCard key={a.id} item={a} linkLabel="Read the article" />
-          ))}
-        </Section>
-
-        <Section title="Documents" empty="No documents posted yet.">
-          {grouped.documents.map((d) => (
-            <CopyCard key={d.id} item={d} linkLabel="Open document" />
-          ))}
-        </Section>
-
-        <Section title="Upcoming courses" empty="No courses posted yet.">
-          {grouped.courses.map((c) => (
-            <li key={c.id} className="rounded-xl border border-line bg-surface p-5">
-              <h3 className="font-display text-xl">{c.title}</h3>
-              <p className="mt-1 text-sm text-muted">
-                {[c.audience, c.subtitle].filter(Boolean).join(" · ")}
-              </p>
-              <PublicText text={c.summary} className="mt-2 leading-relaxed text-ink-soft" />
-            </li>
-          ))}
-        </Section>
+        {parseHomeSections(data.homeSections).map((kind) => (
+          <ShelfSection key={kind} kind={kind} grouped={grouped} />
+        ))}
 
         {data.pastEvents?.length ? (
           <Section title="Past events" empty="">
@@ -138,6 +110,114 @@ function PublicSite() {
         </div>
       </footer>
     </div>
+  );
+}
+
+type ShelfGroups = {
+  announcements: SiteItemRow[];
+  events: SiteItemRow[];
+  articles: SiteItemRow[];
+  documents: SiteItemRow[];
+  courses: SiteItemRow[];
+};
+
+function ShelfSection({ kind, grouped }: { kind: HomeSectionKey; grouped: ShelfGroups }) {
+  if (kind === "event") {
+    return (
+      <Section title="Upcoming Events" empty="No public gatherings posted yet.">
+        {grouped.events.map((e) => (
+          <EventCard key={e.id} item={e} />
+        ))}
+      </Section>
+    );
+  }
+  if (kind === "announcement") {
+    return (
+      <Section title="Announcements" empty="No announcements posted yet.">
+        {grouped.announcements.map((e) => (
+          <EventCard key={e.id} item={e} />
+        ))}
+      </Section>
+    );
+  }
+  if (kind === "article") {
+    return (
+      <Section title="Articles" empty="No articles posted yet.">
+        {grouped.articles.map((a) => (
+          <CopyCard key={a.id} item={a} linkLabel="Read the article" />
+        ))}
+      </Section>
+    );
+  }
+  if (kind === "document") {
+    return (
+      <Section title="Documents" empty="No documents posted yet.">
+        {grouped.documents.map((d) => (
+          <CopyCard key={d.id} item={d} linkLabel="Open document" />
+        ))}
+      </Section>
+    );
+  }
+  return (
+    <Section title="Upcoming courses" empty="No courses posted yet.">
+      {grouped.courses.map((c) => (
+        <li key={c.id} className="rounded-xl border border-line bg-surface p-5">
+          <h3 className="font-display text-xl">{c.title}</h3>
+          <p className="mt-1 text-sm text-muted">{[c.audience, c.subtitle].filter(Boolean).join(" · ")}</p>
+          <PublicText text={c.summary} className="mt-2 leading-relaxed text-ink-soft" />
+        </li>
+      ))}
+    </Section>
+  );
+}
+
+function TopCard({ item }: { item: SiteItemRow }) {
+  const url = pageHref(item);
+  const register = hrefFor(item.url);
+  const rich = publicCopyHtml(item.summary) ?? (item.summary?.trim() ? null : publicCopyHtml(item.body));
+  const picture = siteImageSrc(item.image_id);
+  return (
+    <article className="rounded-xl border border-line bg-surface p-8">
+      {picture ? <img src={picture} alt={item.title} className="mb-5 w-full rounded-lg" /> : null}
+      <p className="text-xs tracking-wide text-bronze uppercase">
+        {item.layout === "conference" ? "Conference" : item.featured ? "Featured" : "Gathering"}
+      </p>
+      <h2 className="mt-1 font-display text-3xl">{item.title}</h2>
+      {item.when_label ? <p className="mt-1 text-sm text-muted">{item.when_label}</p> : null}
+      {item.location ? <p className="text-sm text-ink-soft">{item.location}</p> : null}
+      {rich ? (
+        <div
+          className="announcement-html mt-3 leading-relaxed text-ink-soft"
+          dangerouslySetInnerHTML={{ __html: rich }}
+        />
+      ) : item.summary ? (
+        <p className="mt-3 leading-relaxed text-ink-soft">{item.summary}</p>
+      ) : null}
+      {item.eventPage && item.eventPage.href !== url ? (
+        <a href={item.eventPage.href} className="mt-3 block text-sm text-bronze underline-offset-2 hover:underline">
+          Event page: {item.eventPage.title}
+        </a>
+      ) : null}
+      {url ? (
+        <a
+          href={url}
+          className="mt-3 inline-block text-sm text-bronze underline-offset-2 hover:underline"
+          {...(url.startsWith("/") ? {} : { target: "_blank", rel: "noreferrer" })}
+        >
+          {item.slug ? (item.layout === "conference" ? "Conference page" : "Event details") : "Register"}
+        </a>
+      ) : null}
+      {register && register !== url ? (
+        <a
+          href={register}
+          className="mt-3 ml-4 inline-block text-sm text-bronze underline-offset-2 hover:underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Register
+        </a>
+      ) : null}
+    </article>
   );
 }
 

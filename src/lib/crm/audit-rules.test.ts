@@ -51,6 +51,8 @@ describe("AUDIT_ACTIONS", () => {
       "conference_session_saved",
       "conference_session_removed",
       "event_web_page_set",
+      "homepage_saved",
+      "site_items_reordered",
       "registration_setup_saved",
       "ticket_price_changed",
       "registration_created",
@@ -105,6 +107,12 @@ describe("AUDIT_ACTIONS", () => {
       "person_filled_from_registration",
     ]);
     assert.equal(actionsInGroup("chapter").includes("person_merged"), false);
+    assert.equal(AUDIT_ACTIONS.homepage_saved.label, "Homepage saved");
+    assert.equal(AUDIT_ACTIONS.homepage_saved.group, "website");
+    assert.equal(AUDIT_ACTIONS.site_items_reordered.label, "Website list reordered");
+    assert.equal(AUDIT_ACTIONS.site_items_reordered.group, "website");
+    assert.equal(actionsInGroup("website").includes("homepage_saved"), true);
+    assert.equal(actionsInGroup("website").includes("site_items_reordered"), true);
   });
 });
 

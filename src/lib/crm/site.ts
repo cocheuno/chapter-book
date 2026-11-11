@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSql } from "@/lib/db";
+import { getSql, withTransaction } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
@@ -12,6 +12,7 @@ import { assertEditor, loadMember } from "./member";
 import { foldName } from "./names";
 import { publicAboutFields, publicSummaryFields } from "./announcement-html";
 import { CHAPTER_TIME_ZONE, isPastItem, orderEvents, todayIn, withWhenText } from "./dates";
+import { parseHomeSections, pickTopItem, serializeHomeSections } from "./homepage-rules";
 import { onPublicShelf } from "./shelf";
 import { type SpeakerRecord } from "./conference-page";
 import { parseSectionOrder, serializeSectionOrder } from "./section-order";
@@ -24,11 +25,17 @@ function isUniqueViolation(err: unknown): boolean {
   return /duplicate key|unique constraint|unique index/i.test(msg);
 }
 
-type SettingsRow = {
+type MastheadRow = {
   public_title: string;
   public_tagline: string | null;
   about: string | null;
   contact_email: string | null;
+};
+
+type SettingsRow = MastheadRow & {
+  top_item_id: string | null;
+  top_auto: boolean;
+  home_sections: string | null;
 };
 
 export type SiteItemRow = {
@@ -102,11 +109,14 @@ const emptySettings: SettingsRow = {
   public_tagline: DEFAULT_SITE.publicTagline,
   about: DEFAULT_SITE.about,
   contact_email: DEFAULT_SITE.contactEmail,
+  top_item_id: null,
+  top_auto: false,
+  home_sections: null,
 };
 
 async function readSettings(sql: Awaited<ReturnType<typeof getSql>>, chapterId: string): Promise<SettingsRow> {
   const rows = await sql<SettingsRow>`
-    select public_title, public_tagline, about, contact_email
+    select public_title, public_tagline, about, contact_email, top_item_id, top_auto, home_sections
     from site_settings where chapter_id = ${chapterId}
   `;
   return rows[0] ?? emptySettings;
@@ -174,12 +184,33 @@ export const listSite = createServerFn({ method: "POST" })
     const settings = await readSettings(sql, m.chapterId);
     const items = await readItems(sql, m.chapterId, false);
     const gatherings = await listGatherings(sql, m.chapterId);
-    return { settings, items: withEventPages(items, gatherings), gatherings, kinds: SITE_KINDS, member: m };
+    const today = todayIn(CHAPTER_TIME_ZONE);
+    const shelf = items.filter((item) => item.published && onPublicShelf(item));
+    const currentTop = pickTopItem(shelf, { topItemId: settings.top_item_id, topAuto: settings.top_auto }, today);
+    return {
+      settings,
+      items: withEventPages(items, gatherings),
+      gatherings,
+      kinds: SITE_KINDS,
+      member: m,
+      topItemId: settings.top_item_id,
+      topAuto: settings.top_auto,
+      homeSections: settings.home_sections,
+      currentTopId: currentTop?.id ?? null,
+    };
   });
 
+type PublishedSite = {
+  settings: SettingsRow;
+  items: SiteItemRow[];
+  pastEvents: SiteItemRow[];
+  top: SiteItemRow | null;
+  homeSections?: string;
+};
+
 /** Public chapter page. No sign-in — do not attach authMiddleware. */
-export async function loadPublishedSite() {
-  const empty = { settings: emptySettings, items: [] as SiteItemRow[], pastEvents: [] as SiteItemRow[] };
+export async function loadPublishedSite(): Promise<PublishedSite> {
+  const empty: PublishedSite = { settings: emptySettings, items: [], pastEvents: [], top: null };
   const sql = await getSql();
   const chapters = await sql<{ id: string }>`select id from chapters order by created_at limit 1`;
   if (!chapters[0]) return empty;
@@ -196,42 +227,88 @@ export async function loadPublishedSite() {
       ...item,
       detailsHref: paths.get(item.id) ?? (item.slug ? `/p/${item.slug}` : null),
     }));
+  const picked = pickTopItem(shelf, { topItemId: settings.top_item_id, topAuto: settings.top_auto }, today);
+  const homeSections = settings.home_sections?.trim() ?? "";
   return {
     settings,
     items: decorate(upcoming),
     pastEvents: decorate(pastEvents),
+    top: picked ? (decorate([picked])[0] ?? null) : null,
+    ...(homeSections ? { homeSections } : {}),
   };
 }
 
-export function publicSiteDto(data: { settings: SettingsRow; items: SiteItemRow[] }) {
-  const paths = canonicalDetailPaths(data.items);
+function toPublicItem(i: SiteItemRow, paths: Map<string, string>) {
   return {
-    settings: {
-      publicTitle: data.settings.public_title,
-      publicTagline: data.settings.public_tagline,
-      ...publicAboutFields(data.settings.about),
-      contactEmail: data.settings.contact_email,
-    },
-    items: data.items.map((i) => ({
-      id: i.id,
-      kind: i.kind,
-      title: i.title,
-      subtitle: i.subtitle,
-      ...publicSummaryFields(i.kind, i.summary, i.body),
-      url: i.url,
-      location: i.location,
-      whenLabel: i.when_label,
-      ...(i.starts_on ? { startsOn: i.starts_on } : {}),
-      ...(i.ends_on ? { endsOn: i.ends_on } : {}),
-      audience: i.audience,
-      featured: i.featured,
-      slug: i.slug,
-      layout: i.layout === "conference" ? "conference" : "page",
-      imageSrc: siteImageSrc(i.image_id),
-      eventPage: i.eventPage ?? null,
-      href: paths.get(i.id) ?? (i.slug ? `/p/${i.slug}` : i.url),
-    })),
+    id: i.id,
+    kind: i.kind,
+    title: i.title,
+    subtitle: i.subtitle,
+    ...publicSummaryFields(i.kind, i.summary, i.body),
+    url: i.url,
+    location: i.location,
+    whenLabel: i.when_label,
+    ...(i.starts_on ? { startsOn: i.starts_on } : {}),
+    ...(i.ends_on ? { endsOn: i.ends_on } : {}),
+    audience: i.audience,
+    featured: i.featured,
+    slug: i.slug,
+    layout: i.layout === "conference" ? "conference" : "page",
+    imageSrc: siteImageSrc(i.image_id),
+    eventPage: i.eventPage ?? null,
+    href: paths.get(i.id) ?? (i.slug ? `/p/${i.slug}` : i.url),
   };
+}
+
+function pastRecency(item: SiteItemRow): string {
+  return item.ends_on || item.starts_on || "";
+}
+
+export function publicSiteDto(data: {
+  settings: SettingsRow;
+  items: SiteItemRow[];
+  pastEvents?: SiteItemRow[];
+  top?: SiteItemRow | null;
+}) {
+  const paths = canonicalDetailPaths(data.items);
+  const settings: {
+    publicTitle: string;
+    publicTagline: string | null;
+    contactEmail: string | null;
+    homeSections?: string;
+  } & ReturnType<typeof publicAboutFields> = {
+    publicTitle: data.settings.public_title,
+    publicTagline: data.settings.public_tagline,
+    ...publicAboutFields(data.settings.about),
+    contactEmail: data.settings.contact_email,
+  };
+  const homeSections = data.settings.home_sections?.trim();
+  if (homeSections) settings.homeSections = homeSections;
+  const dto: {
+    settings: typeof settings;
+    items: ReturnType<typeof toPublicItem>[];
+    top?: ReturnType<typeof toPublicItem>;
+    pastEvents?: ReturnType<typeof toPublicItem>[];
+  } = {
+    settings,
+    items: data.items.map((i) => toPublicItem(i, paths)),
+  };
+  if (data.top) dto.top = toPublicItem(data.top, paths);
+  const past = data.pastEvents ?? [];
+  if (past.length > 0) {
+    const recent = past.slice().sort((a, b) => {
+      const left = pastRecency(a);
+      const right = pastRecency(b);
+      if (left !== right) return left < right ? 1 : -1;
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      if (a.title < b.title) return -1;
+      if (a.title > b.title) return 1;
+      return 0;
+    }).slice(0, 6);
+    const pastPaths = canonicalDetailPaths([...data.items, ...recent]);
+    dto.pastEvents = recent.map((item) => toPublicItem(item, pastPaths));
+  }
+  return dto;
 }
 
 export const getPublicSite = createServerFn({ method: "POST" }).handler(async () => loadPublishedSite());
@@ -250,7 +327,7 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
     const m = await loadMember(context.userId);
     assertEditor(m.role);
     const sql = await getSql();
-    const beforeRows = await sql<SettingsRow>`
+    const beforeRows = await sql<MastheadRow>`
       select public_title, public_tagline, about, contact_email
       from site_settings where chapter_id = ${m.chapterId}
     `;
@@ -273,7 +350,7 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
         contact_email = excluded.contact_email,
         updated_at = now()
     `;
-    const afterRows = await sql<SettingsRow>`
+    const afterRows = await sql<MastheadRow>`
       select public_title, public_tagline, about, contact_email
       from site_settings where chapter_id = ${m.chapterId}
     `;
@@ -288,6 +365,119 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
         detail: { changed },
       });
     }
+    return { ok: true };
+  });
+
+async function homepageTopLabel(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  chapterId: string,
+  settings: { top_auto: boolean; top_item_id: string | null },
+): Promise<string> {
+  if (settings.top_auto) return "auto";
+  if (!settings.top_item_id) return "none";
+  const rows = await sql<{ title: string }>`
+    select title from site_items where id = ${settings.top_item_id} and chapter_id = ${chapterId}
+  `;
+  return rows[0]?.title ?? "none";
+}
+
+export const saveHomepage = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      topMode: z.enum(["none", "auto", "item"]),
+      topItemId: z.string().optional(),
+      homeSections: z.string().max(200),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    const sql = await getSql();
+    const existing = await sql<{ chapter_id: string }>`
+      select chapter_id from site_settings where chapter_id = ${m.chapterId}
+    `;
+    if (!existing[0]) throw new Error("Save the masthead first.");
+    let topItemId: string | null = null;
+    let topAuto = false;
+    let toTop = "none";
+    if (data.topMode === "auto") {
+      topAuto = true;
+      toTop = "auto";
+    } else if (data.topMode === "item") {
+      const id = data.topItemId?.trim() ?? "";
+      if (!id) throw new Error("Choose a published item.");
+      const rows = await sql<{ id: string; title: string }>`
+        select id, title from site_items
+        where id = ${id} and chapter_id = ${m.chapterId} and published
+      `;
+      if (!rows[0]) throw new Error("Choose a published item.");
+      topItemId = rows[0].id;
+      toTop = rows[0].title;
+    }
+    const before = await readSettings(sql, m.chapterId);
+    const fromTop = await homepageTopLabel(sql, m.chapterId, before);
+    const normalized = serializeHomeSections(parseHomeSections(data.homeSections));
+    const storedSections = normalized === serializeHomeSections(parseHomeSections(null)) ? null : normalized;
+    await sql`
+      update site_settings
+      set top_item_id = ${topItemId},
+          top_auto = ${topAuto},
+          home_sections = ${storedSections}
+      where chapter_id = ${m.chapterId}
+    `;
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "homepage_saved",
+      entity: "chapter",
+      entityId: m.chapterId,
+      detail: {
+        from: { top: fromTop, sections: before.home_sections },
+        to: { top: toTop, sections: storedSections },
+      },
+    });
+    return { ok: true };
+  });
+
+export const saveSiteOrder = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      kind: z.enum(["announcement", "event", "article", "document", "course"]),
+      ids: z.array(z.string()),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await loadMember(context.userId);
+    assertEditor(m.role);
+    await withTransaction(async (tx) => {
+      const rows = await tx<{ id: string }>`
+        select id from site_items
+        where chapter_id = ${m.chapterId} and kind = ${data.kind}
+      `;
+      const current = new Set(rows.map((row) => row.id));
+      const incoming = data.ids;
+      const same =
+        incoming.length === current.size &&
+        new Set(incoming).size === incoming.length &&
+        incoming.every((id) => current.has(id));
+      if (!same) throw new Error("The list changed. Reload and try again.");
+      for (let position = 0; position < incoming.length; position++) {
+        await tx`
+          update site_items set sort_order = ${position}
+          where id = ${incoming[position]} and chapter_id = ${m.chapterId} and kind = ${data.kind}
+        `;
+      }
+      await recordAudit(tx, {
+        chapterId: m.chapterId,
+        actor: m.userId,
+        action: "site_items_reordered",
+        entity: "chapter",
+        entityId: m.chapterId,
+        detail: { kind: data.kind, count: incoming.length },
+      });
+    });
     return { ok: true };
   });
 
