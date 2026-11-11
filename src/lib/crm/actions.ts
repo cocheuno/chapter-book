@@ -20,8 +20,9 @@ import { findPersonByEmail } from "./person-emails";
 import { composePersonName, listedName, postNominalsText, salutation, splitMiddle, splitWalkupName } from "./names";
 import { toHonorificGreeting, toSalutationGreeting } from "./templates";
 import { ensureEventWebPage } from "./event-page";
-import { mayExportNametags, mayPreviewMail } from "./handler-roles";
+import { mayExportAttendeeEmails, mayExportNametags, mayPreviewMail } from "./handler-roles";
 import { assertAdmin, assertEditor, loadMember, type MemberContext } from "./member";
+import { attendeeEmailCsv, attendeeEmailFilename, attendeeEmailList } from "./attendee-emails";
 import { csvRow } from "./csv";
 import { recordAudit } from "./audit";
 import { changedFields } from "./audit-rules";
@@ -2779,6 +2780,89 @@ export const listClergy = createServerFn({ method: "GET" })
       order by p.family_name, p.given_name, p.display_name
     `;
     return rows.map((p) => ({ id: p.id, display_name: listedName(p) }));
+  });
+
+export const exportAttendeeEmails = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      eventId: z.string().min(1),
+      who: z.enum(["yes", "came", "open"]),
+      format: z.enum(["csv", "bcc"]),
+    }).parse,
+  )
+  .handler(async ({ context, data }) => {
+    const m = await ctx(context.userId);
+    assertEditor(m.role);
+    if (!mayExportAttendeeEmails(m.role)) throw new Error("Viewers can look, not edit.");
+    const sql = await getSql();
+    const events = await sql<{ title: string }>`
+      select title from events
+      where id = ${data.eventId} and chapter_id = ${m.chapterId}
+    `;
+    const event = events[0];
+    if (!event) throw new Error("Event not found");
+    const rows = await sql<{
+      person_id: string;
+      display_name: string;
+      given_name: string | null;
+      family_name: string | null;
+      email: string | null;
+      guest_status: string | null;
+      checked_in_at: string | null;
+      email_unsubscribed: boolean;
+      status: string | null;
+      forgotten_at: string | null;
+    }>`
+      select p.person_id, pe.display_name, pe.given_name, pe.family_name, pe.email,
+             p.guest_status, p.checked_in_at, pe.email_unsubscribed, pe.status, pe.forgotten_at
+      from participations p
+      join persons pe on pe.id = p.person_id and pe.chapter_id = ${m.chapterId}
+      where p.chapter_id = ${m.chapterId}
+        and p.event_id = ${data.eventId}
+        and p.party_type = 'person'
+      order by pe.display_name, p.id
+    `;
+    const list = attendeeEmailList(
+      rows.map((row) => ({
+        personId: row.person_id,
+        displayName: row.display_name,
+        givenName: row.given_name,
+        familyName: row.family_name,
+        email: row.email,
+        guestStatus: row.guest_status,
+        checkedIn: row.checked_in_at != null,
+        unsubscribed: row.email_unsubscribed === true,
+        status: row.status,
+        forgotten: row.forgotten_at != null,
+      })),
+      data.who,
+    );
+    await recordAudit(sql, {
+      chapterId: m.chapterId,
+      actor: m.userId,
+      action: "export",
+      entity: "event",
+      entityId: data.eventId,
+      detail: { kind: "attendee_emails", who: data.who, format: data.format, rows: list.included },
+    });
+    const filename = attendeeEmailFilename(event.title, data.who);
+    if (data.format === "csv") {
+      return {
+        filename,
+        csv: attendeeEmailCsv(list.contacts),
+        included: list.included,
+        optedOut: list.optedOut,
+        missing: list.missing,
+      };
+    }
+    return {
+      filename,
+      bcc: list.bcc,
+      included: list.included,
+      optedOut: list.optedOut,
+      missing: list.missing,
+    };
   });
 
 const listKeySchema = z.enum(["religious_title", "academic_title", "post_nominal", "state", "country"]);

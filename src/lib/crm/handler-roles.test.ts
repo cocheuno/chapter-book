@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  mayExportAttendeeEmails,
   mayExportNametags,
   mayPreviewMail,
   maySetBookRegistration,
@@ -12,6 +13,14 @@ describe("exportNametags", () => {
     assert.equal(mayExportNametags("admin"), true);
     assert.equal(mayExportNametags("editor"), true);
     assert.equal(mayExportNametags("viewer"), false);
+  });
+});
+
+describe("exportAttendeeEmails", () => {
+  it("allows an admin and an editor, and refuses a viewer", () => {
+    assert.equal(mayExportAttendeeEmails("admin"), true);
+    assert.equal(mayExportAttendeeEmails("editor"), true);
+    assert.equal(mayExportAttendeeEmails("viewer"), false);
   });
 });
 

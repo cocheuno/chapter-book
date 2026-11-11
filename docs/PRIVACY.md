@@ -57,6 +57,8 @@ An admin runs these from the desk. Nothing else rewrites these rows.
 
 On the registration desk a viewer sees the purchaser's name, the code, the status, and the totals, plus each attendee's name, tickets, and cancelled status, and a Needs care badge when a dietary need, an accessibility need, a note, or a dietary tag is present. A viewer does not receive form answers, dietary text, accessibility text, emergency contacts, email, phone, minor or consent flags, or review changes. A viewer cannot open a mailing.
 
+Event email exports: the event page can export the emails of an event's guests for one message. Unsubscribed, do-not-contact, deceased and forgotten people are left out. Each export is in the activity log. Use Bcc, and delete the file when the message is sent.
+
 ## Before every push (short checklist)
 
 - [ ] No `.env` or key files
