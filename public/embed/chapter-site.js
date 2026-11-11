@@ -81,6 +81,53 @@
     return t;
   }
 
+  function topHtml(item) {
+    var html = "<article class=\"scs-top\">";
+    if (item.imageSrc) {
+      html += "<img src=\"" + escapeHtml(origin + item.imageSrc) + "\" alt=\"" + escapeHtml(item.title || "") + "\">";
+    }
+    html += card(item);
+    html += "</article>";
+    return html;
+  }
+
+  // When a saved section order arrives, reorder list hosts that share one parent.
+  // Hosts under a different parent stay where they are.
+  function reorderSections(orderText) {
+    var keys = String(orderText).split(",");
+    var nodes = [];
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i].replace(/^\s+|\s+$/g, "");
+      if (!key) continue;
+      var host = document.querySelector("[data-scs-list=\"" + key + "\"]");
+      if (!host) continue;
+      var node = host.closest("section") || host;
+      if (nodes.indexOf(node) !== -1) continue;
+      nodes.push(node);
+    }
+    var groups = [];
+    for (var n = 0; n < nodes.length; n++) {
+      var parent = nodes[n].parentNode;
+      var found = false;
+      for (var g = 0; g < groups.length; g++) {
+        if (groups[g].parent === parent) {
+          groups[g].nodes.push(nodes[n]);
+          found = true;
+          break;
+        }
+      }
+      if (!found) groups.push({ parent: parent, nodes: [nodes[n]] });
+    }
+    for (var g2 = 0; g2 < groups.length; g2++) {
+      var group = groups[g2];
+      if (!group.parent || group.nodes.length < 2) continue;
+      for (var k = 1; k < group.nodes.length; k++) {
+        var prev = group.nodes[k - 1];
+        if (prev.nextSibling !== group.nodes[k]) group.parent.insertBefore(group.nodes[k], prev.nextSibling);
+      }
+    }
+  }
+
   fetch(origin + "/api/public-site")
     .then(function (r) {
       if (!r.ok) throw new Error("public-site " + r.status);
@@ -94,15 +141,28 @@
       var aboutRich = safeSection(s.aboutHtml);
       if (aboutEl && aboutRich) aboutEl.innerHTML = aboutRich;
       else text(aboutEl, s.about);
+      if (s.homeSections) reorderSections(s.homeSections);
+      var topId = "";
+      var topHost = document.querySelector("[data-scs=\"top\"]");
+      if (data && data.top && topHost) {
+        topId = data.top.id || "";
+        topHost.innerHTML = topHtml(data.top);
+      }
       var items = (data && data.items) || [];
       ["announcement", "event", "article", "document", "course"].forEach(function (kind) {
         var host = document.querySelector("[data-scs-list=\"" + kind + "\"]");
         if (!host) return;
         var group = items.filter(function (i) {
-          return i.kind === kind;
+          if (i.kind !== kind) return false;
+          if (topId && i.id === topId) return false;
+          return true;
         });
         host.innerHTML = group.map(card).join("") || "<p>Nothing posted yet.</p>";
       });
+      var pastHost = document.querySelector("[data-scs-list=\"past-event\"]");
+      if (data && data.pastEvents && pastHost) {
+        pastHost.innerHTML = data.pastEvents.map(card).join("") || "<p>Nothing posted yet.</p>";
+      }
     })
     .catch(function () {
       /* leave existing GoDaddy markup in place */

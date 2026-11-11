@@ -6,10 +6,28 @@ import { Button } from "@/components/ui/button";
 import { CopyPreview } from "@/components/copy-preview";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { publicCopyHtml } from "@/lib/crm/announcement-html";
-import { CHAPTER_TIME_ZONE, isPastItem, todayIn, whenLabelFor } from "@/lib/crm/dates";
+import { CHAPTER_TIME_ZONE, isPastItem, orderEvents, todayIn, whenLabelFor } from "@/lib/crm/dates";
 import { fileToBase64, PictureField } from "@/components/picture-field";
+import {
+  homeBadges,
+  homeSectionLabel,
+  moveItem,
+  moveKey,
+  parseHomeSections,
+  pickTopItem,
+  serializeHomeSections,
+  type HomeSectionKey,
+} from "@/lib/crm/homepage-rules";
 import { moveSection, parseSectionOrder, sectionLabel, serializeSectionOrder } from "@/lib/crm/section-order";
-import { listSite, removeSiteItem, saveSiteItem, saveSiteSettings, uploadSiteImage } from "@/lib/crm/site";
+import {
+  listSite,
+  removeSiteItem,
+  saveHomepage,
+  saveSiteItem,
+  saveSiteOrder,
+  saveSiteSettings,
+  uploadSiteImage,
+} from "@/lib/crm/site";
 import type { SiteKind } from "@/lib/crm/site-seed";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +43,14 @@ export const Route = createFileRoute("/website/")({
 type SiteData = Awaited<ReturnType<typeof listSite>>;
 type SiteItem = SiteData["items"][number];
 
+function publishedChoices(items: SiteItem[]) {
+  const rank = (kind: string) => (kind === "event" ? 0 : kind === "announcement" ? 1 : 2);
+  return items
+    .filter((item) => item.published)
+    .slice()
+    .sort((a, b) => rank(a.kind) - rank(b.kind) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+}
+
 const emptyItem = (kind: SiteKind) => ({
   id: "",
   kind,
@@ -37,7 +63,7 @@ const emptyItem = (kind: SiteKind) => ({
   audience: "",
   featured: false,
   published: false,
-  onShelf: false,
+  onShelf: true,
   slug: "",
   body: "",
   layout: "page" as "page" | "conference",
@@ -74,6 +100,15 @@ function WebsiteInner() {
     about: "",
     contactEmail: "",
   });
+  const [home, setHome] = useState<{
+    topMode: "none" | "auto" | "item";
+    topItemId: string;
+    sections: HomeSectionKey[];
+  }>({
+    topMode: "none",
+    topItemId: "",
+    sections: parseHomeSections(null),
+  });
 
   function load() {
     setErr(null);
@@ -86,12 +121,20 @@ function WebsiteInner() {
           about: d.settings.about ?? "",
           contactEmail: d.settings.contact_email ?? "",
         });
+        setHome({
+          topMode: d.topAuto ? "auto" : d.topItemId ? "item" : "none",
+          topItemId: d.topItemId ?? "",
+          sections: parseHomeSections(d.homeSections),
+        });
       })
       .catch((e) => setErr(e instanceof Error ? e.message : "Could not open the shelf"));
   }
   useEffect(load, []);
 
-  const rows = useMemo(() => (data?.items ?? []).filter((i) => i.kind === tab), [data, tab]);
+  const rows = useMemo(() => {
+    const list = (data?.items ?? []).filter((i) => i.kind === tab);
+    return tab === "event" ? orderEvents(list) : list;
+  }, [data, tab]);
   const conferences = useMemo(
     () => (data?.items ?? []).filter((i) => i.kind === "event" && i.layout === "conference" && i.id !== form.id),
     [data, form.id],
@@ -149,7 +192,8 @@ function WebsiteInner() {
 
   if (err) return <p className="text-danger">{err}</p>;
   if (!data) return <p className="text-muted">Opening the website shelf…</p>;
-  const canEdit = data.member.role !== "viewer";
+  const site = data;
+  const canEdit = site.member.role !== "viewer";
   const gatheringDate =
     form.kind === "event"
       ? (data.gatherings ?? []).find(
@@ -157,6 +201,46 @@ function WebsiteInner() {
             gathering.public_item_id === form.id && Boolean(gathering.starts_on) && gathering.starts_on !== form.startsOn,
         )
       : undefined;
+  const today = todayIn(CHAPTER_TIME_ZONE);
+  const showing = pickTopItem(
+    data.items.filter((item) => item.published && item.on_shelf !== false),
+    {
+      topAuto: home.topMode === "auto",
+      topItemId: home.topMode === "item" ? home.topItemId : null,
+    },
+    today,
+  );
+  const chosen = home.topItemId ? data.items.find((item) => item.id === home.topItemId) : undefined;
+  const chosenDropped =
+    home.topMode === "item" && chosen != null && (!chosen.published || isPastItem(chosen, today));
+
+  async function reorder(item: SiteItem, direction: "up" | "down") {
+    const kindItems = site.items.filter((row) => row.kind === item.kind);
+    let ids: string[];
+    if (item.kind === "event") {
+      // Dated events stay in their stored places. Only events without a date move.
+      const undated = kindItems.filter((row) => !row.starts_on).map((row) => row.id);
+      const moved = moveItem(undated, item.id, direction);
+      if (moved.join("\0") === undated.join("\0")) return;
+      let cursor = 0;
+      ids = kindItems.map((row) => {
+        if (row.starts_on) return row.id;
+        const next = moved[cursor];
+        cursor += 1;
+        return next ?? row.id;
+      });
+    } else {
+      const current = kindItems.map((row) => row.id);
+      ids = moveItem(current, item.id, direction);
+      if (ids.join("\0") === current.join("\0")) return;
+    }
+    try {
+      await saveSiteOrder({ data: { kind: item.kind, ids } });
+      load();
+    } catch (ex) {
+      toast.error(ex instanceof Error ? ex.message : "Could not save");
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -180,6 +264,7 @@ function WebsiteInner() {
           minute.
         </p>
         <pre className="mt-3 overflow-x-auto rounded-lg bg-paper p-3 text-xs text-ink">{`<script src="${typeof window !== "undefined" ? window.location.origin : ""}/embed/chapter-site.js" defer></script>
+<div data-scs="top"></div>
 <h1 data-scs="title"></h1>
 <p data-scs="tagline"></p>
 <p data-scs="about"></p>
@@ -187,7 +272,9 @@ function WebsiteInner() {
 <div data-scs-list="announcement"></div>
 <div data-scs-list="article"></div>
 <div data-scs-list="document"></div>
-<div data-scs-list="course"></div>`}</pre>
+<div data-scs-list="course"></div>
+<div data-scs-list="past-event"></div>`}</pre>
+        <p className="mt-2">The top and past-event lines are optional.</p>
         {canEdit && (
           <Button
             type="button"
@@ -261,6 +348,115 @@ function WebsiteInner() {
         )}
       </form>
 
+      {canEdit ? (
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h2 className="font-display text-xl text-ink">Homepage</h2>
+          <h3 className="mt-4 font-display text-lg text-ink">Top of the page</h3>
+          <div className="mt-2 grid gap-2">
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="radio"
+                className="size-5"
+                name="topMode"
+                checked={home.topMode === "none"}
+                onChange={() => setHome({ ...home, topMode: "none" })}
+              />
+              Nothing
+            </label>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="radio"
+                className="size-5"
+                name="topMode"
+                checked={home.topMode === "auto"}
+                onChange={() => setHome({ ...home, topMode: "auto" })}
+              />
+              The next featured event, automatically
+            </label>
+            <label className="flex min-h-11 flex-wrap items-center gap-2 text-sm">
+              <input
+                type="radio"
+                className="size-5"
+                name="topMode"
+                checked={home.topMode === "item"}
+                onChange={() => setHome({ ...home, topMode: "item" })}
+              />
+              This item:
+              <Select
+                className="w-auto max-w-md min-w-48 flex-1"
+                value={home.topItemId}
+                onChange={(e) => setHome({ ...home, topMode: "item", topItemId: e.target.value })}
+              >
+                <option value="">Choose an item</option>
+                {publishedChoices(data.items).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+          <p className="mt-3 text-sm text-ink-soft">
+            {showing ? `Now showing: ${showing.title}` : "Nothing is at the top."}
+          </p>
+          {chosenDropped && chosen ? (
+            <p className="mt-2 text-sm font-medium text-amber-800">
+              {chosen.title} is no longer shown (past or unpublished). Choose another.
+            </p>
+          ) : null}
+          <h3 className="mt-6 font-display text-lg text-ink">Homepage sections</h3>
+          <ul className="mt-2 divide-y divide-line rounded-xl border border-line">
+            {home.sections.map((key) => {
+              const label = homeSectionLabel(key);
+              return (
+                <li key={key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <span>{label}</span>
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      aria-label={`Move ${label} up`}
+                      onClick={() => setHome({ ...home, sections: moveKey(home.sections, key, "up") })}
+                    >
+                      Move up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      aria-label={`Move ${label} down`}
+                      onClick={() => setHome({ ...home, sections: moveKey(home.sections, key, "down") })}
+                    >
+                      Move down
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <Button
+            type="button"
+            className="mt-4"
+            onClick={async () => {
+              try {
+                await saveHomepage({
+                  data: {
+                    topMode: home.topMode,
+                    topItemId: home.topMode === "item" ? home.topItemId : undefined,
+                    homeSections: serializeHomeSections(home.sections),
+                  },
+                });
+                toast.success("Homepage saved");
+                load();
+              } catch (ex) {
+                toast.error(ex instanceof Error ? ex.message : "Could not save");
+              }
+            }}
+          >
+            Save homepage
+          </Button>
+        </section>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {data.kinds.map((k) => (
           <button
@@ -307,7 +503,7 @@ function WebsiteInner() {
                   audience: form.audience,
                   featured: form.featured,
                   published: form.published,
-                  onShelf: isTalk ? form.onShelf : undefined,
+                  onShelf: form.onShelf,
                   slug: form.slug,
                   body: form.body,
                   layout,
@@ -331,7 +527,7 @@ function WebsiteInner() {
                 audience: form.audience || null,
                 featured: form.featured,
                 published: form.published,
-                on_shelf: isTalk ? form.onShelf : true,
+                on_shelf: form.onShelf,
                 sort_order: 0,
                 slug: saved.slug ?? (form.slug || null),
                 body: form.body || null,
@@ -413,7 +609,17 @@ function WebsiteInner() {
             <Field label="Show on conference">
               <Select
                 value={form.conferenceId}
-                onChange={(e) => setForm({ ...form, conferenceId: e.target.value, layout: "page" })}
+                onChange={(e) => {
+                  const conferenceId = e.target.value;
+                  const nowTalk = form.kind === "article" && Boolean(conferenceId);
+                  const wasTalk = form.kind === "article" && Boolean(form.conferenceId);
+                  setForm({
+                    ...form,
+                    conferenceId,
+                    layout: "page",
+                    onShelf: nowTalk && !wasTalk && !form.id ? false : form.onShelf,
+                  });
+                }}
               >
                 <option value="">Not on a conference page</option>
                 {conferences.map((conference) => (
@@ -649,17 +855,15 @@ function WebsiteInner() {
             />
             Published
           </label>
-          {isTalk ? (
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-5"
-                checked={form.onShelf}
-                onChange={(e) => setForm({ ...form, onShelf: e.target.checked })}
-              />
-              Also list on the Articles shelf
-            </label>
-          ) : null}
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-5"
+              checked={form.onShelf}
+              onChange={(e) => setForm({ ...form, onShelf: e.target.checked })}
+            />
+            {isTalk ? "Also list on the Articles shelf" : "Show in the homepage lists"}
+          </label>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -687,15 +891,29 @@ function WebsiteInner() {
         </form>
       )}
 
+      {tab === "event" ? (
+        <p className="text-sm text-ink-soft">
+          Dated events are listed by date. Move up and Move down order events without a date.
+        </p>
+      ) : null}
+
       <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
         {rows.map((item) => {
           const rich = publicCopyHtml(item.summary) ?? (item.summary?.trim() ? null : publicCopyHtml(item.body));
+          const badges = homeBadges(item, today);
           return (
           <li key={item.id} className="px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">{item.title}</p>
+                  {item.id === data.currentTopId ? <Badge tone="bronze">Top of page</Badge> : null}
+                  {badges.includes("No date") ? (
+                    <span title="Stays on the homepage until it has a date or is unpublished.">
+                      <Badge>No date</Badge>
+                    </span>
+                  ) : null}
+                  {badges.includes("Not on homepage") ? <Badge>Not on homepage</Badge> : null}
                   {item.layout === "conference" ? <Badge tone="bronze">Conference</Badge> : null}
                   {(data.gatherings ?? []).some((gathering) => gathering.public_item_id === item.id) ? (
                     <Badge tone="bronze">Event page</Badge>
@@ -740,7 +958,27 @@ function WebsiteInner() {
                 ) : null}
               </div>
               {canEdit && (
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {item.kind !== "event" || !item.starts_on ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        aria-label={`Move ${item.title} up`}
+                        onClick={() => reorder(item, "up")}
+                      >
+                        Move up
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        aria-label={`Move ${item.title} down`}
+                        onClick={() => reorder(item, "down")}
+                      >
+                        Move down
+                      </Button>
+                    </>
+                  ) : null}
                   <Button type="button" variant="secondary" onClick={() => startEdit(item)}>
                     Edit
                   </Button>

@@ -13,6 +13,7 @@ In the HTML for http://scs-wisconsin-usa.org/ (once):
 Then mark the spots that should fill from the book:
 
 ```html
+<div data-scs="top"></div>
 <h1 data-scs="title"></h1>
 <p data-scs="tagline"></p>
 <p data-scs="about"></p>
@@ -21,7 +22,10 @@ Then mark the spots that should fill from the book:
 <div data-scs-list="article"></div>
 <div data-scs-list="document"></div>
 <div data-scs-list="course"></div>
+<div data-scs-list="past-event"></div>
 ```
+
+The top and past-event lines are optional.
 
 You can keep existing GoDaddy chrome (header, colors, footer **For Members**). Replace only the inner content regions with those `data-scs` hooks. If the script cannot load, the old markup stays.
 
@@ -33,6 +37,11 @@ You can keep existing GoDaddy chrome (header, colors, footer **For Members**). R
 4. Events: set **Starts on**, and **Ends on** for more than one day. A dated event leaves the homepage after its last day and moves to Past events on /site. Announcements and courses have an optional **Show until**. Items without dates stay as they are.
 5. New items start as drafts. Tick **Published** when the item is ready; untick it to take an item off the public site. A draft's **Preview draft** link shows it to signed-in operators only.
 6. Within about a minute, refresh scs-wisconsin-usa.org.
+7. **Top of the page** is one of three choices: Nothing, the next featured event automatically, or one published item. A past or unpublished item drops off by itself.
+8. **Move up** and **Move down** set the order of a shelf. Dated events follow their dates. Move up and Move down order events that have no date.
+9. **Show in the homepage lists** keeps an item in those lists. A talk keeps **Also list on the Articles shelf**.
+10. **Homepage sections** sets the order of Upcoming Events, Announcements, Articles, Documents, and Courses.
+11. An event without **Starts on** stays on the homepage until it has a date or is unpublished.
 
 JSON feed (for debugging): `https://chapter-book-beryl.vercel.app/api/public-site`
 
