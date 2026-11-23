@@ -198,8 +198,8 @@ Code changes must not change the chapter's current data, or what the public webs
 | 83 | Forget, purge and viewers reach registration data (R3-03, R3-05, R3-15, R3-17) | 81 | Done (PR 65) | |
 | 84 | Homepage control: top of page, order, sections, past events | 11, 12 | Done (PR 64) | |
 | 85 | Export attendee emails from an event | 23 | Done (PR 66) | |
-| 86 | Security updates within the current version ranges | — | | |
-| 87 | Better Auth 1.7 upgrade (sign-in library) | 86 | Next | |
+| 86 | Security updates within the current version ranges | — | Done (PR 67) | |
+| 87 | Better Auth 1.7 upgrade (sign-in library) | 86 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -890,6 +890,12 @@ An editor exports one event's guest emails from the event page. The list is peop
 The lockfile moves zod, vite, seroval, fast-uri, source-map-js, and better-auth to their patched versions inside the existing ranges. package.json and the code do not change. The better-auth advisories stay open until WP-87.
 
 **Done when:** npm audit --omit=dev lists only the better-auth advisories and every check is green.
+
+### WP-87 Better Auth 1.7
+
+The library moves to 1.7.27. The sign-in tables are unchanged. Generic OAuth sign-in uses signIn.social and the /callback/<providerId> return address.
+
+**Done when:** npm audit --omit=dev reports 0 vulnerabilities, every check is green, and email and password sign-in works on the Vercel Preview.
 
 ---
 
