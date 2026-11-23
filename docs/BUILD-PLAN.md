@@ -197,7 +197,9 @@ Code changes must not change the chapter's current data, or what the public webs
 | 82 | Money, spam and docs before switching on (R3-04, R3-06, R3-10, R3-11, R3-14) | 81 | Done (PR 63) | |
 | 83 | Forget, purge and viewers reach registration data (R3-03, R3-05, R3-15, R3-17) | 81 | Done (PR 65) | |
 | 84 | Homepage control: top of page, order, sections, past events | 11, 12 | Done (PR 64) | |
-| 85 | Export attendee emails from an event | 23 | | |
+| 85 | Export attendee emails from an event | 23 | Done (PR 66) | |
+| 86 | Security updates within the current version ranges | — | | |
+| 87 | Better Auth 1.7 upgrade (sign-in library) | 86 | Next | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -882,6 +884,12 @@ Editors choose the top of the public page (nothing, the next featured event, or 
 An editor exports one event's guest emails from the event page. The list is people who said yes, people who came, or everyone who has not declined. Outlook gets a CSV. Bcc gets the addresses copied. Forgotten, unsubscribed, do-not-contact, and deceased people are left out, and so is a guest with no email address. The export writes one activity-log row and does not change the guest list.
 
 **Done when:** an editor can download the CSV or copy the Bcc list, a viewer does not see the button, opted-out people and guests without an email are left out, and the only write is that activity-log row.
+
+### WP-86 Security updates within the current version ranges
+
+The lockfile moves zod, vite, seroval, fast-uri, source-map-js, and better-auth to their patched versions inside the existing ranges. package.json and the code do not change. The better-auth advisories stay open until WP-87.
+
+**Done when:** npm audit --omit=dev lists only the better-auth advisories and every check is green.
 
 ---
 
