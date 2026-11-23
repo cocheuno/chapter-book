@@ -6,7 +6,9 @@ import {
   type ConferenceItem,
   type SpeakerRecord,
 } from "@/lib/crm/conference-page";
+import { themeFrameStyle } from "@/lib/crm/page-theme";
 import { parseSectionOrder } from "@/lib/crm/section-order";
+import type { CSSProperties } from "react";
 import { CHAPTER_TIME_ZONE } from "@/lib/crm/dates";
 import { siteImageSrc } from "@/lib/crm/site-image";
 import { PublicCopy, PublicText } from "@/components/public-copy";
@@ -24,6 +26,7 @@ export type ConferencePageData = ConferenceItem & {
   programTimeZone?: string | null;
   register_href?: string | null;
   section_order?: string | null;
+  theme?: string | null;
 };
 
 function clean(value: string | null | undefined): string {
@@ -71,8 +74,11 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
       ]
     : program.topics;
   const chapter = page.public_title || "Society of Catholic Scientists";
+  const frame = themeFrameStyle(page.theme);
+  const headingStyle = frame ? { borderBottom: "3px solid var(--color-highlight)" } : undefined;
+  const photoStyle = frame ? { outline: "3px solid var(--color-highlight)" } : undefined;
 
-  return (
+  const body = (
     <div className="min-h-dvh bg-paper text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
@@ -167,7 +173,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           if (key === "program")
             return (
         <section key={key} id="program">
-          <h2 className="font-display text-3xl">Program</h2>
+          <h2 className="font-display text-3xl" style={headingStyle}>Program</h2>
           {days ? (
             days.map((day) => (
               <div key={day.anchor} id={day.anchor} className="mt-10 scroll-mt-20">
@@ -216,13 +222,13 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           if (key === "speakers" && speakers.length > 0)
             return (
           <section key={key} id="speakers" className="scroll-mt-20">
-            <h2 className="font-display text-3xl">Speakers</h2>
+            <h2 className="font-display text-3xl" style={headingStyle}>Speakers</h2>
             <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
               {speakers.map((speaker) => {
                 const href = page.slug ? `/p/${page.slug}/speakers/${speaker.slug}` : null;
                 const card = (
                   <>
-                    <div className="aspect-square overflow-hidden bg-paper-2">
+                    <div className="aspect-square overflow-hidden bg-paper-2" style={speaker.headshot ? photoStyle : undefined}>
                       {speaker.headshot ? (
                         <img src={speaker.headshot} alt="" className="size-full object-cover" />
                       ) : (
@@ -262,7 +268,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           if (key === "workshops" && program.workshops.length > 0)
             return (
           <section key={key} id="workshops" className="scroll-mt-20">
-            <h2 className="font-display text-3xl">Workshops</h2>
+            <h2 className="font-display text-3xl" style={headingStyle}>Workshops</h2>
             <ul className="mt-6 grid gap-4 sm:grid-cols-2">
               {program.workshops.map((workshop) => {
                 const href = pieceHref(workshop);
@@ -289,7 +295,7 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           if (key === "notes" && program.notes.length > 0)
             return (
           <section key={key} id="notes" className="scroll-mt-20">
-            <h2 className="font-display text-3xl">Practical notes</h2>
+            <h2 className="font-display text-3xl" style={headingStyle}>Practical notes</h2>
             <ul className="mt-6 divide-y divide-line rounded-xl border border-line bg-surface">
               {program.notes.map((note) => {
                 const href = pieceHref(note);
@@ -312,14 +318,14 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           if (key === "about" && page.body?.trim())
             return (
           <section key={key} id="about" className="scroll-mt-20">
-            <h2 className="font-display text-3xl">The gathering</h2>
+            <h2 className="font-display text-3xl" style={headingStyle}>The gathering</h2>
             <PublicCopy text={page.body} className="mt-4 max-w-3xl text-lg leading-relaxed text-ink-soft" />
           </section>
             );
           if (key === "visit" && (page.when_label || page.location || venuePhoto))
             return (
           <section key={key} id="visit" className="scroll-mt-20 rounded-xl border border-line bg-surface p-5 sm:p-8">
-            <h2 className="font-display text-3xl">When and where</h2>
+            <h2 className="font-display text-3xl" style={headingStyle}>When and where</h2>
             {venuePhoto ? (
               <img
                 src={venuePhoto}
@@ -367,6 +373,13 @@ export function ConferencePage({ page }: { page: ConferencePageData }) {
           </a>
         </div>
       </footer>
+    </div>
+  );
+  if (!frame) return body;
+  return (
+    <div style={frame as CSSProperties}>
+      <div aria-hidden="true" style={{ height: "6px", width: "100%", backgroundColor: "var(--color-highlight)" }} />
+      {body}
     </div>
   );
 }

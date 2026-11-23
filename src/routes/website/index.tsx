@@ -18,6 +18,14 @@ import {
   serializeHomeSections,
   type HomeSectionKey,
 } from "@/lib/crm/homepage-rules";
+import {
+  PARCHMENT_LABEL,
+  PRESETS,
+  readThemeDraft,
+  themeProblem,
+  writeThemeDraft,
+  type ThemeDraft,
+} from "@/lib/crm/page-theme";
 import { moveSection, parseSectionOrder, sectionLabel, serializeSectionOrder } from "@/lib/crm/section-order";
 import {
   listSite,
@@ -51,6 +59,27 @@ function publishedChoices(items: SiteItem[]) {
     .sort((a, b) => rank(a.kind) - rank(b.kind) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
 }
 
+function themeState(value: string | null | undefined) {
+  const draft = readThemeDraft(value);
+  return {
+    themeChoice: draft.choice,
+    themeBackground: draft.background,
+    themeText: draft.text,
+    themeAccent: draft.accent,
+    themeHighlight: draft.highlight,
+  };
+}
+
+function themeDraftOf(form: ReturnType<typeof themeState>): ThemeDraft {
+  return {
+    choice: form.themeChoice,
+    background: form.themeBackground,
+    text: form.themeText,
+    accent: form.themeAccent,
+    highlight: form.themeHighlight,
+  };
+}
+
 const emptyItem = (kind: SiteKind) => ({
   id: "",
   kind,
@@ -73,6 +102,7 @@ const emptyItem = (kind: SiteKind) => ({
   startsOn: "",
   endsOn: "",
   sections: parseSectionOrder(null),
+  ...themeState(null),
 });
 
 function WebsitePage() {
@@ -140,6 +170,16 @@ function WebsiteInner() {
     [data, form.id],
   );
   const onConference = form.layout === "conference";
+  const themeIssue = form.kind === "event" && onConference ? themeProblem(writeThemeDraft(themeDraftOf(form))) : null;
+  const themeSwatch =
+    form.themeChoice === "custom"
+      ? {
+          background: form.themeBackground,
+          text: form.themeText,
+          accent: form.themeAccent,
+          highlight: form.themeHighlight,
+        }
+      : readThemeDraft(form.themeChoice || null);
   const onProgram = Boolean(form.conferenceId);
   const isTalk = form.kind === "article" && Boolean(form.conferenceId);
 
@@ -166,6 +206,7 @@ function WebsiteInner() {
       startsOn: item.starts_on ?? "",
       endsOn: item.ends_on ?? "",
       sections: parseSectionOrder(item.section_order),
+      ...themeState(item.theme),
     });
     setPendingFile(null);
     requestAnimationFrame(() => {
@@ -481,6 +522,7 @@ function WebsiteInner() {
           className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2"
           onSubmit={async (e) => {
             e.preventDefault();
+            if (themeIssue) return;
             try {
               let imageId = form.imageId;
               if (pendingFile) {
@@ -512,7 +554,9 @@ function WebsiteInner() {
                   gatheringId: form.kind === "announcement" ? form.gatheringId : "",
                   startsOn: form.kind === "event" ? form.startsOn : undefined,
                   endsOn: ["event", "announcement", "course"].includes(form.kind) ? form.endsOn : undefined,
-                  ...(layout === "conference" ? { sectionOrder } : {}),
+                  ...(layout === "conference"
+                    ? { sectionOrder, theme: writeThemeDraft(themeDraftOf(form)) }
+                    : {}),
                 },
               });
               const row = {
@@ -541,6 +585,7 @@ function WebsiteInner() {
                   layout === "conference"
                     ? serializeSectionOrder(parseSectionOrder(sectionOrder))
                     : (data.items.find((item) => item.id === form.id)?.section_order ?? null),
+                theme: layout === "conference" ? writeThemeDraft(themeDraftOf(form)) : null,
               };
               setData((prev) =>
                 prev
@@ -681,6 +726,76 @@ function WebsiteInner() {
               <p className="mt-2 text-sm text-ink-soft">
                 Sections with nothing in them stay hidden on the public page.
               </p>
+            </div>
+          ) : null}
+          {form.kind === "event" && onConference ? (
+            <div className="sm:col-span-2">
+              <Field label="Colour theme">
+                <Select
+                  value={form.themeChoice}
+                  onChange={(e) => {
+                    const choice = e.target.value;
+                    if (choice === "custom" && form.themeChoice !== "custom") {
+                      const seeded = readThemeDraft(form.themeChoice || null);
+                      setForm({
+                        ...form,
+                        themeChoice: "custom",
+                        themeBackground: seeded.background,
+                        themeText: seeded.text,
+                        themeAccent: seeded.accent,
+                        themeHighlight: seeded.highlight,
+                      });
+                      return;
+                    }
+                    setForm({ ...form, themeChoice: choice });
+                  }}
+                >
+                  <option value="">{PARCHMENT_LABEL}</option>
+                  {PRESETS.map((preset) => (
+                    <option key={preset.key} value={preset.key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value="custom">Custom</option>
+                </Select>
+              </Field>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {(
+                  [
+                    ["Background", themeSwatch.background],
+                    ["Text", themeSwatch.text],
+                    ["Accent", themeSwatch.accent],
+                    ["Highlight", themeSwatch.highlight],
+                  ] as const
+                ).map(([label, colour]) => (
+                  <span key={label} className="flex items-center gap-2 text-xs text-ink-soft">
+                    <span
+                      className="inline-block size-8 rounded-sm border border-line"
+                      style={{ backgroundColor: colour }}
+                      aria-label={label}
+                    />
+                    {label}
+                  </span>
+                ))}
+              </div>
+              {form.themeChoice === "custom" ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                  <Field label="Background">
+                    <Input type="color" value={form.themeBackground} onChange={(e) => setForm({ ...form, themeBackground: e.target.value })} />
+                  </Field>
+                  <Field label="Text">
+                    <Input type="color" value={form.themeText} onChange={(e) => setForm({ ...form, themeText: e.target.value })} />
+                  </Field>
+                  <Field label="Accent">
+                    <Input type="color" value={form.themeAccent} onChange={(e) => setForm({ ...form, themeAccent: e.target.value })} />
+                  </Field>
+                  <Field label="Highlight">
+                    <Input type="color" value={form.themeHighlight} onChange={(e) => setForm({ ...form, themeHighlight: e.target.value })} />
+                  </Field>
+                  <p className="text-sm text-ink-soft sm:col-span-4">Highlight is used for stripes and borders only, never for text.</p>
+                  <p className={`text-sm sm:col-span-4 ${themeIssue ? "text-danger" : "text-ink-soft"}`}>{themeIssue ?? "Readable"}</p>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {(form.kind === "event" || (onProgram && (form.kind === "article" || form.kind === "course"))) && (
@@ -874,7 +989,7 @@ function WebsiteInner() {
             Featured{onProgram && form.kind === "article" ? " — keynote" : ""}
           </label>
           <div className="flex flex-wrap gap-2 sm:col-span-2">
-            <Button type="submit">{form.id ? "Save changes" : "Add to shelf"}</Button>
+            <Button type="submit" disabled={themeIssue != null}>{form.id ? "Save changes" : "Add to shelf"}</Button>
             {form.id ? (
               <Button
                 type="button"

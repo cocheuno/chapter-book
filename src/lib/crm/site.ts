@@ -15,6 +15,7 @@ import { CHAPTER_TIME_ZONE, isPastItem, orderEvents, todayIn, withWhenText } fro
 import { parseHomeSections, pickTopItem, serializeHomeSections } from "./homepage-rules";
 import { onPublicShelf } from "./shelf";
 import { type SpeakerRecord } from "./conference-page";
+import { canonicalTheme, themeProblem } from "./page-theme";
 import { parseSectionOrder, serializeSectionOrder } from "./section-order";
 import { canonicalDetailPaths, eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
@@ -61,6 +62,7 @@ export type SiteItemRow = {
   starts_on: string | null;
   ends_on: string | null;
   section_order: string | null;
+  theme?: string | null;
   eventPage?: { href: string; title: string } | null;
   detailsHref?: string | null;
 };
@@ -86,6 +88,7 @@ const SITE_ITEM_FIELDS = [
   "starts_on",
   "ends_on",
   "section_order",
+  "theme",
 ] as const;
 
 type SiteAuditRow = Record<(typeof SITE_ITEM_FIELDS)[number] | "kind", string | number | boolean | null>;
@@ -97,7 +100,7 @@ async function readSiteAudit(
 ): Promise<SiteAuditRow | null> {
   const rows = await sql<SiteAuditRow>`
     select kind, title, subtitle, summary, url, location, when_label, audience, featured, published,
-      sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order
+      sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order, theme
     from site_items
     where id = ${id} and chapter_id = ${chapterId}
   `;
@@ -129,14 +132,14 @@ async function readItems(
 ): Promise<SiteItemRow[]> {
   if (publishedOnly) {
     return sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order, theme
       from site_items
       where chapter_id = ${chapterId} and published
       order by kind, sort_order, title
     `;
   }
   return sql<SiteItemRow>`
-    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order
+    select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order, theme
     from site_items
     where chapter_id = ${chapterId}
     order by kind, sort_order, title
@@ -626,6 +629,7 @@ const itemInput = z.object({
   startsOn: z.string().optional(),
   endsOn: z.string().optional(),
   sectionOrder: z.string().max(200).optional(),
+  theme: z.string().max(80).nullable().optional(),
 });
 
 /** undefined is not sent, "" clears the date, and YYYY-MM-DD is kept. */
@@ -666,6 +670,20 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     const layout = data.kind === "event" && data.layout === "conference" ? "conference" : "page";
     const touchOrder = layout === "conference" && data.sectionOrder !== undefined;
     const storedOrder = touchOrder ? serializeSectionOrder(parseSectionOrder(data.sectionOrder)) : null;
+    const conference = layout === "conference";
+    let storedTheme: string | null = null;
+    let touchTheme = false;
+    if (!conference) {
+      touchTheme = true;
+    } else if (data.theme !== undefined) {
+      touchTheme = true;
+      const raw = (data.theme ?? "").trim();
+      if (raw !== "" && raw.toLowerCase() !== "parchment (current)") {
+        const problem = themeProblem(raw);
+        if (problem) throw new Error(problem);
+        storedTheme = canonicalTheme(raw);
+      }
+    }
     let conferenceId: string | null = null;
     if (layout !== "conference" && data.conferenceId?.trim()) {
       const parent = await sql<{ id: string }>`
@@ -706,7 +724,8 @@ export const saveSiteItem = createServerFn({ method: "POST" })
           gathering_id = ${gatheringId},
           starts_on = case when ${starts.sent} then ${starts.date}::date else starts_on end,
           ends_on = case when ${ends.sent} then ${ends.date}::date else ends_on end,
-          section_order = case when ${touchOrder} then ${storedOrder} else section_order end
+          section_order = case when ${touchOrder} then ${storedOrder} else section_order end,
+          theme = case when ${touchTheme} then ${storedTheme} else theme end
         where id = ${data.id} and chapter_id = ${m.chapterId}
       `;
       if (previousImageId && previousImageId !== imageId) {
@@ -741,13 +760,13 @@ export const saveSiteItem = createServerFn({ method: "POST" })
     try {
       await sql`
         insert into site_items (
-          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order
+          id, chapter_id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id, on_shelf, starts_on, ends_on, section_order, theme
         )
         values (
           ${id}, ${m.chapterId}, ${data.kind}, ${title}, ${data.subtitle || null}, ${data.summary || null},
           ${data.url || null}, ${data.location || null}, ${data.whenLabel || null}, ${data.audience || null},
           ${featured}, ${data.published ?? false}, ${(max[0]?.n ?? -1) + 1}, ${slug}, ${body}, ${layout}, ${conferenceId}, ${imageId}, ${gatheringId}, ${data.onShelf ?? true},
-          ${starts.sent ? starts.date : null}::date, ${ends.sent ? ends.date : null}::date, ${storedOrder}
+          ${starts.sent ? starts.date : null}::date, ${ends.sent ? ends.date : null}::date, ${storedOrder}, ${storedTheme}
         )
       `;
     } catch (err) {
@@ -774,7 +793,7 @@ async function readPublicPage(
   const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
     select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
            i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
-           i.starts_on, i.ends_on, i.section_order,
+           i.starts_on, i.ends_on, i.section_order, i.theme,
            s.public_title, s.contact_email
     from site_items i
     left join site_settings s on s.chapter_id = i.chapter_id

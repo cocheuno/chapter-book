@@ -57,6 +57,10 @@ The public page is `https://chapter-book-beryl.vercel.app/p/gold-mass-milwaukee`
 
 Preview (not the GoDaddy homepage): `https://chapter-book-beryl.vercel.app/site`
 
+## Conference colour theme
+
+On a conference event (Website → the event → Conference page), **Colour theme** sets the palette. Parchment keeps today's colours. A preset or custom colours change only that conference page and its register page. The highlight colour is for the top stripe and for borders, not for text.
+
 ## CORS
 
 The feed allows `scs-wisconsin-usa.org` (http and https, www or not). It does not expose People, Partners, or Invites.

@@ -2,6 +2,7 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { PublicCopy } from "@/components/public-copy";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { themeFrameStyle } from "@/lib/crm/page-theme";
 import { createRegistration, getRegisterPage, getRegisterPreview } from "@/lib/crm/registration-public";
 import { guardianConsentErrors } from "@/lib/payments/consent-rules";
 import {
@@ -17,7 +18,7 @@ import {
 } from "@/lib/payments/registration-details";
 import { MAX_ATTENDEES } from "@/lib/payments/registration-rules";
 import { formatCents } from "@/lib/payments/pricing";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 
 declare global {
   interface Window {
@@ -668,6 +669,17 @@ function PersonFields({
   );
 }
 
+function withTheme(theme: string | null | undefined, page: ReactNode) {
+  const frame = themeFrameStyle(theme);
+  if (!frame) return page;
+  return (
+    <div style={frame as CSSProperties}>
+      <div aria-hidden="true" style={{ height: "6px", width: "100%", backgroundColor: "var(--color-highlight)" }} />
+      {page}
+    </div>
+  );
+}
+
 function RegisterPage() {
   const { page, preview } = Route.useLoaderData();
   const { slug } = Route.useParams();
@@ -871,7 +883,7 @@ function RegisterPage() {
       confirmation.manageUrl.startsWith("http") || typeof window === "undefined"
         ? confirmation.manageUrl
         : `${window.location.origin}${confirmation.manageUrl}`;
-    return (
+    return withTheme(page.event.theme, (
       <div className="min-h-dvh bg-paper text-ink">
         <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
@@ -904,10 +916,10 @@ function RegisterPage() {
           ) : null}
         </main>
       </div>
-    );
+    ));
   }
 
-  return (
+  return withTheme(page.event.theme, (
     <div className="min-h-dvh bg-paper text-ink">
       {preview && !page.enabled ? (
         <div className="bg-bronze px-4 py-2 text-center text-sm font-medium text-bronze-fg">
@@ -1095,5 +1107,5 @@ function RegisterPage() {
         <PublicCopy text={page.for_schools} className="text-lg leading-relaxed text-ink-soft" />
       </main>
     </div>
-  );
+  ));
 }
