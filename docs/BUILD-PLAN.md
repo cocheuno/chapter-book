@@ -199,7 +199,8 @@ Code changes must not change the chapter's current data, or what the public webs
 | 84 | Homepage control: top of page, order, sections, past events | 11, 12 | Done (PR 64) | |
 | 85 | Export attendee emails from an event | 23 | Done (PR 66) | |
 | 86 | Security updates within the current version ranges | — | Done (PR 67) | |
-| 87 | Better Auth 1.7 upgrade (sign-in library) | 86 | | |
+| 87 | Better Auth 1.7 upgrade (sign-in library) | 86 | Done (PR 68) | |
+| 88 | Colour theme for a conference page | 84 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -896,6 +897,12 @@ The lockfile moves zod, vite, seroval, fast-uri, source-map-js, and better-auth 
 The library moves to 1.7.27. The sign-in tables are unchanged. Generic OAuth sign-in uses signIn.social and the /callback/<providerId> return address.
 
 **Done when:** npm audit --omit=dev reports 0 vulnerabilities, every check is green, and email and password sign-in works on the Vercel Preview.
+
+### WP-88 Colour theme for a conference page
+
+An editor sets a colour theme on a conference page: parchment (today's colours), a preset, or four custom colours. The theme changes only that conference page and its register page. The highlight colour is for stripes and borders, not for text. Until a theme is chosen, the public pages stay as they are.
+
+**Done when:** a conference can store a preset or a readable custom theme, an unreadable custom theme cannot be saved, and a page with no theme renders as it does today.
 
 ---
 

@@ -81,6 +81,7 @@ type RegistrationEvent = {
   refundPolicy: string | null;
   contactLine: string | null;
   publicTitle: string | null;
+  theme: string | null;
 };
 
 type PersonSnap = {
@@ -227,8 +228,9 @@ export async function findRegistrationEvent(
     refund_policy: string | null;
     contact_line: string | null;
     public_title: string | null;
+    theme: string | null;
   }>`
-    select i.id as item_id, i.slug, i.when_label, i.location, i.kind, i.starts_on, i.published,
+    select i.id as item_id, i.slug, i.when_label, i.location, i.kind, i.starts_on, i.published, i.theme,
            e.id as event_id, e.title, e.starts_at, e.timezone, c.timezone as chapter_timezone,
            coalesce(rp.use_book_registration, false) as use_book_registration,
            rp.intro, rp.for_schools, rp.manage_message, rp.housing_info, rp.housing_nights, rp.refund_policy,
@@ -270,6 +272,7 @@ export async function findRegistrationEvent(
     refundPolicy: row.refund_policy,
     contactLine: row.contact_line,
     publicTitle: row.public_title,
+    theme: row.theme,
   };
 }
 
@@ -406,6 +409,7 @@ function registerPayload(
       slug: event.slug,
       when_label: event.whenLabel,
       location: event.location,
+      theme: event.theme,
     },
     intro: event.intro,
     for_schools: event.forSchools,

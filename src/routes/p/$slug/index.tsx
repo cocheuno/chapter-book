@@ -83,6 +83,7 @@ function PublicPage() {
             programTimeZone: page.programTimeZone,
             register_href: page.bookRegistration && page.slug ? `/p/${page.slug}/register` : undefined,
             section_order: page.section_order,
+            theme: page.theme,
           }}
         />
       </>
