@@ -15,6 +15,7 @@ import { assertEditor, loadMember } from "./member";
 import { chooseConferenceItem } from "./conference-page";
 import { CHAPTER_TIME_ZONE } from "./dates";
 import { siteImageSrc } from "./site-image";
+import { releaseUnusedImage } from "./site-image-release";
 
 type ShelfItem = {
   id: string;
@@ -47,22 +48,6 @@ async function ownedImage(sql: Sql, chapterId: string, imageId: string | undefin
   `;
   if (!rows[0]) throw new Error("That picture is not in this book.");
   return rows[0].id;
-}
-
-async function releaseImage(sql: Sql, chapterId: string, imageId: string | null) {
-  if (!imageId) return;
-  await sql`
-    delete from site_images
-    where id = ${imageId} and chapter_id = ${chapterId}
-      and not exists (
-        select 1 from site_items where image_id = ${imageId} and chapter_id = ${chapterId}
-      )
-      and not exists (
-        select 1 from event_sessions s
-        join events e on e.id = s.event_id
-        where s.image_id = ${imageId} and e.chapter_id = ${chapterId}
-      )
-  `;
 }
 
 async function requireConference(sql: Sql, chapterId: string, eventId: string) {
@@ -141,7 +126,12 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
           image_id: string | null;
           slug: string | null;
         }>`
-          select id, title, subtitle, summary, when_label, location, url, body, image_id, slug
+          select id, title, subtitle, summary, when_label, location, url, body,
+            case when exists (
+              select 1 from site_images x
+              where x.id = site_items.image_id and x.chapter_id = ${m.chapterId}
+            ) then image_id end as image_id,
+            slug
           from site_items where id = ${itemId} and chapter_id = ${m.chapterId}
         `
       : [];
@@ -159,14 +149,27 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
       body: string | null;
       article_url: string | null;
       image_id: string | null;
+      photo_missing: boolean;
       featured: boolean;
       speaker_id: string | null;
       starts_at: string | null;
     }>`
-      select id, title, room, when_label, track, public_speaker, summary, body, article_url, image_id, featured, speaker_id,
-        to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as starts_at
-      from event_sessions where event_id = ${eventId}
-      order by sort_order, title
+      select s.id, s.title, s.room, s.when_label, s.track, s.public_speaker, s.summary, s.body, s.article_url,
+        case when exists (
+          select 1 from site_images x
+          where x.id = s.image_id and x.chapter_id = ${m.chapterId}
+        ) then s.image_id end as image_id,
+        (
+          s.image_id is not null and s.image_id <> ''
+          and not exists (
+            select 1 from site_images x
+            where x.id = s.image_id and x.chapter_id = ${m.chapterId}
+          )
+        ) as photo_missing,
+        s.featured, s.speaker_id,
+        to_char(s.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as starts_at
+      from event_sessions s where s.event_id = ${eventId}
+      order by s.sort_order, s.title
     `;
     const speakers = await sql<{
       id: string;
@@ -174,16 +177,39 @@ export const getConferenceDesk = createServerFn({ method: "GET" })
       role: string | null;
       body: string | null;
       image_id: string | null;
+      photo_missing: boolean;
     }>`
-      select id, name, role, body, image_id
-      from event_speakers where event_id = ${eventId}
-      order by sort_order, name
+      select sp.id, sp.name, sp.role, sp.body,
+        case when exists (
+          select 1 from site_images x
+          where x.id = sp.image_id and x.chapter_id = ${m.chapterId}
+        ) then sp.image_id end as image_id,
+        (
+          sp.image_id is not null and sp.image_id <> ''
+          and not exists (
+            select 1 from site_images x
+            where x.id = sp.image_id and x.chapter_id = ${m.chapterId}
+          )
+        ) as photo_missing
+      from event_speakers sp where sp.event_id = ${eventId}
+      order by sp.sort_order, sp.name
     `;
     const zones = await sql<{ timezone: string | null }>`
       select timezone from events where id = ${eventId} and chapter_id = ${m.chapterId}
     `;
     const timeZone = zones[0]?.timezone?.trim() || CHAPTER_TIME_ZONE;
-    return { page, sessions, speakers, timeZone };
+    return {
+      page,
+      sessions: sessions.map(({ photo_missing, ...session }) => ({
+        ...session,
+        photoMissing: photo_missing === true,
+      })),
+      speakers: speakers.map(({ photo_missing, ...speaker }) => ({
+        ...speaker,
+        photoMissing: photo_missing === true,
+      })),
+      timeZone,
+    };
   });
 
 async function backfillSpeakers(sql: Sql, eventId: string) {
@@ -328,7 +354,7 @@ export const saveConferenceVenue = createServerFn({ method: "POST" })
       });
     }
     const old = previous[0]?.image_id ?? null;
-    if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    if (old && old !== imageId) await releaseUnusedImage(sql, m.chapterId, old);
     return { ok: true };
   });
 
@@ -417,7 +443,7 @@ export const saveConferenceSpeaker = createServerFn({ method: "POST" })
         )
     `;
     const old = previous[0]?.image_id ?? null;
-    if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    if (old && old !== imageId) await releaseUnusedImage(sql, m.chapterId, old);
     if (changedFields(previous[0] ?? {}, nextSpeaker, ["name", "role", "body", "image_id"]).length) {
       await recordAudit(sql, {
         chapterId: m.chapterId,
@@ -619,7 +645,7 @@ export const saveConferenceSession = createServerFn({ method: "POST" })
       where id = ${data.sessionId} and event_id = ${data.eventId}
     `;
     const old = previous?.image_id ?? null;
-    if (old && old !== imageId) await releaseImage(sql, m.chapterId, old);
+    if (old && old !== imageId) await releaseUnusedImage(sql, m.chapterId, old);
     if (previous) {
       const next = {
         title: data.title.trim(),
@@ -734,7 +760,7 @@ export const removeConferenceSession = createServerFn({ method: "POST" })
     if (row.site_item_id) {
       await sql`delete from site_items where id = ${row.site_item_id} and chapter_id = ${m.chapterId}`;
     }
-    if (row.image_id) await releaseImage(sql, m.chapterId, row.image_id);
+    if (row.image_id) await releaseUnusedImage(sql, m.chapterId, row.image_id);
     await recordAudit(sql, {
       chapterId: m.chapterId,
       actor: m.userId,

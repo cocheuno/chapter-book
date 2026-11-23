@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   biographyParagraphs,
   buildConferenceProgram,
+  headshotFrom,
   lineupFromSpeakers,
   pieceHref,
   programDays,
@@ -102,6 +103,18 @@ describe("conference program", () => {
     ]);
     assert.equal(program.speakers.length, 0);
     assert.equal(program.tracks[0]?.name, "Sessions");
+  });
+
+  it("returns no headshot when Ada More's picture file is missing", () => {
+    const imageId = "22222222-2222-4222-8222-222222222222";
+    assert.equal(headshotFrom(imageId, false), null);
+    assert.equal(headshotFrom("https://example.edu/ada.jpg", true), null);
+    assert.equal(headshotFrom(imageId, true), `/api/site-image/${imageId}`);
+    const lineup = lineupFromSpeakers(
+      [{ name: "Ada More", role: "professor of physics", body: null, imageId: null, talkIds: [] }],
+      [],
+    );
+    assert.equal(lineup[0]?.headshot, null);
   });
 
   it("uses an uploaded headshot and ignores a web address", () => {

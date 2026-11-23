@@ -200,7 +200,8 @@ Code changes must not change the chapter's current data, or what the public webs
 | 85 | Export attendee emails from an event | 23 | Done (PR 66) | |
 | 86 | Security updates within the current version ranges | — | Done (PR 67) | |
 | 87 | Better Auth 1.7 upgrade (sign-in library) | 86 | Done (PR 68) | |
-| 88 | Colour theme for a conference page | 84 | | |
+| 88 | Colour theme for a conference page | 84 | Done (PR 69) | |
+| 89 | A photo is deleted only when nothing uses it | 88 | | |
 | **Mail** | | | | |
 | 50 | Switch mail on | 20 | Needs D5, H12 | MAIL.md |
 | **Fixes from the October 2026 architecture review** | | | | |
@@ -903,6 +904,12 @@ The library moves to 1.7.27. The sign-in tables are unchanged. Generic OAuth sig
 An editor sets a colour theme on a conference page: parchment (today's colours), a preset, or four custom colours. The theme changes only that conference page and its register page. The highlight colour is for stripes and borders, not for text. Until a theme is chosen, the public pages stay as they are.
 
 **Done when:** a conference can store a preset or a readable custom theme, an unreadable custom theme cannot be saved, and a page with no theme renders as it does today.
+
+### WP-89 A photo is deleted only when nothing uses it
+
+A picture file is removed only when no shelf item, session, or speaker in the chapter still uses it. Removing a session that shares a photo with a speaker leaves the file. A photo that nothing uses is deleted. A missing file is shown as no photo: the conference page and its speaker pages use the initials placeholder, and the editor says to upload the photo again. The stored id is left as it is on read, and a missing file is not restored.
+
+**Done when:** a photo shared by a session and a speaker stays when the session is removed; a photo with no remaining use is deleted; a missing file shows as no photo on the conference page and its speaker pages; the editor shows "Photo missing — upload it again."
 
 ---
 
