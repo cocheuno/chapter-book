@@ -54,19 +54,19 @@ describe("conference colour theme", () => {
     );
   });
 
-  it("refuses the orange-green custom because derived muted text is under 4.5", () => {
-    const muted = mix("#0f1f17", "#f6f8f5", 0.45);
-    const ratio = contrastRatio(muted, "#f6f8f5").toFixed(1);
-    assert.equal(muted, "#77817b");
-    assert.equal(ratio, "3.8");
-    assert.equal(
-      themeProblem("custom:#f6f8f5,#0f1f17,#005030,#f47321"),
-      `Muted text on the background is hard to read (contrast ${ratio}; needs 4.5).`,
-    );
-    const vars = themeVars("custom:#f6f8f5,#0f1f17,#005030,#f47321");
+  it("accepts the orange-green custom colours", () => {
+    const value = "custom:#f6f8f5,#0f1f17,#005030,#f47321";
+    assert.equal(themeProblem(value), null);
+    const vars = themeVars(value);
     assert.equal(vars?.["--color-paper"], "#f6f8f5");
+    assert.equal(vars?.["--color-ink"], "#0f1f17");
     assert.equal(vars?.["--color-bronze"], "#005030");
     assert.equal(vars?.["--color-highlight"], "#f47321");
+    assert.equal(vars?.["--color-muted"], mix("#0f1f17", "#f6f8f5", 0.3));
+  });
+
+  it("accepts dark grey text on white with a dark accent", () => {
+    assert.equal(themeProblem("custom:#ffffff,#333333,#005030"), null);
   });
 
   it("accepts a custom theme whose derived text clears 4.5", () => {

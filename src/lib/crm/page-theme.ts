@@ -119,7 +119,7 @@ export function customTheme(paper: string, ink: string, accent: string, highligh
     "--color-surface": mix(background, "#ffffff", 0.5),
     "--color-ink": text,
     "--color-ink-soft": mix(text, background, 0.2),
-    "--color-muted": mix(text, background, 0.45),
+    "--color-muted": mix(text, background, 0.3),
     "--color-line": mix(background, text, 0.18),
     "--color-bronze": bronze,
     "--color-bronze-fg": foreground(text, bronze),
