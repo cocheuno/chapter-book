@@ -295,6 +295,7 @@ function SpeakerCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-medium">{speaker.name}</p>
+          {speaker.photoMissing ? <p className="text-sm text-ink-soft">Photo missing — upload it again.</p> : null}
           {speaker.role ? <p className="text-sm text-ink-soft">{speaker.role}</p> : null}
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
@@ -407,6 +408,9 @@ function SessionCard({
     <li className="rounded-lg border border-line p-3">
       <button type="button" className="min-h-11 w-full text-left" onClick={() => setOpen((value) => !value)}>
         <span className="font-medium">{session.title}</span>
+        {session.photoMissing ? (
+          <span className="mt-0.5 block text-sm text-ink-soft">Photo missing — upload it again.</span>
+        ) : null}
         {speakerName ? <span className="mt-0.5 block text-sm text-ink-soft">{speakerName}</span> : null}
       </button>
       {open ? (

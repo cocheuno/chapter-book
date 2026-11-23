@@ -77,6 +77,12 @@ export function speakerSlug(name: string, used: Set<string>): string {
   return slug;
 }
 
+/** A portrait address only when the picture file is still in the book. */
+export function headshotFrom(imageId: string | null | undefined, exists: boolean): string | null {
+  if (!exists) return null;
+  return siteImageSrc(imageId);
+}
+
 /** Speakers saved on their own. A later speaker does not replace an earlier one. */
 export function lineupFromSpeakers(records: SpeakerRecord[], talks: ConferenceItem[]): ConferenceSpeaker[] {
   const used = new Set<string>();
@@ -91,7 +97,7 @@ export function lineupFromSpeakers(records: SpeakerRecord[], talks: ConferenceIt
         slug: speakerSlug(title, used),
         title,
         line,
-        headshot: siteImageSrc(record.imageId),
+        headshot: headshotFrom(record.imageId, Boolean(record.imageId?.trim())),
         bio: biographyText(record.body),
         talks: record.talkIds.map((id) => byId.get(id)).filter((talk): talk is ConferenceItem => Boolean(talk)),
       };
@@ -197,7 +203,7 @@ export function buildConferenceProgram(items: ConferenceItem[]): ConferenceProgr
       speakerIndex.set(key, speaker);
       speakers.push(speaker);
     }
-    if (!speaker.headshot) speaker.headshot = siteImageSrc(talk.image_id);
+    if (!speaker.headshot) speaker.headshot = headshotFrom(talk.image_id, Boolean(talk.image_id?.trim()));
     if (!speaker.bio) speaker.bio = biographyText(talk.body);
     speaker.talks.push(talk);
   }

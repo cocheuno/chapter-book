@@ -19,6 +19,7 @@ import { canonicalTheme, themeProblem } from "./page-theme";
 import { parseSectionOrder, serializeSectionOrder } from "./section-order";
 import { canonicalDetailPaths, eventPageLink } from "./event-link";
 import { siteImageSrc, sniffSiteImage } from "./site-image";
+import { releaseUnusedImage } from "./site-image-release";
 import { AI_CONFERENCE_SLUG, AI_CONFERENCE_TITLE, DEFAULT_SITE, SITE_KINDS, type SiteKind } from "./site-seed";
 
 function isUniqueViolation(err: unknown): boolean {
@@ -580,13 +581,7 @@ async function releaseSiteImage(
   chapterId: string,
   imageId: string,
 ) {
-  await sql`
-    delete from site_images
-    where id = ${imageId} and chapter_id = ${chapterId}
-      and not exists (
-        select 1 from site_items where image_id = ${imageId} and chapter_id = ${chapterId}
-      )
-  `;
+  await releaseUnusedImage(sql, chapterId, imageId);
 }
 
 export const uploadSiteImage = createServerFn({ method: "POST" })
@@ -792,7 +787,11 @@ async function readPublicPage(
 ) {
   const rows = await sql<SiteItemRow & { public_title: string | null; contact_email: string | null }>`
     select i.id, i.kind, i.title, i.subtitle, i.summary, i.url, i.location, i.when_label, i.audience,
-           i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id, i.image_id, i.gathering_id,
+           i.featured, i.published, i.sort_order, i.slug, i.body, i.layout, i.conference_id,
+           case when exists (
+             select 1 from site_images x where x.id = i.image_id and x.chapter_id = i.chapter_id
+           ) then i.image_id end as image_id,
+           i.gathering_id,
            i.starts_on, i.ends_on, i.section_order, i.theme,
            s.public_title, s.contact_email
     from site_items i
@@ -846,7 +845,11 @@ async function readPublicPage(
       return { ...page, canonicalSlug: null, program: [] as SiteItemRow[], eventPage, speakerLineup: [] as SpeakerRecord[], ...noTimes, bookRegistration };
     }
     const program = await sql<SiteItemRow>`
-      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id, image_id, gathering_id
+      select id, kind, title, subtitle, summary, url, location, when_label, audience, featured, published, sort_order, slug, body, layout, conference_id,
+        case when exists (
+          select 1 from site_images x where x.id = site_items.image_id and x.chapter_id = ${chapterId}
+        ) then image_id end as image_id,
+        gathering_id
       from site_items
       where chapter_id = ${chapterId} and conference_id = ${page.id} and published
       order by kind, sort_order, title
@@ -858,7 +861,10 @@ async function readPublicPage(
       body: string | null;
       image_id: string | null;
     }>`
-      select sp.id, sp.name, sp.role, sp.body, sp.image_id
+      select sp.id, sp.name, sp.role, sp.body,
+        case when exists (
+          select 1 from site_images x where x.id = sp.image_id and x.chapter_id = ${chapterId}
+        ) then sp.image_id end as image_id
       from event_speakers sp
       join events e on e.id = sp.event_id
       where e.public_item_id = ${page.id} and e.chapter_id = ${chapterId}
